@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'sozan2-local';
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 export const STORES = {
   coreUsers: 'core_users',
@@ -8,7 +8,15 @@ export const STORES = {
   coreWorkspaceModules: 'core_workspace_modules',
   coreWorkspaceLabels: 'core_workspace_labels',
   coreSurfaceLayouts: 'core_surface_layouts',
+  coreCloudLinks: 'core_cloud_links',
+  syncOutbox: 'sync_outbox',
   tutoringStudents: 'tutoring_students',
+  tutoringSessions: 'tutoring_sessions',
+  tutoringOccurrences: 'tutoring_occurrences',
+  tutoringBillingPlans: 'tutoring_billing_plans',
+  tutoringBillingCycles: 'tutoring_billing_cycles',
+  financeReceipts: 'finance_receipts',
+  financeAllocations: 'finance_allocations',
 } as const;
 
 let databasePromise: Promise<IDBDatabase> | null = null;
@@ -54,9 +62,28 @@ export function openLocalDatabase(): Promise<IDBDatabase> {
       ensureStore(db, STORES.coreSurfaceLayouts, { keyPath: ['workspaceId', 'userId', 'surfaceKey'] }, [
         { name: 'workspaceId', keyPath: 'workspaceId' },
       ]);
-      ensureStore(db, STORES.tutoringStudents, { keyPath: 'id' }, [
-        { name: 'workspaceId', keyPath: 'workspaceId' },
+      ensureStore(db, STORES.coreCloudLinks, { keyPath: 'workspaceId' }, [
+        { name: 'userId', keyPath: 'userId' },
       ]);
+      ensureStore(db, STORES.syncOutbox, { keyPath: 'id' }, [
+        { name: 'workspaceId', keyPath: 'workspaceId' },
+        { name: 'status', keyPath: 'status' },
+        { name: 'workspaceStatus', keyPath: ['workspaceId', 'status'] },
+      ]);
+
+      for (const storeName of [
+        STORES.tutoringStudents,
+        STORES.tutoringSessions,
+        STORES.tutoringOccurrences,
+        STORES.tutoringBillingPlans,
+        STORES.tutoringBillingCycles,
+        STORES.financeReceipts,
+        STORES.financeAllocations,
+      ]) {
+        ensureStore(db, storeName, { keyPath: 'id' }, [
+          { name: 'workspaceId', keyPath: 'workspaceId' },
+        ]);
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
