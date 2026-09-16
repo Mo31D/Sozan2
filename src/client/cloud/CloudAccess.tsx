@@ -9,6 +9,7 @@ import {
   linkLocalPlatformToCloud,
   type LocalPlatformSnapshot,
 } from '../adapters/indexeddb/platform.repository';
+import { runWorkspaceSync, type SyncRunResult } from '../sync/engine';
 
 export function ExistingAccountLogin({
   available,
@@ -35,7 +36,11 @@ export function ExistingAccountLogin({
       const workspace = account.workspaces[0];
       if (!workspace) throw new Error('ACCOUNT_HAS_NO_WORKSPACE');
       const bootstrap = await getWorkspaceBootstrap(workspace.id);
-      const snapshot = await hydrateLocalPlatformFromCloud(account, bootstrap);
+      let snapshot = await hydrateLocalPlatformFromCloud(account, bootstrap);
+      await runWorkspaceSync(workspace.id);
+      const refreshed = await import('../adapters/indexeddb/platform.repository')
+        .then((module) => module.loadLocalPlatform());
+      if (refreshed) snapshot = refreshed;
       onReady(snapshot);
     } catch (cause) {
       setError(messageFor(cause));
@@ -62,7 +67,7 @@ export function ExistingAccountLogin({
           <input name="password" type="password" autoComplete="current-password" required minLength={10} />
         </label>
         <button className="secondary-button" type="submit" disabled={busy}>
-          {busy ? 'جاري الدخول…' : 'دخول وتنزيل بياناتي'}
+          {busy ? 'جاري الدخول والمزامنة…' : 'دخول وتنزيل بياناتي'}
         </button>
       </form>
       {error && <div className="status bad">{error}</div>}
@@ -82,16 +87,49 @@ export function CloudLinkPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [syncResult, setSyncResult] = useState<SyncRunResult | null>(null);
+
+  const syncNow = async (seedInitialState = false) => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await runWorkspaceSync(snapshot.workspace.id, { seedInitialState });
+      setSyncResult(result);
+      await onLinked();
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (snapshot.cloudLink) {
     return (
-      <section className="panel cloud-link-panel">
-        <div>
+      <section className="panel cloud-link-panel cloud-linked-panel">
+        <div className="cloud-register-copy">
           <span className="panel-label">الحساب السحابي</span>
           <strong>{snapshot.cloudLink.loginName}</strong>
           <small>مساحة العمل مرتبطة بالسحابة ويمكن فتحها من أجهزة أخرى.</small>
+          <small>
+            آخر تنزيل: {snapshot.cloudLink.lastCloudPullAt
+              ? new Date(snapshot.cloudLink.lastCloudPullAt).toLocaleString('ar-EG')
+              : 'لم تتم المزامنة بعد'}
+          </small>
         </div>
-        <span className="cloud-linked-mark">مرتبط</span>
+        <div className="cloud-actions">
+          <span className="cloud-linked-mark">مرتبط</span>
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => void syncNow(false)}>
+            {busy ? 'جاري المزامنة…' : 'زامن الآن'}
+          </button>
+        </div>
+        {syncResult && (
+          <div className={`status ${syncResult.failed ? 'bad' : 'good'}`}>
+            <span>تم رفع {syncResult.pushed} تغيير.</span>
+            <span>{syncResult.pulled ? 'تم تنزيل أحدث نسخة سحابية.' : 'لم يتم التنزيل لحماية تغييرات محلية غير مرفوعة.'}</span>
+            {syncResult.pending > 0 && <span>متبقي {syncResult.pending} تغيير للمزامنة.</span>}
+          </div>
+        )}
+        {error && <div className="status bad">{error}</div>}
       </section>
     );
   }
@@ -122,6 +160,8 @@ export function CloudLinkPanel({
       );
       await linkLocalPlatformToCloud(snapshot, result.account.user.loginName);
       setRecoveryCode(result.recoveryCode);
+      const sync = await runWorkspaceSync(snapshot.workspace.id, { seedInitialState: true });
+      setSyncResult(sync);
       await onLinked();
     } catch (cause) {
       setError(messageFor(cause));
@@ -141,7 +181,7 @@ export function CloudLinkPanel({
         <input name="loginName" placeholder="اسم الدخول" autoComplete="username" minLength={3} maxLength={64} required />
         <input name="password" type="password" placeholder="كلمة مرور — 10 أحرف على الأقل" autoComplete="new-password" minLength={10} required />
         <button className="primary-button" type="submit" disabled={busy}>
-          {busy ? 'جاري الربط…' : 'تفعيل الحساب السحابي'}
+          {busy ? 'جاري الربط والمزامنة…' : 'تفعيل الحساب السحابي'}
         </button>
       </form>
       {error && <div className="status bad">{error}</div>}
@@ -151,6 +191,9 @@ export function CloudLinkPanel({
           <code>{recoveryCode}</code>
           <small>يظهر مرة واحدة. يُستخدم لاستعادة الحساب إذا نسيت كلمة المرور.</small>
         </div>
+      )}
+      {syncResult && !syncResult.failed && (
+        <div className="status good">تم رفع البيانات المحلية وربطها بالحساب السحابي.</div>
       )}
     </section>
   );
@@ -165,6 +208,9 @@ function messageFor(cause: unknown): string {
     AUTH_RATE_LIMITED: 'محاولات كثيرة. حاول لاحقًا.',
     DATABASE_NOT_CONFIGURED: 'قاعدة البيانات السحابية غير مربوطة بعد.',
     ACCOUNT_HAS_NO_WORKSPACE: 'الحساب لا يحتوي مساحة عمل متاحة.',
+    UNAUTHENTICATED: 'الجلسة انتهت. سجل الدخول مرة أخرى.',
+    WORKSPACE_FORBIDDEN: 'هذا الحساب لا يملك صلاحية لهذه المساحة.',
+    SYNC_MODULE_UNSUPPORTED: 'يوجد جزء من البرنامج لم يُجهز للمزامنة بعد.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
 }
