@@ -6,8 +6,8 @@ import {
   type LocalPlatformSnapshot,
 } from './adapters/indexeddb/platform.repository';
 import { ExistingAccountLogin } from './cloud/CloudAccess';
-import { FinalControlCenter } from './control/FinalControlCenter';
-import { SimpleWorkspaceV2 } from './simple/SimpleWorkspaceV2';
+import { ControlCenter } from './control/ControlCenter';
+import { TutorWorkspace } from './simple/TutorWorkspace';
 import { runWorkspaceSync } from './sync/engine';
 
 type CloudState =
@@ -81,13 +81,13 @@ export function App() {
 
   return (
     <>
-      <SimpleWorkspaceV2
+      <TutorWorkspace
         key={`${local.snapshot.workspace.id}-${dataRevision}`}
         snapshot={local.snapshot}
         cloudAvailable={cloudAccountsAvailable(cloud)}
         onPlatformChanged={reloadLocal}
       />
-      <FinalControlCenter
+      <ControlCenter
         snapshot={local.snapshot}
         onChanged={async () => {
           setDataRevision((value) => value + 1);
