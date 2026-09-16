@@ -1,4 +1,4 @@
-import { openLocalDatabase, requestResult, STORES } from '../adapters/indexeddb/database';
+import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { newSyncOutboxRecord, type SyncOutboxRecord } from '../sync/outbox';
 
 export type LocalActivityEvent = {
@@ -74,6 +74,25 @@ export async function listLocalActivity(workspaceId: string, limit = 200): Promi
     .slice(0, Math.max(1, limit));
 }
 
-export function markActivityUndone(event: LocalActivityEvent): LocalActivityEvent {
-  return { ...event, undoneAt: new Date().toISOString(), undoable: false };
+export async function markActivityUndone(eventId: string, workspaceId: string): Promise<void> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction([STORES.coreActivityEvents, STORES.syncOutbox], 'readwrite');
+  const store = transaction.objectStore(STORES.coreActivityEvents);
+  const event = await requestResult<LocalActivityEvent | undefined>(store.get(eventId));
+  if (!event || event.workspaceId !== workspaceId) throw new Error('ACTIVITY_NOT_FOUND');
+  if (event.undoneAt) {
+    await transactionDone(transaction);
+    return;
+  }
+  const undoneAt = new Date().toISOString();
+  store.put({ ...event, undoneAt, undoable: false } satisfies LocalActivityEvent);
+  transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
+    workspaceId,
+    moduleKey: 'core',
+    operation: 'activity.undo',
+    entityType: 'activity_event',
+    entityId: eventId,
+    payload: { undoneAt },
+  }));
+  await transactionDone(transaction);
 }
