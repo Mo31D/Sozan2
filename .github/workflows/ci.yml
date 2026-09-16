@@ -120,7 +120,8 @@ jobs:
           import pathlib
           import re
 
-          dist = pathlib.Path('dist')
+          # Keep this aligned with vite.config.ts build.outDir.
+          dist = pathlib.Path('dist/client')
           required = [
               dist / 'index.html',
               dist / 'manifest.webmanifest',
