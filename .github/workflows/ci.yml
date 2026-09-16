@@ -114,3 +114,37 @@ jobs:
           PY
       - run: npm run check
       - run: npm run build
+      - name: Validate production PWA shell
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          dist = pathlib.Path('dist')
+          required = [
+              dist / 'index.html',
+              dist / 'manifest.webmanifest',
+              dist / 'sw.js',
+              dist / 'icon.svg',
+          ]
+          missing = [str(path) for path in required if not path.is_file()]
+          if missing:
+              raise SystemExit(f'Missing production PWA files: {missing}')
+
+          html = (dist / 'index.html').read_text(encoding='utf-8')
+          if '/manifest.webmanifest' not in html:
+              raise SystemExit('Production HTML is missing the web app manifest')
+
+          asset_paths = set(re.findall(r'(?:src|href)=["\'](/assets/[^"\']+)["\']', html))
+          if not asset_paths:
+              raise SystemExit('Production HTML has no hashed Vite asset references')
+          missing_assets = [path for path in asset_paths if not (dist / path.lstrip('/')).is_file()]
+          if missing_assets:
+              raise SystemExit(f'Production HTML references missing assets: {missing_assets}')
+
+          service_worker = (dist / 'sw.js').read_text(encoding='utf-8')
+          if "url.pathname.startsWith('/api/')" not in service_worker:
+              raise SystemExit('Service worker must never cache API responses')
+
+          print('Production PWA shell validated')
+          PY
