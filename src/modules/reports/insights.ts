@@ -27,17 +27,24 @@ type ReportInput = {
     scheduleStatus: 'confirmed' | 'pending';
     durationMinutes: number;
     travelMinutes: number;
+    studentIds?: string[];
+    priceBasis?: 'total_session' | 'per_student';
+    defaultPricePence?: number;
+    expectedStudentCount?: number;
   }>;
   occurrences: Array<{
+    id?: string;
     recurringSessionId: string;
     sessionDate: string;
     rescheduledToDate: string | null;
     status: 'scheduled' | 'completed' | 'cancelled' | 'missed';
+    grossPence?: number;
     earnedPence: number;
   }>;
   receipts: Array<{ receivedAt: string; amountPence: number }>;
   expenses: Array<{ expenseDate: string; amountPence: number }>;
   otherIncome: Array<{ incomeDate: string; amountPence: number }>;
+  billingPlans?: Array<{ studentId: string; billingMode: 'per_session' | 'package' }>;
   billingCycles: Array<{ id: string; status: 'open' | 'due' | 'paid' | 'cancelled'; pricePence: number }>;
   allocations: Array<{ targetId: string; amountPence: number }>;
 };
@@ -50,6 +57,33 @@ function addDays(iso: string, days: number): string {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + Number(value || 0), 0);
+}
+
+function currentDue(data: ReportInput): number {
+  let due = data.billingCycles.filter((cycle) => cycle.status === 'due').reduce((total, cycle) => {
+    const allocated = sum(data.allocations.filter((row) => row.targetId === cycle.id).map((row) => row.amountPence));
+    return total + Math.max(0, cycle.pricePence - allocated);
+  }, 0);
+
+  const planByStudent = new Map((data.billingPlans ?? []).map((plan) => [plan.studentId, plan.billingMode]));
+  const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
+  for (const occurrence of data.occurrences.filter((row) => row.status === 'completed' && row.id)) {
+    const session = sessionById.get(occurrence.recurringSessionId);
+    if (!session) continue;
+    const perSessionStudents = (session.studentIds ?? []).filter((studentId) => (planByStudent.get(studentId) ?? 'per_session') === 'per_session');
+    if (!perSessionStudents.length) continue;
+
+    let obligation = 0;
+    if (session.priceBasis === 'per_student') {
+      obligation = Math.max(0, Number(session.defaultPricePence || 0)) * perSessionStudents.length;
+    } else if (Number(session.expectedStudentCount ?? 1) === 1) {
+      obligation = Math.max(0, Number(occurrence.grossPence ?? occurrence.earnedPence ?? 0));
+    }
+    if (!obligation) continue;
+    const allocated = sum(data.allocations.filter((row) => row.targetId === occurrence.id).map((row) => row.amountPence));
+    due += Math.max(0, obligation - allocated);
+  }
+  return due;
 }
 
 export function buildWorkspaceReport(data: ReportInput, today = new Date().toISOString().slice(0, 10)): WorkspaceReport {
@@ -70,10 +104,7 @@ export function buildWorkspaceReport(data: ReportInput, today = new Date().toISO
     teachingMinutes += Math.max(0, Number(session.durationMinutes || 0));
     travelMinutes += Math.max(0, Number(session.travelMinutes || 0));
   }
-  const duePence = data.billingCycles.filter((cycle) => cycle.status === 'due').reduce((total, cycle) => {
-    const allocated = sum(data.allocations.filter((row) => row.targetId === cycle.id).map((row) => row.amountPence));
-    return total + Math.max(0, cycle.pricePence - allocated);
-  }, 0);
+  const duePence = currentDue(data);
   const netCashPence = receivedPence + otherIncomePence - expensesPence;
   const productivePence = sum(completed.map((row) => row.earnedPence));
   const realMinutes = teachingMinutes + travelMinutes;
@@ -81,11 +112,11 @@ export function buildWorkspaceReport(data: ReportInput, today = new Date().toISO
   const pendingSchedules = data.sessions.filter((row) => row.scheduleStatus === 'pending').length;
 
   const insights: ReportInsight[] = [];
-  if (duePence > 0) insights.push({ key: 'due', level: 'attention', title: 'فيه تحصيل محتاج متابعة', detail: `${duePence} قرش ما زالت مستحقة على باقات مكتملة.` });
+  if (duePence > 0) insights.push({ key: 'due', level: 'attention', title: 'فيه تحصيل محتاج متابعة', detail: `${duePence} قرش ما زالت مستحقة على حصص أو باقات مكتملة.` });
   if (pendingSchedules > 0) insights.push({ key: 'pending', level: 'attention', title: 'مواعيد لسه غير محددة', detail: `${pendingSchedules} موعد محتاج يوم أو ساعة.` });
   if (cancelled.length >= Math.max(3, Math.ceil(completed.length * 0.25))) insights.push({ key: 'cancelled', level: 'attention', title: 'الإلغاءات مرتفعة نسبيًا', detail: `${cancelled.length} حصة ألغيت أو فاتت خلال آخر 28 يومًا.` });
   if (travelMinutes > teachingMinutes && completed.length > 0) insights.push({ key: 'travel', level: 'attention', title: 'وقت الانتقال كبير', detail: 'وقت الانتقال خلال الفترة أكبر من وقت التدريس؛ راجعي تجميع المواعيد القريبة.' });
-  if (completed.length > 0 && duePence === 0 && pendingSchedules === 0) insights.push({ key: 'stable', level: 'good', title: 'الصورة مستقرة', detail: 'لا توجد باقات مكتملة غير مسددة ولا مواعيد معلقة حاليًا.' });
+  if (completed.length > 0 && duePence === 0 && pendingSchedules === 0) insights.push({ key: 'stable', level: 'good', title: 'الصورة مستقرة', detail: 'لا توجد مستحقات مكتملة غير مسددة ولا مواعيد معلقة حاليًا.' });
   if (!insights.length) insights.push({ key: 'start', level: 'info', title: 'التقرير جاهز', detail: 'كلما زادت الحصص والتحصيلات سيصبح التحليل أكثر فائدة.' });
 
   return {
