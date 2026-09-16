@@ -3,7 +3,7 @@ import {
   canChangeOpeningProgress,
   packageProgress,
   packageUnitShare,
-} from '../src/domain/billing';
+} from '../src/modules/tutoring/domain/billing';
 
 describe('package billing', () => {
   it('allocates every penny of a package exactly once', () => {
@@ -27,7 +27,6 @@ describe('package billing', () => {
       nextPosition: 6,
       due: false,
     });
-
     expect(packageProgress(8, 3, 5).due).toBe(true);
     expect(packageProgress(8, 3, 5).nextPosition).toBeNull();
   });
