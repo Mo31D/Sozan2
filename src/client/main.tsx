@@ -17,3 +17,11 @@ createRoot(root).render(
     <App />
   </StrictMode>,
 );
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {
+      // The application itself remains fully usable; PWA caching is best-effort.
+    });
+  });
+}
