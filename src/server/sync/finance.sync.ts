@@ -1,4 +1,16 @@
+import { z } from 'zod';
+import { FinanceCollectionService } from '../../modules/finance/allocation.service';
+import { D1FinanceGateway } from '../adapters/d1/finance.gateway';
+import { TutoringObligationProvider } from '../integrations/tutoring-obligations.provider';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
+
+const studentCollectionSchema = z.object({
+  studentId: z.string().uuid(),
+  amountPence: z.number().int().positive(),
+  receivedAt: z.string().min(10).max(40),
+  paymentMethod: z.enum(['cash', 'bank', 'wallet', 'other']).default('cash'),
+  note: z.string().trim().max(500).nullable().optional().default(null),
+});
 
 type ReceiptRow = {
   id: string;
@@ -50,7 +62,34 @@ type IncomeRow = {
 export const financeSyncHandler: ModuleSyncHandler = {
   moduleKey: 'finance',
 
-  async apply(_db: D1Database, _workspaceId: string, _mutation: SyncMutation): Promise<void> {
+  async apply(db: D1Database, workspaceId: string, mutation: SyncMutation): Promise<void> {
+    if (mutation.operation === 'student.collection.create') {
+      const parsed = studentCollectionSchema.parse(mutation.payload);
+      const studentExists = await db.prepare(
+        `SELECT 1 AS found FROM tutoring_students
+         WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL
+         LIMIT 1`,
+      ).bind(workspaceId, parsed.studentId).first<{ found: number }>();
+      if (!studentExists) throw new Error('STUDENT_NOT_FOUND');
+
+      const service = new FinanceCollectionService(
+        new D1FinanceGateway(db),
+        [new TutoringObligationProvider(db)],
+        crypto.randomUUID,
+      );
+      await service.collect({
+        receiptId: mutation.entityId,
+        workspaceId,
+        payer: { type: 'tutoring.student', id: parsed.studentId },
+        amountPence: parsed.amountPence,
+        receivedAt: parsed.receivedAt,
+        paymentMethod: parsed.paymentMethod,
+        sourceKind: 'manual',
+        note: parsed.note,
+      });
+      return;
+    }
+
     throw new Error('SYNC_OPERATION_UNSUPPORTED');
   },
 
