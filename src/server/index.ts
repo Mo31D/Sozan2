@@ -13,7 +13,7 @@ app.get('/api/health', (c) => {
   return c.json({
     ok: true,
     app: c.env.APP_NAME ?? 'Sozan2',
-    version: '0.4.0',
+    version: '1.0.0',
     architecture: 'modular-workspace-local-first',
     localModeAvailable: true,
     cloudDatabaseConfigured: Boolean(c.env.DB),
