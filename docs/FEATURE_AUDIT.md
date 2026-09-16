@@ -86,19 +86,24 @@ Old Sozan represents opening progress with hidden/shadow recurring sessions and 
 
 ## 5. Money model
 
-Old Sozan has two student-money paths: direct lesson payments and student receipts. Sozan2 should have one canonical incoming-money model.
+Old Sozan has two teaching-money paths: direct occurrence payments and student receipts. Sozan2 should have one canonical incoming-money model.
 
 ### Sozan2 rule
 
-All student money is a **receipt**.
+All teaching cash is a **receipt**.
 
-A “تمت واتدفعت” action may create a receipt automatically, but it is still the same receipt entity used by “قبضت فلوس”. This removes duplicate financial truth.
+- Normal “قبضت فلوس” receipts are linked to a student.
+- A lesson-level group payment may be linked directly to its occurrence when there is no individual student account.
+- A “تمت واتدفعت” action creates the same receipt entity automatically.
+
+This removes duplicate financial truth while preserving the old ability to record income for group lessons that are not attached to one named student.
 
 | Capability | Decision | Sozan2 target |
 |---|---|---|
-| Manual receipt by student | KEEP | `receipts` |
+| Manual receipt by student | KEEP | `receipts.student_id` |
+| Lesson/group payment without a named student | KEEP + REDESIGN | Receipt tied to `source_occurrence_id` |
 | Automatic allocation to oldest due items | KEEP | Allocation service |
-| Surplus becomes prepaid credit | KEEP | Unallocated receipt balance |
+| Surplus becomes prepaid credit | KEEP | Unallocated student receipt balance |
 | Edit receipt and reallocate deterministically | KEEP | Rebalance service |
 | Soft-delete / restore receipt | KEEP | Rebalance after mutation |
 | Per-session payment correction | KEEP + REDESIGN | Correct the underlying canonical receipt/allocation |
