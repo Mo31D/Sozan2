@@ -3,6 +3,7 @@ import { authRoutes } from './auth/routes';
 import type { Env } from './env';
 import { plannerRoutes } from './planner/routes';
 import { tutoringRoutes } from './tutoring/routes';
+import { workspaceRoutes } from './workspaces/routes';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -19,6 +20,7 @@ app.get('/api/health', (c) => {
 });
 
 app.route('/api/auth', authRoutes);
+app.route('/api/workspaces', workspaceRoutes);
 app.route('/api/tutoring', tutoringRoutes);
 app.route('/api/planner', plannerRoutes);
 
