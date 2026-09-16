@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'sozan2-local';
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 export const STORES = {
   coreUsers: 'core_users',
@@ -7,6 +7,7 @@ export const STORES = {
   coreWorkspaceMembers: 'core_workspace_members',
   coreWorkspaceModules: 'core_workspace_modules',
   coreWorkspaceLabels: 'core_workspace_labels',
+  coreWorkspaceSettings: 'core_workspace_settings',
   coreSurfaceLayouts: 'core_surface_layouts',
   coreCloudLinks: 'core_cloud_links',
   coreActivityEvents: 'core_activity_events',
@@ -62,6 +63,9 @@ export function openLocalDatabase(): Promise<IDBDatabase> {
         { name: 'workspaceId', keyPath: 'workspaceId' },
       ]);
       ensureStore(db, STORES.coreWorkspaceLabels, { keyPath: ['workspaceId', 'labelKey'] }, [
+        { name: 'workspaceId', keyPath: 'workspaceId' },
+      ]);
+      ensureStore(db, STORES.coreWorkspaceSettings, { keyPath: ['workspaceId', 'key'] }, [
         { name: 'workspaceId', keyPath: 'workspaceId' },
       ]);
       ensureStore(db, STORES.coreSurfaceLayouts, { keyPath: ['workspaceId', 'userId', 'surfaceKey'] }, [
