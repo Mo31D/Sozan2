@@ -7,6 +7,7 @@ import {
   type LocalPlatformSnapshot,
 } from './adapters/indexeddb/platform.repository';
 import { CloudLinkPanel, ExistingAccountLogin } from './cloud/CloudAccess';
+import { TutoringSurface } from './tutoring/TutoringSurface';
 import { BUILTIN_MODULES } from '../platform/modules/catalog';
 import { composeSurface } from '../platform/surfaces/layout';
 
@@ -20,9 +21,12 @@ type LocalState =
   | { status: 'ready'; snapshot: LocalPlatformSnapshot | null }
   | { status: 'error'; message: string };
 
+type SurfaceKey = 'me' | 'tutoring';
+
 export function App() {
   const [local, setLocal] = useState<LocalState>({ status: 'loading' });
   const [cloud, setCloud] = useState<CloudState>({ status: 'checking' });
+  const [surface, setSurface] = useState<SurfaceKey>('me');
 
   useEffect(() => {
     let active = true;
@@ -53,14 +57,10 @@ export function App() {
     };
   }, []);
 
-  if (local.status === 'loading') {
-    return <CenteredMessage text="جاري فتح النسخة المحلية…" />;
-  }
-
+  if (local.status === 'loading') return <CenteredMessage text="جاري فتح النسخة المحلية…" />;
   if (local.status === 'error') {
     return <CenteredMessage text={`تعذر تشغيل التخزين المحلي: ${local.message}`} bad />;
   }
-
   if (!local.snapshot) {
     return (
       <LocalSetup
@@ -75,12 +75,57 @@ export function App() {
     setLocal({ status: 'ready', snapshot });
   };
 
+  const tutoringEnabled = local.snapshot.modules.some(
+    (item) => item.moduleKey === 'tutoring' && item.enabled,
+  );
+  const visibleSurface = surface === 'tutoring' && tutoringEnabled ? 'tutoring' : 'me';
+
   return (
-    <MeSurface
-      snapshot={local.snapshot}
-      cloud={cloud}
-      onChanged={reloadLocal}
-    />
+    <main className="app-shell" dir="rtl">
+      <div className="workspace-shell">
+        <header className="workspace-header app-header">
+          <div>
+            <p className="eyebrow">{visibleSurface === 'me' ? 'أنا' : 'Tutoring'}</p>
+            <h1>{visibleSurface === 'me' ? local.snapshot.user.displayName : local.snapshot.workspace.name}</h1>
+            <p className="workspace-name">{local.snapshot.workspace.name}</p>
+          </div>
+          <CloudBadge cloud={cloud} compact />
+        </header>
+
+        {visibleSurface === 'me' ? (
+          <MeSurface
+            snapshot={local.snapshot}
+            cloud={cloud}
+            onChanged={reloadLocal}
+          />
+        ) : (
+          <TutoringSurface
+            workspaceId={local.snapshot.workspace.id}
+            currencyLabel={local.snapshot.workspace.currencyLabel}
+            cloudLinked={Boolean(local.snapshot.cloudLink)}
+          />
+        )}
+      </div>
+
+      <nav className="bottom-nav" aria-label="التنقل الرئيسي">
+        {tutoringEnabled && (
+          <button
+            type="button"
+            className={visibleSurface === 'tutoring' ? 'active' : ''}
+            onClick={() => setSurface('tutoring')}
+          >
+            <span>التدريس</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className={visibleSurface === 'me' ? 'active' : ''}
+          onClick={() => setSurface('me')}
+        >
+          <span>أنا</span>
+        </button>
+      </nav>
+    </main>
   );
 }
 
@@ -192,16 +237,7 @@ function MeSurface({
   };
 
   return (
-    <main className="workspace-shell" dir="rtl">
-      <header className="workspace-header">
-        <div>
-          <p className="eyebrow">أنا</p>
-          <h1>{snapshot.user.displayName}</h1>
-          <p className="workspace-name">{snapshot.workspace.name}</p>
-        </div>
-        <CloudBadge cloud={cloud} compact />
-      </header>
-
+    <section className="me-surface">
       <section className="panel identity-panel">
         <div>
           <span className="panel-label">وضع التخزين الحالي</span>
@@ -288,7 +324,7 @@ function MeSurface({
           )}
         </div>
       </section>
-    </main>
+    </section>
   );
 }
 
