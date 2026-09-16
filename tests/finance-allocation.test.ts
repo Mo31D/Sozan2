@@ -74,7 +74,7 @@ describe('FinanceCollectionService', () => {
           }];
         },
       }],
-      crypto.randomUUID,
+      () => crypto.randomUUID(),
     );
 
     const result = await service.collect({
