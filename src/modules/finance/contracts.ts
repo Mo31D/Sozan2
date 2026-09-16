@@ -32,6 +32,7 @@ export type AllocateReceiptCommand = {
 export interface FinanceGateway {
   recordReceipt(command: RecordReceiptCommand): Promise<void>;
   allocateReceipt(command: AllocateReceiptCommand): Promise<void>;
+  getAllocatedTotal(workspaceId: string, target: ExternalReference): Promise<number>;
 }
 
 export function assertReceiptCommand(command: RecordReceiptCommand): void {
