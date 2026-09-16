@@ -271,7 +271,7 @@ function ReportView({ data, currency }: { data: SimpleWorkspaceData; currency: s
   return <div className="report-view"><div className="profile-metrics report-metrics"><div><span>حصص مكتملة</span><strong>{report.completedLessons}</strong></div><div><span>صافي الحركة</span><strong>{money(report.netCashPence, currency)}</strong></div><div><span>مطلوب تحصيله</span><strong>{money(report.duePence, currency)}</strong></div></div><article className="control-card"><small>آخر 28 يومًا</small><div className="report-grid"><p><span>المقبوض</span><b>{money(report.receivedPence, currency)}</b></p><p><span>دخل آخر</span><b>{money(report.otherIncomePence, currency)}</b></p><p><span>المصروفات</span><b>{money(report.expensesPence, currency)}</b></p><p><span>الإلغاءات/الفائت</span><b>{report.cancelledLessons}</b></p><p><span>وقت التدريس</span><b>{report.teachingMinutes} د</b></p><p><span>وقت الانتقال</span><b>{report.travelMinutes} د</b></p><p><span>العائد الحقيقي/ساعة</span><b>{money(report.effectiveHourlyPence, currency)}</b></p></div></article><div className="control-list">{report.insights.map((insight) => <article className={`report-insight ${insight.level}`} key={insight.key}><strong>{insight.title}</strong><p>{insight.detail}</p></article>)}</div></div>;
 }
 
-function EditableMoneyCard({ title, subtitle, amount, currency, deleted, editing, busy, onEdit, onDelete, onRestore, editForm }: { title: string; subtitle: string; amount: number; currency: string; deleted: boolean; editing: boolean; busy: boolean; onEdit: () => void; onDelete: () => Promise<boolean>; onRestore: () => Promise<boolean>; editForm: React.ReactNode }) {
+function EditableMoneyCard({ title, subtitle, amount, currency, deleted, editing, busy, onEdit, onDelete, onRestore, editForm }: { title: string; subtitle: string; amount: number; currency: string | undefined; deleted: boolean; editing: boolean; busy: boolean; onEdit: () => void; onDelete: () => Promise<boolean>; onRestore: () => Promise<boolean>; editForm: React.ReactNode }) {
   return <article className={`control-card ${deleted ? 'deleted' : ''}`}><div className="control-card-head"><div><strong>{title}</strong><small>{subtitle}</small></div><div className="money-stack"><b>{money(amount, currency)}</b>{deleted && <span className="deleted-badge">محذوف</span>}</div></div>{!deleted ? <div className="row-actions"><button type="button" onClick={onEdit}>تعديل</button><button className="danger" type="button" disabled={busy} onClick={() => { if (confirm('حذف هذا المدخل؟')) void onDelete(); }}>حذف</button></div> : <div className="row-actions"><button type="button" disabled={busy} onClick={() => void onRestore()}>استرجاع</button></div>}{editing && !deleted && editForm}</article>;
 }
 
@@ -329,9 +329,9 @@ function toPenceSigned(value: FormDataEntryValue | null): number {
   return Math.round(number * 100);
 }
 
-function money(pence: number, label: string): string {
+function money(pence: number, label: string | undefined): string {
   const sign = pence < 0 ? '−' : '';
-  return `${sign}${(Math.abs(pence) / 100).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ${label}`;
+  return `${sign}${(Math.abs(pence) / 100).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ${label ?? 'ج'}`;
 }
 
 function sum(values: number[]): number { return values.reduce((total, value) => total + Number(value || 0), 0); }
