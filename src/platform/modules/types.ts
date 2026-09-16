@@ -19,19 +19,17 @@ export type ModuleDefinition = {
   version: number;
   title: string;
   description: string;
-  dependencies: ModuleKey[];
+  dependencies: readonly ModuleKey[];
   defaultEnabled: boolean;
-  nav: ModuleNavItem[];
-  widgets: ModuleWidget[];
-  labels: Record<string, string>;
+  nav: readonly ModuleNavItem[];
+  widgets: readonly ModuleWidget[];
+  labels: Readonly<Record<string, string>>;
 };
 
 export function validateModuleGraph(modules: readonly ModuleDefinition[]): void {
   const byKey = new Map(modules.map((module) => [module.key, module]));
 
-  if (byKey.size !== modules.length) {
-    throw new Error('Duplicate module key');
-  }
+  if (byKey.size !== modules.length) throw new Error('Duplicate module key');
 
   for (const module of modules) {
     for (const dependency of module.dependencies) {
