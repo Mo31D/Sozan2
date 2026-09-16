@@ -11,6 +11,7 @@ import {
 } from './security';
 
 const LOGIN_RE = /^[\p{L}\p{N}._-]{3,64}$/u;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 
@@ -30,10 +31,18 @@ function sessionExpiry(): string {
   return new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
 }
 
+function canonicalId(candidate?: string): string {
+  if (!candidate) return crypto.randomUUID();
+  if (!UUID_RE.test(candidate)) throw new AuthError('CLIENT_ID_INVALID');
+  return candidate.toLowerCase();
+}
+
 export class AuthService {
   constructor(private readonly repository: AuthRepository) {}
 
   async register(input: {
+    userId?: string;
+    workspaceId?: string;
     loginName: string;
     password: string;
     displayName: string;
@@ -54,8 +63,8 @@ export class AuthService {
       throw new AuthError('LOGIN_NAME_TAKEN');
     }
 
-    const userId = crypto.randomUUID();
-    const workspaceId = crypto.randomUUID();
+    const userId = canonicalId(input.userId);
+    const workspaceId = canonicalId(input.workspaceId);
     const password = await createPasswordHash(input.password);
     const recovery = await createRecoveryCode();
 
