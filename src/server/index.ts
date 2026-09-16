@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
+import { authRoutes } from './auth/routes';
 import type { Env } from './env';
+import { plannerRoutes } from './planner/routes';
+import { tutoringRoutes } from './tutoring/routes';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -7,12 +10,17 @@ app.get('/api/health', (c) => {
   return c.json({
     ok: true,
     app: c.env.APP_NAME ?? 'Sozan2',
-    version: '0.2.0',
+    version: '0.3.0',
     architecture: 'modular-workspace-local-first',
     localModeAvailable: true,
     cloudDatabaseConfigured: Boolean(c.env.DB),
+    cloudAccountsAvailable: Boolean(c.env.DB),
   });
 });
+
+app.route('/api/auth', authRoutes);
+app.route('/api/tutoring', tutoringRoutes);
+app.route('/api/planner', plannerRoutes);
 
 app.notFound((c) => {
   if (c.req.path.startsWith('/api/')) {
