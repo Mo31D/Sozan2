@@ -1,10 +1,21 @@
+import { z } from 'zod';
 import { createRecurringSessionSchema, updateRecurringScheduleSchema } from '../../modules/tutoring/domain/session';
 import { createStudentSchema } from '../../modules/tutoring/domain/student';
 import { BillingService } from '../../modules/tutoring/services/billing.service';
+import { OccurrencesService } from '../../modules/tutoring/services/occurrences.service';
 import { D1BillingRepository } from '../adapters/d1/tutoring-billing.repository';
+import { D1OccurrenceRepository } from '../adapters/d1/tutoring-occurrences.repository';
 import { D1SessionRepository } from '../adapters/d1/tutoring-sessions.repository';
 import { D1StudentRepository } from '../adapters/d1/tutoring-students.repository';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
+
+const completeOccurrenceMutationSchema = z.object({
+  recurringSessionId: z.string().uuid(),
+  sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+  scheduledStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable(),
+  completedAt: z.string().min(10).max(50),
+  note: z.string().trim().max(500).nullable().optional().default(null),
+});
 
 type OccurrenceRow = {
   id: string;
@@ -103,6 +114,44 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
       if (!student) throw new Error('STUDENT_NOT_FOUND');
       const service = new BillingService(new D1BillingRepository(db), crypto.randomUUID);
       await service.configure(workspaceId, mutation.entityId, mutation.payload);
+      return;
+    }
+
+    if (mutation.operation === 'occurrence.complete') {
+      const parsed = completeOccurrenceMutationSchema.parse(mutation.payload);
+      const session = await db.prepare(
+        `SELECT 1 AS found FROM tutoring_recurring_sessions
+         WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL LIMIT 1`,
+      ).bind(workspaceId, parsed.recurringSessionId).first<{ found: number }>();
+      if (!session) throw new Error('SESSION_NOT_FOUND');
+
+      const occurrences = new D1OccurrenceRepository(db);
+      const existing = await db.prepare(
+        `SELECT id FROM tutoring_occurrences
+         WHERE workspace_id=?1 AND recurring_session_id=?2 AND session_date=?3 LIMIT 1`,
+      ).bind(workspaceId, parsed.recurringSessionId, parsed.sessionDate).first<{ id: string }>();
+      const occurrenceId = existing?.id ?? mutation.entityId;
+      if (!existing) {
+        await occurrences.insertScheduled([{
+          id: occurrenceId,
+          workspaceId,
+          recurringSessionId: parsed.recurringSessionId,
+          sessionDate: parsed.sessionDate,
+          scheduledStart: parsed.scheduledStart,
+        }]);
+      }
+
+      const billing = new BillingService(new D1BillingRepository(db), crypto.randomUUID);
+      const service = new OccurrencesService(
+        occurrences,
+        new D1SessionRepository(db),
+        billing,
+        crypto.randomUUID,
+      );
+      await service.complete(workspaceId, occurrenceId, {
+        completedAt: parsed.completedAt,
+        note: parsed.note,
+      });
       return;
     }
 
