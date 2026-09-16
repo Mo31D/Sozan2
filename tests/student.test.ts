@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createStudentSchema } from '../src/domain/student';
+import { createStudentSchema } from '../src/modules/tutoring/domain/student';
 
 describe('createStudentSchema', () => {
   it('normalises optional blank fields to null', () => {
@@ -12,6 +12,7 @@ describe('createStudentSchema', () => {
     expect(student.name).toBe('مريم');
     expect(student.guardianName).toBeNull();
     expect(student.guardianPhone).toBeNull();
+    expect(student.age).toBeNull();
   });
 
   it('requires a student name', () => {
