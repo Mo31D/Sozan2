@@ -1,3 +1,4 @@
+import { canChangeOpeningProgress } from '../../modules/tutoring/domain/billing';
 import { configureBillingSchema, type ConfigureBillingInput } from '../../modules/tutoring/domain/billing-plan';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
@@ -89,8 +90,25 @@ export async function configureLocalStudentBilling(
   ]);
   const existingPlan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId);
   const studentCycles = cycles.filter((row) => row.workspaceId === workspaceId && row.studentId === studentId);
+  const currentCycle = studentCycles
+    .filter((row) => row.status !== 'cancelled')
+    .sort((a, b) => b.sequenceNo - a.sequenceNo)[0] ?? null;
+
   if (existingPlan && studentCycles.length && existingPlan.billingMode !== parsed.billingMode) {
     throw new Error('BILLING_MODE_LOCKED_BY_HISTORY');
+  }
+
+  if (parsed.billingMode === 'package' && currentCycle) {
+    if (parsed.openingCompletedCount > currentCycle.sessionLimit) {
+      throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
+    }
+    if (!canChangeOpeningProgress(
+      currentCycle.openingCompletedCount,
+      parsed.openingCompletedCount,
+      currentCycle.realCompletedCount,
+    )) {
+      throw new Error('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+    }
   }
 
   const plan: LocalBillingPlan = parsed.billingMode === 'package'
@@ -114,6 +132,23 @@ export async function configureLocalStudentBilling(
         cycleAnchorDate: null,
         effectiveFrom: parsed.effectiveFrom,
       };
+
+  const correctedCycle = parsed.billingMode === 'package'
+    && currentCycle
+    && currentCycle.openingCompletedCount !== parsed.openingCompletedCount
+    ? {
+        ...currentCycle,
+        openingCompletedCount: parsed.openingCompletedCount,
+        status: parsed.openingCompletedCount + currentCycle.realCompletedCount === currentCycle.sessionLimit
+          ? 'due' as const
+          : 'open' as const,
+        completedOn: parsed.openingCompletedCount + currentCycle.realCompletedCount === currentCycle.sessionLimit
+          ? (currentCycle.completedOn ?? parsed.effectiveFrom)
+          : null,
+        paidOn: null,
+      }
+    : null;
+
   const activity = makeActivityEvent({
     workspaceId,
     moduleKey: 'tutoring',
@@ -125,6 +160,19 @@ export async function configureLocalStudentBilling(
     after: plan,
     undoable: false,
   });
+  const progressActivity = correctedCycle && currentCycle
+    ? makeActivityEvent({
+        workspaceId,
+        moduleKey: 'tutoring',
+        entityType: 'billing_cycle',
+        entityId: currentCycle.id,
+        action: 'billing.opening_progress_corrected',
+        title: `تم تصحيح تقدم الباقة إلى ${correctedCycle.openingCompletedCount}/${correctedCycle.sessionLimit}`,
+        before: { openingCompletedCount: currentCycle.openingCompletedCount },
+        after: { openingCompletedCount: correctedCycle.openingCompletedCount },
+        undoable: false,
+      })
+    : null;
 
   const transaction = db.transaction(
     [STORES.tutoringBillingPlans, STORES.tutoringBillingCycles, STORES.coreActivityEvents, STORES.syncOutbox],
@@ -148,6 +196,8 @@ export async function configureLocalStudentBilling(
       completedOn: due ? parsed.effectiveFrom : null,
       paidOn: null,
     } satisfies LocalBillingCycle);
+  } else if (correctedCycle) {
+    transaction.objectStore(STORES.tutoringBillingCycles).put(correctedCycle);
   }
 
   transaction.objectStore(STORES.coreActivityEvents).add(activity);
@@ -160,6 +210,10 @@ export async function configureLocalStudentBilling(
     payload: parsed,
   }));
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
+  if (progressActivity) {
+    transaction.objectStore(STORES.coreActivityEvents).add(progressActivity);
+    transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(progressActivity));
+  }
   await transactionDone(transaction);
   await rebalanceStudentLocally(workspaceId, studentId);
 }
