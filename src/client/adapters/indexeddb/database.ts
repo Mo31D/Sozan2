@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'sozan2-local';
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 6;
 
 export const STORES = {
   coreUsers: 'core_users',
@@ -7,18 +7,22 @@ export const STORES = {
   coreWorkspaceMembers: 'core_workspace_members',
   coreWorkspaceModules: 'core_workspace_modules',
   coreWorkspaceLabels: 'core_workspace_labels',
+  coreWorkspaceSettings: 'core_workspace_settings',
   coreSurfaceLayouts: 'core_surface_layouts',
   coreCloudLinks: 'core_cloud_links',
+  coreActivityEvents: 'core_activity_events',
   syncOutbox: 'sync_outbox',
   tutoringStudents: 'tutoring_students',
   tutoringSessions: 'tutoring_sessions',
   tutoringOccurrences: 'tutoring_occurrences',
   tutoringBillingPlans: 'tutoring_billing_plans',
   tutoringBillingCycles: 'tutoring_billing_cycles',
+  tutoringBillingCycleOccurrences: 'tutoring_billing_cycle_occurrences',
   financeReceipts: 'finance_receipts',
   financeAllocations: 'finance_allocations',
   financeExpenses: 'finance_expenses',
   financeOtherIncome: 'finance_other_income',
+  financeCashChecks: 'finance_cash_checks',
 } as const;
 
 let databasePromise: Promise<IDBDatabase> | null = null;
@@ -61,11 +65,18 @@ export function openLocalDatabase(): Promise<IDBDatabase> {
       ensureStore(db, STORES.coreWorkspaceLabels, { keyPath: ['workspaceId', 'labelKey'] }, [
         { name: 'workspaceId', keyPath: 'workspaceId' },
       ]);
+      ensureStore(db, STORES.coreWorkspaceSettings, { keyPath: ['workspaceId', 'key'] }, [
+        { name: 'workspaceId', keyPath: 'workspaceId' },
+      ]);
       ensureStore(db, STORES.coreSurfaceLayouts, { keyPath: ['workspaceId', 'userId', 'surfaceKey'] }, [
         { name: 'workspaceId', keyPath: 'workspaceId' },
       ]);
       ensureStore(db, STORES.coreCloudLinks, { keyPath: 'workspaceId' }, [
         { name: 'userId', keyPath: 'userId' },
+      ]);
+      ensureStore(db, STORES.coreActivityEvents, { keyPath: 'id' }, [
+        { name: 'workspaceId', keyPath: 'workspaceId' },
+        { name: 'workspaceCreatedAt', keyPath: ['workspaceId', 'createdAt'] },
       ]);
       ensureStore(db, STORES.syncOutbox, { keyPath: 'id' }, [
         { name: 'workspaceId', keyPath: 'workspaceId' },
@@ -79,10 +90,12 @@ export function openLocalDatabase(): Promise<IDBDatabase> {
         STORES.tutoringOccurrences,
         STORES.tutoringBillingPlans,
         STORES.tutoringBillingCycles,
+        STORES.tutoringBillingCycleOccurrences,
         STORES.financeReceipts,
         STORES.financeAllocations,
         STORES.financeExpenses,
         STORES.financeOtherIncome,
+        STORES.financeCashChecks,
       ]) {
         ensureStore(db, storeName, { keyPath: 'id' }, [
           { name: 'workspaceId', keyPath: 'workspaceId' },

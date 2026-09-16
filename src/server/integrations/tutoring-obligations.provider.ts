@@ -16,7 +16,7 @@ export class TutoringObligationProvider implements ObligationProvider {
     const packageCycles = await this.db.prepare(
       `SELECT id, COALESCE(completed_on, started_on, created_at) AS due_at, price_pence
        FROM tutoring_billing_cycles
-       WHERE workspace_id = ?1 AND student_id = ?2 AND status = 'due'
+       WHERE workspace_id = ?1 AND student_id = ?2 AND status IN ('due','paid')
        ORDER BY sequence_no`,
     ).bind(workspaceId, payer.id).all<{
       id: string;

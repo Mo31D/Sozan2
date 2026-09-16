@@ -17,7 +17,10 @@ export const createStudentSchema = z.object({
   notes: optionalText(500),
 });
 
+export const updateStudentSchema = createStudentSchema;
+
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
+export type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
 
 export type Student = {
   id: string;

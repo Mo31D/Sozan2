@@ -36,12 +36,18 @@ type SnapshotResponse = {
   modules: ModuleSnapshot[];
 };
 
+type CoreSnapshot = {
+  activityEvents: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
+  workspaceSettings?: Array<Record<string, unknown> & { workspaceId: string; key: string; value: string }>;
+};
+
 type TutoringSnapshot = {
   students: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   sessions: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   occurrences: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   billingPlans: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   billingCycles: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
+  billingCycleOccurrences?: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
 };
 
 type FinanceSnapshot = {
@@ -49,6 +55,7 @@ type FinanceSnapshot = {
   allocations: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   expenses: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   otherIncome: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
+  cashChecks?: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
 };
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -133,46 +140,61 @@ async function seedInitialLocalState(workspaceId: string): Promise<void> {
 async function replaceWorkspaceRows(
   store: IDBObjectStore,
   workspaceId: string,
-  rows: Array<Record<string, unknown> & { id: string; workspaceId: string }>,
+  rows: Array<Record<string, unknown> & { workspaceId: string }>,
 ): Promise<void> {
-  const existing = await requestResult<Array<Record<string, unknown> & { id: string; workspaceId: string }>>(
+  const existing = await requestResult<Array<Record<string, unknown> & { workspaceId: string }>>(
     store.getAll(),
   );
   for (const row of existing) {
-    if (row.workspaceId === workspaceId) store.delete(row.id);
+    if (row.workspaceId === workspaceId) {
+      const key = store.keyPath;
+      if (Array.isArray(key)) store.delete(key.map((part) => row[String(part)] as IDBValidKey));
+      else if (typeof key === 'string') store.delete(row[key] as IDBValidKey);
+    }
   }
   for (const row of rows) store.put(row);
 }
 
 async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
+  const core = snapshot.modules.find((item) => item.moduleKey === 'core')?.data as CoreSnapshot | undefined;
   const tutoring = snapshot.modules.find((item) => item.moduleKey === 'tutoring')?.data as TutoringSnapshot | undefined;
   const finance = snapshot.modules.find((item) => item.moduleKey === 'finance')?.data as FinanceSnapshot | undefined;
   const stores = [
+    STORES.coreActivityEvents,
+    STORES.coreWorkspaceSettings,
     STORES.tutoringStudents,
     STORES.tutoringSessions,
     STORES.tutoringOccurrences,
     STORES.tutoringBillingPlans,
     STORES.tutoringBillingCycles,
+    STORES.tutoringBillingCycleOccurrences,
     STORES.financeReceipts,
     STORES.financeAllocations,
     STORES.financeExpenses,
     STORES.financeOtherIncome,
+    STORES.financeCashChecks,
   ];
   const db = await openLocalDatabase();
   const transaction = db.transaction(stores, 'readwrite');
 
+  if (core) {
+    await replaceWorkspaceRows(transaction.objectStore(STORES.coreActivityEvents), snapshot.workspaceId, core.activityEvents);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.coreWorkspaceSettings), snapshot.workspaceId, core.workspaceSettings ?? []);
+  }
   if (tutoring) {
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringStudents), snapshot.workspaceId, tutoring.students);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringSessions), snapshot.workspaceId, tutoring.sessions);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringOccurrences), snapshot.workspaceId, tutoring.occurrences);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingPlans), snapshot.workspaceId, tutoring.billingPlans);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingCycles), snapshot.workspaceId, tutoring.billingCycles);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingCycleOccurrences), snapshot.workspaceId, tutoring.billingCycleOccurrences ?? []);
   }
   if (finance) {
     await replaceWorkspaceRows(transaction.objectStore(STORES.financeReceipts), snapshot.workspaceId, finance.receipts);
     await replaceWorkspaceRows(transaction.objectStore(STORES.financeAllocations), snapshot.workspaceId, finance.allocations);
     await replaceWorkspaceRows(transaction.objectStore(STORES.financeExpenses), snapshot.workspaceId, finance.expenses);
     await replaceWorkspaceRows(transaction.objectStore(STORES.financeOtherIncome), snapshot.workspaceId, finance.otherIncome);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.financeCashChecks), snapshot.workspaceId, finance.cashChecks ?? []);
   }
   await transactionDone(transaction);
 }

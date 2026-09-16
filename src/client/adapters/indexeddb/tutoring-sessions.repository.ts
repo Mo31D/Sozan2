@@ -3,6 +3,7 @@ import type {
   NewRecurringSession,
   SessionRepository,
 } from '../../../modules/tutoring/ports/session-repository';
+import { activitySyncMutation, makeActivityEvent } from '../../activity/local-activity';
 import { newSyncOutboxRecord } from '../../sync/outbox';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from './database';
 
@@ -41,13 +42,23 @@ export class IndexedDbSessionRepository implements SessionRepository {
       active: true,
       studentIds: input.studentIds,
     };
+    const activity = makeActivityEvent({
+      workspaceId: input.workspaceId,
+      moduleKey: 'tutoring',
+      entityType: 'session',
+      entityId: input.id,
+      action: 'session.created',
+      title: `تمت إضافة موعد ${input.title}`,
+      after: session,
+    });
 
     const db = await openLocalDatabase();
     const transaction = db.transaction(
-      [STORES.tutoringSessions, STORES.syncOutbox],
+      [STORES.tutoringSessions, STORES.coreActivityEvents, STORES.syncOutbox],
       'readwrite',
     );
     transaction.objectStore(STORES.tutoringSessions).add(session);
+    transaction.objectStore(STORES.coreActivityEvents).add(activity);
     transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
       workspaceId: input.workspaceId,
       moduleKey: 'tutoring',
@@ -70,6 +81,7 @@ export class IndexedDbSessionRepository implements SessionRepository {
         studentIds: input.studentIds,
       },
     }));
+    transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
     await transactionDone(transaction);
     return session;
   }
@@ -83,7 +95,7 @@ export class IndexedDbSessionRepository implements SessionRepository {
   }): Promise<RecurringSession> {
     const db = await openLocalDatabase();
     const transaction = db.transaction(
-      [STORES.tutoringSessions, STORES.syncOutbox],
+      [STORES.tutoringSessions, STORES.coreActivityEvents, STORES.syncOutbox],
       'readwrite',
     );
     const store = transaction.objectStore(STORES.tutoringSessions);
@@ -96,7 +108,18 @@ export class IndexedDbSessionRepository implements SessionRepository {
       weekday: input.weekday,
       startTime: input.startTime,
     };
+    const activity = makeActivityEvent({
+      workspaceId: input.workspaceId,
+      moduleKey: 'tutoring',
+      entityType: 'session',
+      entityId: input.sessionId,
+      action: 'session.schedule.updated',
+      title: `تم تعديل موعد ${current.title}`,
+      before: current,
+      after: updated,
+    });
     store.put(updated);
+    transaction.objectStore(STORES.coreActivityEvents).add(activity);
     transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
       workspaceId: input.workspaceId,
       moduleKey: 'tutoring',
@@ -109,6 +132,7 @@ export class IndexedDbSessionRepository implements SessionRepository {
         startTime: input.startTime,
       },
     }));
+    transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
     await transactionDone(transaction);
     return updated;
   }
