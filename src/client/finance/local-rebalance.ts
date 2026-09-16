@@ -1,3 +1,7 @@
+import {
+  compareFinancialObligations,
+  type FinancialObligation,
+} from '../../modules/finance/allocation.service';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import type { LocalAllocation, LocalOccurrence } from '../simple/data';
@@ -32,21 +36,15 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
   const studentCycles = cycles
     .filter((row) => row.workspaceId === workspaceId && row.studentId === studentId && row.status !== 'cancelled');
 
-  const obligations: Array<{
-    targetType: 'package_cycle' | 'occurrence';
-    targetId: string;
-    dueAt: string;
-    amountPence: number;
-  }> = [];
+  const obligations: FinancialObligation[] = [];
 
   for (const cycle of studentCycles) {
     const complete = cycle.openingCompletedCount + cycle.realCompletedCount >= cycle.sessionLimit;
     if (!complete) continue;
     obligations.push({
-      targetType: 'package_cycle',
-      targetId: cycle.id,
+      target: { module: 'tutoring', type: 'package_cycle', id: cycle.id },
       dueAt: cycle.completedOn ?? cycle.startedOn ?? '9999-12-31',
-      amountPence: cycle.pricePence,
+      amountDuePence: cycle.pricePence,
     });
   }
 
@@ -58,14 +56,13 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
       const amountPence = session.priceBasis === 'per_student' ? session.defaultPricePence : occurrence.grossPence;
       if (amountPence <= 0) continue;
       obligations.push({
-        targetType: 'occurrence',
-        targetId: occurrence.id,
+        target: { module: 'tutoring', type: 'occurrence', id: occurrence.id },
         dueAt: occurrence.completedAt ?? occurrence.sessionDate,
-        amountPence,
+        amountDuePence: amountPence,
       });
     }
   }
-  obligations.sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.targetId.localeCompare(b.targetId));
+  obligations.sort(compareFinancialObligations);
 
   const generated: LocalAllocation[] = [];
   const allocatedByTarget = new Map<string, number>();
@@ -73,18 +70,18 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
     let remaining = receipt.amountPence;
     for (const obligation of obligations) {
       if (remaining <= 0) break;
-      const key = `${obligation.targetType}:${obligation.targetId}`;
+      const key = `${obligation.target.type}:${obligation.target.id}`;
       const already = allocatedByTarget.get(key) ?? 0;
-      const outstanding = Math.max(0, obligation.amountPence - already);
+      const outstanding = Math.max(0, obligation.amountDuePence - already);
       if (!outstanding) continue;
       const amountPence = Math.min(remaining, outstanding);
       generated.push({
         id: crypto.randomUUID(),
         workspaceId,
         receiptId: receipt.id,
-        targetModule: 'tutoring',
-        targetType: obligation.targetType,
-        targetId: obligation.targetId,
+        targetModule: obligation.target.module,
+        targetType: obligation.target.type,
+        targetId: obligation.target.id,
         amountPence,
       });
       allocatedByTarget.set(key, already + amountPence);
