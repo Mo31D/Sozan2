@@ -2,6 +2,7 @@ import { packageUnitShare } from '../../modules/tutoring/domain/billing';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
+import { rebalanceStudentLocally } from '../finance/local-rebalance';
 import { newSyncOutboxRecord } from '../sync/outbox';
 import type { LocalBillingCycle, LocalBillingPlan } from './local-commands';
 import type { LocalOccurrence } from '../simple/data';
@@ -179,4 +180,7 @@ export async function completeLocalSession(
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
 
   await transactionDone(transaction);
+  for (const studentId of session.studentIds) {
+    await rebalanceStudentLocally(workspaceId, studentId);
+  }
 }
