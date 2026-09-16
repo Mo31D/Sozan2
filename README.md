@@ -1,18 +1,105 @@
-# Sozan2
+# Sozan2 1.0
 
-A modular, local-first workspace platform rebuilt from the useful product behaviour of Sozan1.
+Sozan2 is the production rebuild of Sozan1: a **local-first tutoring workspace** with optional Cloudflare sync, multi-device accounts, auditable finance, package billing, planning, correction/history tools and deterministic reports.
 
-Tutoring is the first implemented template. It is **not** the platform core.
+The user-facing tutoring product is intentionally simple and Arabic-first. The reusable platform architecture remains hidden behind that interface.
+
+## Daily product
+
+The main navigation is deliberately small:
+
+- **اليوم** — today's lessons, quick collection/expense actions, current cash picture and package progress.
+- **فلوسي** — received, spent, due and collection status.
+- **جدولي** — week, month, free-time planning, pending schedules and recurring schedule editing.
+- **أنا** — students, packages, account/sync and Sozan1 migration.
+
+A unified **الإدارة والسجل** center provides correction and review without exposing technical architecture. It includes:
+
+- receipt edit / soft-delete / restore and duplicate-payment warnings;
+- expense edit / soft-delete / restore;
+- other-income create / edit / delete / restore;
+- cash reconciliation with editable history;
+- student profiles and student-data editing;
+- advanced recurring-session editing, group/student assignment, pricing basis, center cut, duration/travel and safe archival;
+- activity history and supported undo operations;
+- deterministic 28-day reports and attention signals.
+
+## Local-first + cloud
+
+```text
+User action
+   ↓
+IndexedDB — immediate/offline working copy
+   ↓
+sync outbox
+   ↓
+Cloudflare Worker
+   ↓
+D1 shared cloud copy
+```
+
+Local writes happen first. Sync is push-first and idempotent: if a pending mutation cannot be pushed, Sozan2 does not pull a cloud snapshot over that unsynced local change. Automatic sync runs when a linked workspace opens and when connectivity returns.
+
+The PWA shell is installable and cached separately from business data. `/api/*` is never cached by the service worker; canonical offline business state remains in IndexedDB.
+
+## Accounts and security
+
+Cloud accounts support:
+
+- username + password;
+- PBKDF2-SHA256 password hashing using the Cloudflare-compatible iteration limit;
+- secure HttpOnly session cookies;
+- server-side sessions and rate limiting;
+- recovery codes;
+- multiple devices and workspace authorization.
+
+No paid authentication provider or paid AI API is required.
+
+## Tutoring and billing
+
+Sozan2 supports:
+
+- students, guardians and groups;
+- confirmed or pending recurring schedules;
+- weekly/monthly planner and travel time;
+- one-off lesson rescheduling without rewriting the recurring timetable;
+- completed, cancelled, restored and reopened lesson states;
+- per-session or package billing;
+- native opening package progress for already-started packages;
+- group occurrences advancing the correct package for each linked student;
+- receipts, automatic oldest-obligation allocation and prepaid credit;
+- automatic reallocation after payment corrections or tutoring-state changes;
+- package `open / due / paid` state normalized both locally and in D1;
+- historical accounting protection: financial shape/student membership cannot be silently rewritten after historical lesson activity exists.
+
+Money is stored as integer pence and business records use application-generated TEXT IDs so offline records can later sync without ID collisions.
+
+## Migration from Sozan1
+
+Sozan1 remains a behavioural and migration source, not a runtime dependency.
+
+The supported migration path is:
+
+```text
+Sozan1 /api/v7/migration-export
+        ↓ JSON
+Sozan2 migration preview
+        ↓
+D1 import + reconciliation
+        ↓
+local sync
+```
+
+The migration converts legacy package-opening shadow records into native opening progress rather than importing fake lessons. Students, schedules, real occurrences, packages, receipts/payments, allocations, expenses, other income, cash checks, settings and activity history are mapped into the Sozan2 schema.
 
 ## Architecture
 
 ```text
 Core
-├── users / workspaces / members
-├── module registry
-├── terminology + layouts
-├── activity + idempotency
-└── persistence contracts
+├── identity / users / workspaces / members
+├── auth / activity / idempotency
+├── module registry + terminology
+└── persistence + sync contracts
 
 Modules
 ├── tutoring
@@ -21,135 +108,30 @@ Modules
 └── reports
 ```
 
-Each module owns its domain and persistence tables. Cross-module behaviour goes through contracts/events, not direct access to another module's private repositories.
+Modules own their domains and tables. Cross-module work is explicit through contracts/services rather than browser monkey patches or direct coupling.
 
-## Persistence modes
-
-### Local — free/offline
-
-```text
-PWA → IndexedDB
-```
-
-No D1 and no paid external API are required.
-
-### Cloud — optional
-
-```text
-PWA → internal Cloudflare Worker API → D1
-```
-
-Cloud mode enables shared workspaces and multi-device use. The internal API is not a paid third-party API dependency.
-
-## Workspace model
-
-The core is user-neutral:
-
-- `core_users`
-- `core_workspaces`
-- `core_workspace_members`
-- `core_workspace_modules`
-- terminology overrides
-- custom surface/widget layouts
-
-No core schema assumes the user is named Sozan.
-
-The `tutoring` template currently enables:
-
-```text
-tutoring + finance + planner + reports
-```
-
-Future templates such as appointments, small business and custom are reserved in the catalog but explicitly marked unimplemented until real modules are built.
-
-## Tutoring behaviour retained from Sozan1
-
-- students, guardians and groups;
-- confirmed/pending recurring schedules;
-- weekly planner and travel time;
-- one-off lesson rescheduling;
-- completed/cancelled/reopened lesson states;
-- per-session and package billing;
-- package progress including an already-started package;
-- receipts, automatic allocation and prepaid credit;
-- expenses and other income;
-- cash reconciliation;
-- activity/review signals;
-- reports and deterministic insights.
-
-Sozan1 is a behavioural reference only. Its runtime schema creation, V3–V7 compatibility wrappers, browser monkey patches, synthetic package sessions/dates and duplicate payment ledgers are not ported.
-
-## Repository pattern
-
-Business services depend on ports, not storage technology:
-
-```text
-StudentsService
-      ↓
-StudentRepository
-   ↙       ↘
-IndexedDB   D1
-```
-
-The tutoring student module contains both adapters as the reference pattern for subsequent modules.
-
-## Important data rules
-
-- money is integer pence;
-- entity IDs are application-generated TEXT IDs for offline/cloud compatibility;
-- all business data is scoped by `workspace_id`;
-- finance does not foreign-key directly into tutoring;
-- package opening progress is native data, never fake lessons;
-- pending schedules never generate occurrences;
-- completed historical work is not rewritten by future edits;
-- financial mutations must be idempotent and auditable.
+Sozan1's runtime schema creation, V3–V7 compatibility layers, synthetic package sessions and accumulated patch scripts are deliberately not carried into Sozan2.
 
 ## Stack
 
-- TypeScript
-- React + Vite
+- React 19 + TypeScript
+- Vite
 - Hono
-- IndexedDB for local mode
-- Cloudflare Workers + D1 for optional cloud mode
+- IndexedDB
+- Cloudflare Workers + D1
 - Zod
 - Vitest
+- PWA manifest + service worker
 
-## Checks
+## Quality gates
 
 ```bash
-npm install
 npm run check
 npm run build
 ```
 
-CI also executes `migrations/0001_core.sql` against SQLite before allowing the build to pass.
+CI additionally applies every SQL migration to SQLite with foreign keys enabled, validates required modular tables and core invariants, runs strict TypeScript checks and the Vitest suite, then performs the production Vite build.
 
-## Cloudflare shell
+## Version status
 
-The Worker/static shell has already been deployed successfully without D1.
-
-Build command:
-
-```bash
-npm run build
-```
-
-Deploy command:
-
-```bash
-npx wrangler deploy
-```
-
-## Current status
-
-**Foundation + product/platform/schema freeze complete.**
-
-The next step is to create a new D1 database named `sozan2-db`, bind it as `DB`, and apply the initial migration. Do not import Sozan1 production data yet.
-
-Read:
-
-- [`docs/MODULAR_PLATFORM.md`](docs/MODULAR_PLATFORM.md)
-- [`docs/FEATURE_AUDIT.md`](docs/FEATURE_AUDIT.md)
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/D1_INSTALL.md`](docs/D1_INSTALL.md)
-- [`docs/ROADMAP.md`](docs/ROADMAP.md)
+**Sozan2 1.0** is the first release intended to replace the old Sozan runtime after migration and live-device acceptance testing. The repository is still modular enough to support future templates, but only the tutoring template is implemented and should be presented as available today.
