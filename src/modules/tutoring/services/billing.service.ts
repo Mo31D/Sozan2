@@ -33,16 +33,22 @@ export class BillingService {
       throw new Error('BILLING_MODE_LOCKED_BY_HISTORY');
     }
 
-    if (parsed.billingMode === 'package' && current) {
-      if (parsed.openingCompletedCount > current.sessionLimit) {
+    if (parsed.billingMode === 'package') {
+      if (!current && parsed.openingCompletedCount > parsed.packageSize) {
         throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
       }
-      if (!canChangeOpeningProgress(
-        current.openingCompletedCount,
-        parsed.openingCompletedCount,
-        current.realCompletedCount,
-      )) {
-        throw new Error('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+      if (current) {
+        if (parsed.openingCompletedCount > current.sessionLimit) {
+          throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
+        }
+        if (!canChangeOpeningProgress(
+          current.openingCompletedCount,
+          parsed.openingCompletedCount,
+          current.realCompletedCount,
+          Boolean(current.openingProgressLockedAt),
+        )) {
+          throw new Error('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+        }
       }
     }
 
@@ -70,9 +76,6 @@ export class BillingService {
 
     if (parsed.billingMode === 'package') {
       if (!current) {
-        if (parsed.openingCompletedCount > parsed.packageSize) {
-          throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
-        }
         await this.repository.createCycle({
           id: this.idFactory(),
           workspaceId,
@@ -81,6 +84,7 @@ export class BillingService {
           sessionLimit: parsed.packageSize,
           pricePence: parsed.packagePricePence,
           openingCompletedCount: parsed.openingCompletedCount,
+          openingProgressLockedAt: null,
           status: parsed.openingCompletedCount === parsed.packageSize ? 'due' : 'open',
           startedOn: parsed.cycleAnchorDate ?? parsed.effectiveFrom,
           completedOn: parsed.openingCompletedCount === parsed.packageSize
@@ -127,6 +131,7 @@ export class BillingService {
         sessionLimit: plan.packageSize,
         pricePence: plan.packagePricePence,
         openingCompletedCount: 0,
+        openingProgressLockedAt: null,
         status: 'open',
         startedOn: occurredOn,
         completedOn: null,
