@@ -26,6 +26,16 @@ export type CollectCommand = Omit<RecordReceiptCommand, 'id'> & {
   receiptId?: string;
 };
 
+export function compareFinancialObligations(
+  left: Pick<FinancialObligation, 'dueAt' | 'target'>,
+  right: Pick<FinancialObligation, 'dueAt' | 'target'>,
+): number {
+  return left.dueAt.localeCompare(right.dueAt)
+    || left.target.module.localeCompare(right.target.module)
+    || left.target.type.localeCompare(right.target.type)
+    || left.target.id.localeCompare(right.target.id);
+}
+
 export class FinanceCollectionService {
   constructor(
     private readonly gateway: FinanceGateway,
@@ -54,7 +64,7 @@ export class FinanceCollectionService {
           provider.listOpenObligations(command.workspaceId, payer),
         ),
       )
-    ).flat().sort((left, right) => left.dueAt.localeCompare(right.dueAt));
+    ).flat().sort(compareFinancialObligations);
 
     let remaining = command.amountPence;
     const allocations: CollectionResult['allocations'] = [];
