@@ -12,16 +12,14 @@
   "vars": {
     "APP_NAME": "Sozan2"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sozan2-db",
+      "database_id": "44b32541-cab4-46b6-a58c-caf5c7fcbafe"
+    }
+  ],
   "observability": {
     "enabled": true
   }
-
-  // Add the new D1 database only after Cloudflare creates `sozan2-db`:
-  // "d1_databases": [
-  //   {
-  //     "binding": "DB",
-  //     "database_name": "sozan2-db",
-  //     "database_id": "<new-database-id>"
-  //   }
-  // ]
 }
