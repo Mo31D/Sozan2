@@ -27,13 +27,11 @@ export async function completeLocalSession(
     requestResult<LocalBillingCycle[]>(cycleStore.getAll()),
   ]);
 
+  const matching = occurrences.filter((row) => row.workspaceId === workspaceId && row.recurringSessionId === session.id);
   const existing = preferredOccurrenceId
-    ? occurrences.find((row) => row.workspaceId === workspaceId && row.id === preferredOccurrenceId && row.recurringSessionId === session.id)
-    : occurrences.find((row) =>
-      row.workspaceId === workspaceId
-      && row.recurringSessionId === session.id
-      && row.sessionDate === displayedDate,
-    );
+    ? matching.find((row) => row.id === preferredOccurrenceId)
+    : matching.find((row) => row.rescheduledToDate === displayedDate)
+      ?? matching.find((row) => row.sessionDate === displayedDate);
 
   if (existing?.status === 'completed') {
     await transactionDone(transaction);
