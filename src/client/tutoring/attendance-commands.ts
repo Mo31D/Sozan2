@@ -9,7 +9,8 @@ const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/u;
 export async function completeLocalSession(
   workspaceId: string,
   session: RecurringSession,
-  sessionDate: string,
+  displayedDate: string,
+  preferredOccurrenceId?: string,
 ): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(
@@ -26,16 +27,19 @@ export async function completeLocalSession(
     requestResult<LocalBillingCycle[]>(cycleStore.getAll()),
   ]);
 
-  const existing = occurrences.find((row) =>
-    row.workspaceId === workspaceId
-    && row.recurringSessionId === session.id
-    && row.sessionDate === sessionDate,
-  );
+  const matching = occurrences.filter((row) => row.workspaceId === workspaceId && row.recurringSessionId === session.id);
+  const existing = preferredOccurrenceId
+    ? matching.find((row) => row.id === preferredOccurrenceId)
+    : matching.find((row) => row.rescheduledToDate === displayedDate)
+      ?? matching.find((row) => row.sessionDate === displayedDate);
+
   if (existing?.status === 'completed') {
     await transactionDone(transaction);
     return;
   }
 
+  const originalSessionDate = existing?.sessionDate ?? displayedDate;
+  const effectiveDate = existing?.rescheduledToDate ?? displayedDate;
   const chargeableCount = Math.max(session.studentIds.length, session.expectedStudentCount, 1);
   const grossPence = session.priceBasis === 'per_student'
     ? session.defaultPricePence * chargeableCount
@@ -44,13 +48,16 @@ export async function completeLocalSession(
   const earnedPence = Math.max(0, grossPence - centerCutPence);
   const completedAt = new Date().toISOString();
   const occurrenceId = existing?.id ?? crypto.randomUUID();
-  const scheduledStart = session.startTime && CLOCK_TIME.test(session.startTime) ? session.startTime : null;
+  const fallbackStart = session.startTime && CLOCK_TIME.test(session.startTime) ? session.startTime : null;
+  const scheduledStart = existing?.scheduledStart && CLOCK_TIME.test(existing.scheduledStart)
+    ? existing.scheduledStart
+    : fallbackStart;
 
   occurrenceStore.put({
     id: occurrenceId,
     workspaceId,
     recurringSessionId: session.id,
-    sessionDate,
+    sessionDate: originalSessionDate,
     scheduledStart,
     rescheduledToDate: existing?.rescheduledToDate ?? null,
     rescheduledToStart: existing?.rescheduledToStart ?? null,
@@ -82,7 +89,7 @@ export async function completeLocalSession(
         openingCompletedCount: 0,
         realCompletedCount: 0,
         status: 'open',
-        startedOn: sessionDate,
+        startedOn: effectiveDate,
         completedOn: null,
         paidOn: null,
       };
@@ -93,7 +100,7 @@ export async function completeLocalSession(
       ...cycle,
       realCompletedCount,
       status: completed ? 'due' : 'open',
-      completedOn: completed ? sessionDate : cycle.completedOn,
+      completedOn: completed ? effectiveDate : cycle.completedOn,
     } satisfies LocalBillingCycle);
   }
 
@@ -105,7 +112,7 @@ export async function completeLocalSession(
     entityId: occurrenceId,
     payload: {
       recurringSessionId: session.id,
-      sessionDate,
+      sessionDate: originalSessionDate,
       scheduledStart,
       completedAt,
       note: null,
