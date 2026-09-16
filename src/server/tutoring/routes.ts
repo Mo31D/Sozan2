@@ -2,10 +2,12 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { FinanceCollectionService } from '../../modules/finance/allocation.service';
 import { BillingService } from '../../modules/tutoring/services/billing.service';
+import { OccurrencesService } from '../../modules/tutoring/services/occurrences.service';
 import { SessionsService } from '../../modules/tutoring/services/sessions.service';
 import { StudentsService } from '../../modules/tutoring/services/students.service';
 import { D1BillingRepository } from '../adapters/d1/tutoring-billing.repository';
 import { D1FinanceGateway } from '../adapters/d1/finance.gateway';
+import { D1OccurrenceRepository } from '../adapters/d1/tutoring-occurrences.repository';
 import { D1SessionRepository } from '../adapters/d1/tutoring-sessions.repository';
 import { D1StudentRepository } from '../adapters/d1/tutoring-students.repository';
 import { accessError, requireWorkspaceAccess } from '../auth/guard';
@@ -20,14 +22,33 @@ const collectionSchema = z.object({
   note: z.string().trim().max(500).nullable().optional().default(null),
 });
 
+const dateRangeSchema = z.object({
+  from: z.string().date(),
+  to: z.string().date(),
+});
+
 function routeError(error: unknown): { status: 400 | 401 | 403 | 404 | 409 | 503; error: string } {
   const access = accessError(error);
   if (access) return access;
   if (error instanceof z.ZodError) return { status: 400, error: 'INVALID_INPUT' };
   const code = error instanceof Error ? error.message : 'REQUEST_FAILED';
   if (code.endsWith('_NOT_FOUND')) return { status: 404, error: code };
-  if (code.includes('LOCKED') || code.includes('HISTORY')) return { status: 409, error: code };
+  if (
+    code.includes('LOCKED')
+    || code.includes('HISTORY')
+    || code.includes('STATE_INVALID')
+    || code.includes('REQUIRES_CORRECTION')
+  ) return { status: 409, error: code };
   return { status: 400, error: code };
+}
+
+function occurrenceService(db: D1Database): OccurrencesService {
+  return new OccurrencesService(
+    new D1OccurrenceRepository(db),
+    new D1SessionRepository(db),
+    new BillingService(new D1BillingRepository(db), crypto.randomUUID),
+    crypto.randomUUID,
+  );
 }
 
 export const tutoringRoutes = new Hono<{ Bindings: Env }>();
@@ -93,6 +114,88 @@ tutoringRoutes.patch('/:workspaceId/sessions/:sessionId/schedule', async (c) => 
       await c.req.json(),
     );
     return c.json({ session });
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ error: response.error }, response.status);
+  }
+});
+
+tutoringRoutes.get('/:workspaceId/occurrences', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    await requireWorkspaceAccess(c, workspaceId);
+    const range = dateRangeSchema.parse({ from: c.req.query('from'), to: c.req.query('to') });
+    const occurrences = await occurrenceService(requireDatabase(c.env)).ensureRange(
+      workspaceId,
+      range.from,
+      range.to,
+    );
+    return c.json({ occurrences });
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ error: response.error }, response.status);
+  }
+});
+
+tutoringRoutes.post('/:workspaceId/occurrences/:occurrenceId/complete', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    await requireWorkspaceAccess(c, workspaceId, true);
+    const occurrence = await occurrenceService(requireDatabase(c.env)).complete(
+      workspaceId,
+      c.req.param('occurrenceId'),
+      await c.req.json(),
+    );
+    return c.json({ occurrence });
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ error: response.error }, response.status);
+  }
+});
+
+tutoringRoutes.post('/:workspaceId/occurrences/:occurrenceId/cancel', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    await requireWorkspaceAccess(c, workspaceId, true);
+    return c.json({
+      occurrence: await occurrenceService(requireDatabase(c.env)).cancel(
+        workspaceId,
+        c.req.param('occurrenceId'),
+      ),
+    });
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ error: response.error }, response.status);
+  }
+});
+
+tutoringRoutes.post('/:workspaceId/occurrences/:occurrenceId/restore', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    await requireWorkspaceAccess(c, workspaceId, true);
+    return c.json({
+      occurrence: await occurrenceService(requireDatabase(c.env)).restore(
+        workspaceId,
+        c.req.param('occurrenceId'),
+      ),
+    });
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ error: response.error }, response.status);
+  }
+});
+
+tutoringRoutes.post('/:workspaceId/occurrences/:occurrenceId/reschedule', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    await requireWorkspaceAccess(c, workspaceId, true);
+    return c.json({
+      occurrence: await occurrenceService(requireDatabase(c.env)).reschedule(
+        workspaceId,
+        c.req.param('occurrenceId'),
+        await c.req.json(),
+      ),
+    });
   } catch (error) {
     const response = routeError(error);
     return c.json({ error: response.error }, response.status);
