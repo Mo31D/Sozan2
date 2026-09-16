@@ -1,3 +1,4 @@
+import { packageUnitShare } from '../domain/billing';
 import {
   configureBillingSchema,
   snapshotCycle,
@@ -73,6 +74,59 @@ export class BillingService {
           paidOn: null,
         });
       }
+    }
+
+    return this.getStudentBilling(workspaceId, studentId);
+  }
+
+  async recordCompletedOccurrence(
+    workspaceId: string,
+    studentId: string,
+    occurrenceId: string,
+    occurredOn: string,
+  ): Promise<StudentBillingSnapshot> {
+    const plan = await this.repository.getPlan(workspaceId, studentId);
+    if (!plan || plan.billingMode !== 'package') {
+      return this.getStudentBilling(workspaceId, studentId);
+    }
+    if (plan.packageSize === null || plan.packagePricePence === null) {
+      throw new Error('PACKAGE_PLAN_INVALID');
+    }
+
+    let cycle = await this.repository.getOpenCycle(workspaceId, studentId);
+    if (!cycle) {
+      cycle = await this.repository.createCycle({
+        id: this.idFactory(),
+        workspaceId,
+        studentId,
+        sequenceNo: await this.repository.getNextSequenceNo(workspaceId, studentId),
+        sessionLimit: plan.packageSize,
+        pricePence: plan.packagePricePence,
+        openingCompletedCount: 0,
+        status: 'open',
+        startedOn: occurredOn,
+        completedOn: null,
+        paidOn: null,
+      });
+    }
+
+    const position = cycle.openingCompletedCount + cycle.realCompletedCount + 1;
+    if (position > cycle.sessionLimit) throw new Error('PACKAGE_CYCLE_ALREADY_COMPLETE');
+
+    await this.repository.addOccurrenceToCycle({
+      workspaceId,
+      cycleId: cycle.id,
+      occurrenceId,
+      position,
+      earnedPence: packageUnitShare(cycle.pricePence, cycle.sessionLimit, position),
+    });
+
+    if (position === cycle.sessionLimit) {
+      await this.repository.markCycleDue({
+        workspaceId,
+        cycleId: cycle.id,
+        completedOn: occurredOn,
+      });
     }
 
     return this.getStudentBilling(workspaceId, studentId);
