@@ -6,6 +6,7 @@ import {
   type LocalPlatformSnapshot,
 } from './adapters/indexeddb/platform.repository';
 import { ExistingAccountLogin } from './cloud/CloudAccess';
+import { ControlCenter } from './control/ControlCenter';
 import { SimpleWorkspaceV2 } from './simple/SimpleWorkspaceV2';
 
 type CloudState =
@@ -21,6 +22,7 @@ type LocalState =
 export function App() {
   const [local, setLocal] = useState<LocalState>({ status: 'loading' });
   const [cloud, setCloud] = useState<CloudState>({ status: 'checking' });
+  const [dataRevision, setDataRevision] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -47,14 +49,24 @@ export function App() {
   const reloadLocal = async () => {
     const snapshot = await loadLocalPlatform();
     setLocal({ status: 'ready', snapshot });
+    setDataRevision((value) => value + 1);
   };
 
   return (
-    <SimpleWorkspaceV2
-      snapshot={local.snapshot}
-      cloudAvailable={cloudAccountsAvailable(cloud)}
-      onPlatformChanged={reloadLocal}
-    />
+    <>
+      <SimpleWorkspaceV2
+        key={`${local.snapshot.workspace.id}-${dataRevision}`}
+        snapshot={local.snapshot}
+        cloudAvailable={cloudAccountsAvailable(cloud)}
+        onPlatformChanged={reloadLocal}
+      />
+      <ControlCenter
+        snapshot={local.snapshot}
+        onChanged={async () => {
+          setDataRevision((value) => value + 1);
+        }}
+      />
+    </>
   );
 }
 
