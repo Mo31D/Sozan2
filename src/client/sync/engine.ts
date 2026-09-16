@@ -38,6 +38,7 @@ type SnapshotResponse = {
 
 type CoreSnapshot = {
   activityEvents: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
+  workspaceSettings?: Array<Record<string, unknown> & { workspaceId: string; key: string; value: string }>;
 };
 
 type TutoringSnapshot = {
@@ -139,13 +140,17 @@ async function seedInitialLocalState(workspaceId: string): Promise<void> {
 async function replaceWorkspaceRows(
   store: IDBObjectStore,
   workspaceId: string,
-  rows: Array<Record<string, unknown> & { id: string; workspaceId: string }>,
+  rows: Array<Record<string, unknown> & { workspaceId: string }>,
 ): Promise<void> {
-  const existing = await requestResult<Array<Record<string, unknown> & { id: string; workspaceId: string }>>(
+  const existing = await requestResult<Array<Record<string, unknown> & { workspaceId: string }>>(
     store.getAll(),
   );
   for (const row of existing) {
-    if (row.workspaceId === workspaceId) store.delete(row.id);
+    if (row.workspaceId === workspaceId) {
+      const key = store.keyPath;
+      if (Array.isArray(key)) store.delete(key.map((part) => row[String(part)] as IDBValidKey));
+      else if (typeof key === 'string') store.delete(row[key] as IDBValidKey);
+    }
   }
   for (const row of rows) store.put(row);
 }
@@ -156,6 +161,7 @@ async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
   const finance = snapshot.modules.find((item) => item.moduleKey === 'finance')?.data as FinanceSnapshot | undefined;
   const stores = [
     STORES.coreActivityEvents,
+    STORES.coreWorkspaceSettings,
     STORES.tutoringStudents,
     STORES.tutoringSessions,
     STORES.tutoringOccurrences,
@@ -173,6 +179,7 @@ async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
 
   if (core) {
     await replaceWorkspaceRows(transaction.objectStore(STORES.coreActivityEvents), snapshot.workspaceId, core.activityEvents);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.coreWorkspaceSettings), snapshot.workspaceId, core.workspaceSettings ?? []);
   }
   if (tutoring) {
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringStudents), snapshot.workspaceId, tutoring.students);
