@@ -1,103 +1,124 @@
 # Sozan2 staged roadmap
 
-The latest old-Sozan product behaviour was audited before the first Sozan2 D1 database was created. See `FEATURE_AUDIT.md`.
-
 ## Stage 0 — Foundation — DONE
 
 - TypeScript strict mode
 - React/Vite shell
-- Hono Worker
+- Hono Worker shell
 - CI + unit tests
 - Cloudflare build/deploy verified
 - health endpoint only
 
-## Stage 0.5 — Product/schema freeze — DONE
+## Stage 0.5 — Product/platform/schema freeze — DONE
 
-- Audited current `sozan` through planner and package-progress behaviour
-- Froze bounded contexts
-- Replaced opening-package shadow records with native cycle progress
-- Added pending/confirmed schedule state to the target model
-- Unified teaching cash around canonical receipts
-- Preserved session-level group payments without requiring a fake student
-- Added cash checks and idempotency to the initial schema
-- Added domain tests for package progress and schedule generation
-- Added CI execution/validation of `migrations/0001_core.sql`
-- CI passed schema validation, type checks, tests and production build
+- Audit latest useful Sozan1 tutoring behaviour
+- Reframe Sozan2 as user-neutral workspace platform
+- Add module registry and dependency graph
+- Add configurable terminology and surface layout model
+- Add local-first persistence contracts
+- Add IndexedDB and D1 reference adapters for tutoring students
+- Make IDs sync-safe TEXT IDs
+- Scope business data by workspace
+- Split tutoring and finance storage ownership
+- Keep pending/confirmed schedule model
+- Keep native opening package progress
+- Keep canonical Finance receipt model
+- Add idempotency and audit foundations
+- Validate initial SQLite/D1 schema in CI
 
-## Stage 1 — Security and database — NEXT
+## Stage 1 — Create D1 + security/bootstrap
 
 - Create `sozan2-db`
-- Bind as `DB`
+- Bind it as `DB`
 - Apply frozen `0001_core.sql`
-- Passcode login with signed HttpOnly session cookie
-- Protect every non-health API route
-- Add login rate limiting / abuse control
-- Add mutation idempotency middleware
+- Bootstrap first user + workspace + tutoring template
+- Hash passcode; never store plain text
+- Signed HttpOnly cloud session cookie
+- Workspace membership authorization
+- Login abuse/rate control
+- Idempotency middleware
+- Keep all non-health cloud APIs closed until authorization is in place
 
-## Stage 2 — Students and schedule planner
+## Stage 2 — Persistence parity and workspace shell
+
+- Workspace selector/profile
+- Enabled module loading
+- Terminology resolution
+- Configurable navigation
+- Widget/surface composition for Home and “أنا”
+- Local mode selection
+- Cloud mode selection
+- Continue IndexedDB/D1 adapter parity for each repository added
+
+## Stage 3 — Tutoring + Planner
 
 - Students CRUD
 - Guardian / age / level / notes
-- Recurring sessions
-- Group participants
+- Groups and participants
+- Recurring tutoring sessions
 - Confirmed vs pending schedule
-- Weekly availability planner
+- Weekly planner/availability
 - Quick “set later” / quick schedule
 - Future-only recurring schedule edits
 - One-off occurrence reschedule
 - Activity events for schedule changes
-
-## Stage 3 — Attendance and billing
-
 - Occurrence generation only from confirmed schedules
+
+## Stage 4 — Attendance + package billing
+
 - Complete / cancel / restore / reopen
-- Per-session billing snapshots
+- Per-session financial snapshots
 - Package billing cycles
 - Current package progress `x / n`
-- Existing/opening package progress when onboarding mid-cycle
+- Existing/opening progress when onboarding mid-cycle
 - Lock opening progress after real lessons begin
 - Work-not-due vs due-now separation
-- Golden tests for all state transitions
+- Golden transition tests
 
-## Stage 4 — Money
+## Stage 5 — Finance
 
-- Canonical receipts for student and lesson-level teaching income
-- “Completed and paid” implemented as receipt creation
-- Deterministic allocation to oldest due obligations
+- Canonical receipts
+- Tutoring quick “completed and paid” through Finance contract
+- Deterministic oldest-due allocation
 - Package-cycle allocation
-- Prepaid student credit
-- Receipt edit / soft delete / restore / full rebalance
-- Safe payment correction workflow
+- Prepaid credit
+- Receipt edit / soft delete / restore / rebalance
+- Safe correction workflow
 - Expenses and other income
-- Reconciliation tests
+- Cash reconciliation
+- Finance tests independent of tutoring persistence implementation
 
-## Stage 5 — Product read models and UI
+## Stage 6 — Reports and polished UI
 
 - Today
 - Money
-- Schedule / availability
+- Tutoring
+- Planner
 - Student account
 - Package progress
-- Activity log
-- Correction/review centre
-- Cash reconciliation
+- Activity/review centre
+- Customisable “أنا” page
 - Insights
 - Monthly reports
-- PWA installability and cache strategy
+- PWA installability/cache strategy
 
-## Stage 6 — Migration tool
+## Stage 7 — Sozan1 migration tool
 
 - Extract old D1
-- Transform old direct payments into receipts
-- Transform package progress, including opening progress
+- Convert old numeric IDs into sync-safe IDs
+- Map direct payments into Finance receipts
+- Transform package progress including opening progress
 - Ignore compatibility-only V3/V4/V5/V6/V7 structures after extracting meaning
-- Import into new D1
-- Compare totals down to the penny
+- Import into one target workspace
+- Compare totals to the penny
 
-## Stage 7 — Parallel verification and cutover
+## Stage 8 — Parallel verification and cutover
 
-- Run old and new calculations against the same snapshot
-- Compare students, attendance, package progress, cash, due, credit and expenses
+- Compare old/new attendance, package progress, cash, due, credit and expenses
 - Fix every mismatch before cutover
 - Switch daily use only after acceptance checks pass
-- Keep old Sozan read-only as rollback evidence for an agreed window
+- Keep old Sozan read-only for an agreed rollback/evidence window
+
+## Future modules
+
+The platform architecture may later add real modules/templates such as appointments, clients, tasks or inventory. These should be added as new modules/migrations, not as conditionals inside tutoring.
