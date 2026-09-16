@@ -4,6 +4,8 @@ import { newSyncOutboxRecord } from '../sync/outbox';
 import type { LocalBillingCycle, LocalBillingPlan } from './local-commands';
 import type { LocalOccurrence } from '../simple/data';
 
+const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/u;
+
 export async function completeLocalSession(
   workspaceId: string,
   session: RecurringSession,
@@ -42,13 +44,14 @@ export async function completeLocalSession(
   const earnedPence = Math.max(0, grossPence - centerCutPence);
   const completedAt = new Date().toISOString();
   const occurrenceId = existing?.id ?? crypto.randomUUID();
+  const scheduledStart = session.startTime && CLOCK_TIME.test(session.startTime) ? session.startTime : null;
 
   occurrenceStore.put({
     id: occurrenceId,
     workspaceId,
     recurringSessionId: session.id,
     sessionDate,
-    scheduledStart: session.startTime,
+    scheduledStart,
     rescheduledToDate: existing?.rescheduledToDate ?? null,
     rescheduledToStart: existing?.rescheduledToStart ?? null,
     status: 'completed',
@@ -105,7 +108,7 @@ export async function completeLocalSession(
     payload: {
       recurringSessionId: session.id,
       sessionDate,
-      scheduledStart: session.startTime,
+      scheduledStart,
       completedAt,
       note: null,
     },
