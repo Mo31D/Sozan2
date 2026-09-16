@@ -26,6 +26,18 @@ type CycleRow = {
   paid_on: string | null;
 };
 
+const CYCLE_SELECT = `
+  SELECT c.id, c.workspace_id, c.student_id, c.sequence_no, c.session_limit,
+         c.price_pence, c.opening_completed_count,
+         COALESCE(SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END), 0) AS real_completed_count,
+         c.status, c.started_on, c.completed_on, c.paid_on
+  FROM tutoring_billing_cycles c
+  LEFT JOIN tutoring_billing_cycle_occurrences co
+    ON co.workspace_id = c.workspace_id AND co.billing_cycle_id = c.id
+  LEFT JOIN tutoring_occurrences o
+    ON o.workspace_id = co.workspace_id AND o.id = co.occurrence_id
+`;
+
 function mapPlan(row: PlanRow): BillingPlan {
   return {
     workspaceId: row.workspace_id,
@@ -47,7 +59,7 @@ function mapCycle(row: CycleRow): BillingCycle {
     sessionLimit: row.session_limit,
     pricePence: row.price_pence,
     openingCompletedCount: row.opening_completed_count,
-    realCompletedCount: row.real_completed_count,
+    realCompletedCount: Number(row.real_completed_count),
     status: row.status,
     startedOn: row.started_on,
     completedOn: row.completed_on,
@@ -116,19 +128,33 @@ export class D1BillingRepository implements BillingRepository {
 
   async getCurrentCycle(workspaceId: string, studentId: string): Promise<BillingCycle | null> {
     const row = await this.db.prepare(
-      `SELECT c.id, c.workspace_id, c.student_id, c.sequence_no, c.session_limit,
-              c.price_pence, c.opening_completed_count,
-              COUNT(co.occurrence_id) AS real_completed_count,
-              c.status, c.started_on, c.completed_on, c.paid_on
-       FROM tutoring_billing_cycles c
-       LEFT JOIN tutoring_billing_cycle_occurrences co
-         ON co.workspace_id = c.workspace_id AND co.billing_cycle_id = c.id
+      `${CYCLE_SELECT}
        WHERE c.workspace_id = ?1 AND c.student_id = ?2 AND c.status <> 'cancelled'
        GROUP BY c.id
        ORDER BY c.sequence_no DESC
        LIMIT 1`,
     ).bind(workspaceId, studentId).first<CycleRow>();
     return row ? mapCycle(row) : null;
+  }
+
+  async getOpenCycle(workspaceId: string, studentId: string): Promise<BillingCycle | null> {
+    const row = await this.db.prepare(
+      `${CYCLE_SELECT}
+       WHERE c.workspace_id = ?1 AND c.student_id = ?2 AND c.status = 'open'
+       GROUP BY c.id
+       ORDER BY c.sequence_no DESC
+       LIMIT 1`,
+    ).bind(workspaceId, studentId).first<CycleRow>();
+    return row ? mapCycle(row) : null;
+  }
+
+  async getNextSequenceNo(workspaceId: string, studentId: string): Promise<number> {
+    const row = await this.db.prepare(
+      `SELECT COALESCE(MAX(sequence_no), 0) + 1 AS next_sequence
+       FROM tutoring_billing_cycles
+       WHERE workspace_id = ?1 AND student_id = ?2`,
+    ).bind(workspaceId, studentId).first<{ next_sequence: number }>();
+    return row?.next_sequence ?? 1;
   }
 
   async createCycle(input: Omit<BillingCycle, 'realCompletedCount'>): Promise<BillingCycle> {
@@ -150,8 +176,42 @@ export class D1BillingRepository implements BillingRepository {
       input.completedOn,
       input.paidOn,
     ).run();
-    const cycle = await this.getCurrentCycle(input.workspaceId, input.studentId);
+    const cycle = input.status === 'open'
+      ? await this.getOpenCycle(input.workspaceId, input.studentId)
+      : await this.getCurrentCycle(input.workspaceId, input.studentId);
     if (!cycle) throw new Error('BILLING_CYCLE_INSERT_FAILED');
     return cycle;
+  }
+
+  async addOccurrenceToCycle(input: {
+    workspaceId: string;
+    cycleId: string;
+    occurrenceId: string;
+    position: number;
+    earnedPence: number;
+  }): Promise<void> {
+    await this.db.prepare(
+      `INSERT OR IGNORE INTO tutoring_billing_cycle_occurrences(
+         workspace_id, billing_cycle_id, occurrence_id, position, earned_pence
+       ) VALUES (?1, ?2, ?3, ?4, ?5)`,
+    ).bind(
+      input.workspaceId,
+      input.cycleId,
+      input.occurrenceId,
+      input.position,
+      input.earnedPence,
+    ).run();
+  }
+
+  async markCycleDue(input: {
+    workspaceId: string;
+    cycleId: string;
+    completedOn: string;
+  }): Promise<void> {
+    await this.db.prepare(
+      `UPDATE tutoring_billing_cycles
+       SET status = 'due', completed_on = ?3, opening_progress_locked_at = COALESCE(opening_progress_locked_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
+       WHERE workspace_id = ?1 AND id = ?2 AND status = 'open'`,
+    ).bind(input.workspaceId, input.cycleId, input.completedOn).run();
   }
 }
