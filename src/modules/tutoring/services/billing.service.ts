@@ -1,4 +1,4 @@
-import { packageUnitShare } from '../domain/billing';
+import { canChangeOpeningProgress, packageUnitShare } from '../domain/billing';
 import {
   configureBillingSchema,
   snapshotCycle,
@@ -25,9 +25,25 @@ export class BillingService {
     const parsed = configureBillingSchema.parse(input);
     const existing = await this.repository.getPlan(workspaceId, studentId);
     const hasHistory = await this.repository.hasBillingHistory(workspaceId, studentId);
+    const current = parsed.billingMode === 'package'
+      ? await this.repository.getCurrentCycle(workspaceId, studentId)
+      : null;
 
     if (existing && hasHistory && existing.billingMode !== parsed.billingMode) {
       throw new Error('BILLING_MODE_LOCKED_BY_HISTORY');
+    }
+
+    if (parsed.billingMode === 'package' && current) {
+      if (parsed.openingCompletedCount > current.sessionLimit) {
+        throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
+      }
+      if (!canChangeOpeningProgress(
+        current.openingCompletedCount,
+        parsed.openingCompletedCount,
+        current.realCompletedCount,
+      )) {
+        throw new Error('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+      }
     }
 
     const plan: BillingPlan = parsed.billingMode === 'package'
@@ -53,7 +69,6 @@ export class BillingService {
     await this.repository.upsertPlan(plan);
 
     if (parsed.billingMode === 'package') {
-      const current = await this.repository.getCurrentCycle(workspaceId, studentId);
       if (!current) {
         if (parsed.openingCompletedCount > parsed.packageSize) {
           throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
@@ -72,6 +87,15 @@ export class BillingService {
             ? parsed.effectiveFrom
             : null,
           paidOn: null,
+        });
+      } else if (current.openingCompletedCount !== parsed.openingCompletedCount) {
+        const due = parsed.openingCompletedCount + current.realCompletedCount === current.sessionLimit;
+        await this.repository.updateOpeningProgress({
+          workspaceId,
+          cycleId: current.id,
+          openingCompletedCount: parsed.openingCompletedCount,
+          status: due ? 'due' : 'open',
+          completedOn: due ? (current.completedOn ?? parsed.effectiveFrom) : null,
         });
       }
     }
