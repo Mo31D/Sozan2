@@ -1,4 +1,4 @@
-export const PASSWORD_ITERATIONS = 210_000;
+export const PASSWORD_ITERATIONS = 100_000;
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 const encoder = new TextEncoder();
@@ -79,7 +79,7 @@ export async function verifyPassword(
   salt: string,
   iterations: number,
 ): Promise<boolean> {
-  if (!password || iterations < 100_000) return false;
+  if (!password || iterations !== PASSWORD_ITERATIONS) return false;
   const actual = await pbkdf2(password, fromBase64(salt), iterations);
   return equalBytes(actual, fromBase64(expectedHash));
 }
