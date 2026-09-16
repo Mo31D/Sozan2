@@ -5,6 +5,7 @@ export type HealthResponse = {
   architecture: string;
   localModeAvailable: boolean;
   cloudDatabaseConfigured: boolean;
+  cloudAccountsAvailable: boolean;
 };
 
 export async function getHealth(): Promise<HealthResponse> {

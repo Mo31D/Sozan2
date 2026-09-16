@@ -1,0 +1,77 @@
+import { z } from 'zod';
+import { validateRecurringSchedule, type ScheduleStatus } from './schedule';
+
+export const sessionTypeSchema = z.enum([
+  'private_student_home',
+  'private_tutor_home',
+  'online',
+  'center_group',
+  'own_group',
+]);
+
+export const createRecurringSessionSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  sessionType: sessionTypeSchema,
+  scheduleStatus: z.enum(['confirmed', 'pending']).default('confirmed'),
+  weekday: z.number().int().min(0).max(6).nullable().default(null),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable().default(null),
+  durationMinutes: z.number().int().min(15).max(360).default(60),
+  travelMinutes: z.number().int().min(0).max(360).default(0),
+  location: z.string().trim().max(200).nullable().optional().default(null),
+  priceBasis: z.enum(['total_session', 'per_student']).default('total_session'),
+  defaultPricePence: z.number().int().min(0).default(0),
+  expectedStudentCount: z.number().int().min(1).max(100).default(1),
+  centerCutBps: z.number().int().min(0).max(10_000).default(0),
+  studentIds: z.array(z.string().uuid()).max(100).default([]),
+}).superRefine((value, ctx) => {
+  try {
+    validateRecurringSchedule({
+      status: value.scheduleStatus,
+      weekday: value.weekday,
+      startTime: value.startTime,
+    });
+  } catch (error) {
+    ctx.addIssue({
+      code: 'custom',
+      message: error instanceof Error ? error.message : 'Invalid recurring schedule',
+      path: ['scheduleStatus'],
+    });
+  }
+});
+
+export const updateRecurringScheduleSchema = z.object({
+  scheduleStatus: z.enum(['confirmed', 'pending']),
+  weekday: z.number().int().min(0).max(6).nullable(),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable(),
+}).superRefine((value, ctx) => {
+  try {
+    validateRecurringSchedule({
+      status: value.scheduleStatus,
+      weekday: value.weekday,
+      startTime: value.startTime,
+    });
+  } catch (error) {
+    ctx.addIssue({ code: 'custom', message: error instanceof Error ? error.message : 'Invalid schedule' });
+  }
+});
+
+export type CreateRecurringSessionInput = z.infer<typeof createRecurringSessionSchema>;
+
+export type RecurringSession = {
+  id: string;
+  workspaceId: string;
+  title: string;
+  sessionType: z.infer<typeof sessionTypeSchema>;
+  scheduleStatus: ScheduleStatus;
+  weekday: number | null;
+  startTime: string | null;
+  durationMinutes: number;
+  travelMinutes: number;
+  location: string | null;
+  priceBasis: 'total_session' | 'per_student';
+  defaultPricePence: number;
+  expectedStudentCount: number;
+  centerCutBps: number;
+  active: boolean;
+  studentIds: string[];
+};
