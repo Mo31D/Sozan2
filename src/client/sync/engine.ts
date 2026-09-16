@@ -36,12 +36,17 @@ type SnapshotResponse = {
   modules: ModuleSnapshot[];
 };
 
+type CoreSnapshot = {
+  activityEvents: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
+};
+
 type TutoringSnapshot = {
   students: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   sessions: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   occurrences: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   billingPlans: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   billingCycles: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
+  billingCycleOccurrences?: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
 };
 
 type FinanceSnapshot = {
@@ -145,14 +150,17 @@ async function replaceWorkspaceRows(
 }
 
 async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
+  const core = snapshot.modules.find((item) => item.moduleKey === 'core')?.data as CoreSnapshot | undefined;
   const tutoring = snapshot.modules.find((item) => item.moduleKey === 'tutoring')?.data as TutoringSnapshot | undefined;
   const finance = snapshot.modules.find((item) => item.moduleKey === 'finance')?.data as FinanceSnapshot | undefined;
   const stores = [
+    STORES.coreActivityEvents,
     STORES.tutoringStudents,
     STORES.tutoringSessions,
     STORES.tutoringOccurrences,
     STORES.tutoringBillingPlans,
     STORES.tutoringBillingCycles,
+    STORES.tutoringBillingCycleOccurrences,
     STORES.financeReceipts,
     STORES.financeAllocations,
     STORES.financeExpenses,
@@ -161,12 +169,16 @@ async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(stores, 'readwrite');
 
+  if (core) {
+    await replaceWorkspaceRows(transaction.objectStore(STORES.coreActivityEvents), snapshot.workspaceId, core.activityEvents);
+  }
   if (tutoring) {
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringStudents), snapshot.workspaceId, tutoring.students);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringSessions), snapshot.workspaceId, tutoring.sessions);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringOccurrences), snapshot.workspaceId, tutoring.occurrences);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingPlans), snapshot.workspaceId, tutoring.billingPlans);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingCycles), snapshot.workspaceId, tutoring.billingCycles);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingCycleOccurrences), snapshot.workspaceId, tutoring.billingCycleOccurrences ?? []);
   }
   if (finance) {
     await replaceWorkspaceRows(transaction.objectStore(STORES.financeReceipts), snapshot.workspaceId, finance.receipts);
