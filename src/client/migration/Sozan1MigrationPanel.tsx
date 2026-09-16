@@ -50,9 +50,7 @@ export function Sozan1MigrationPanel({
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as ExportPreview;
-      if (parsed.schemaVersion !== 'sozan1-d1-export-v1') {
-        throw new Error('MIGRATION_FILE_VERSION_UNSUPPORTED');
-      }
+      if (parsed.schemaVersion !== 'sozan1-d1-export-v1') throw new Error('MIGRATION_FILE_VERSION_UNSUPPORTED');
       setRawFile(text);
       setPreview(parsed);
       setFileName(file.name);
@@ -77,9 +75,7 @@ export function Sozan1MigrationPanel({
         body: rawFile,
       });
       const body = await response.json() as ImportResult | { error?: string };
-      if (!response.ok || !('ok' in body)) {
-        throw new Error(('error' in body && body.error) || `HTTP_${response.status}`);
-      }
+      if (!response.ok || !('ok' in body)) throw new Error(('error' in body && body.error) || `HTTP_${response.status}`);
       await runWorkspaceSync(workspaceId);
       await onImported();
       setDone(body);
@@ -93,37 +89,25 @@ export function Sozan1MigrationPanel({
   const summary = preview?.summary;
   return (
     <section className="panel migration-panel">
-      <div className="section-heading compact-heading">
-        <div>
-          <p className="eyebrow">Sozan1 migration</p>
-          <h2>انقل بيانات النسخة القديمة</h2>
-        </div>
-      </div>
-      <p className="migration-copy">
-        تصدير واحد من Sozan1 ثم استيراده هنا. الطلاب والجدول والحضور والباقات والتحصيل والمصروفات تنتقل بدون إعادة إدخال يدوي.
-      </p>
+      <div className="section-heading compact-heading"><div><p className="eyebrow">النسخة القديمة</p><h2>انقل بيانات سوزان القديمة</h2></div></div>
+      <p className="migration-copy">اختاري ملف التصدير القديم. الطلاب والمواعيد والحضور والباقات والتحصيل والمصروفات تنتقل مرة واحدة بدون إدخال يدوي.</p>
 
       <label className="migration-file-picker">
-        <span>اختر ملف Sozan1</span>
+        <span>{fileName || 'اختيار ملف البيانات'}</span>
         <input type="file" accept="application/json,.json" onChange={(event) => void selectFile(event)} disabled={busy} />
       </label>
 
       {preview && (
         <div className="migration-preview">
-          <strong>{fileName}</strong>
           {preview.exportedAt && <small>تاريخ التصدير: {new Date(preview.exportedAt).toLocaleString('ar-EG')}</small>}
           <div className="migration-stats">
             <span>طلاب: {summary?.students ?? 0}</span>
             <span>مواعيد: {summary?.recurringSessions ?? 0}</span>
             <span>حصص: {summary?.occurrences ?? 0}</span>
-            <span>دورات باقات: {summary?.packageCycles ?? 0}</span>
+            <span>باقات مكتملة سابقًا: {summary?.packageCycles ?? 0}</span>
           </div>
-          <small>
-            إجمالي المقبوض في الملف: {money(summary?.receivedPence ?? 0, currencyLabel)} · المصروفات: {money(summary?.expensesPence ?? 0, currencyLabel)}
-          </small>
-          <button className="primary-button" type="button" disabled={busy} onClick={() => void runImport()}>
-            {busy ? 'جاري النقل والمزامنة…' : 'استيراد إلى مساحة العمل الحالية'}
-          </button>
+          <small>المقبوض: {money(summary?.receivedPence ?? 0, currencyLabel)} · المصروفات: {money(summary?.expensesPence ?? 0, currencyLabel)}</small>
+          <button className="primary-button" type="button" disabled={busy} onClick={() => void runImport()}>{busy ? 'جاري النقل والمزامنة…' : 'نقل البيانات إلى حسابي'}</button>
         </div>
       )}
 
@@ -131,14 +115,10 @@ export function Sozan1MigrationPanel({
         <div className="status good migration-result">
           <strong>تم نقل البيانات ومزامنتها.</strong>
           <span>الطلاب: {done.summary.students ?? 0}</span>
-          <span>الحصص الفعلية: {done.summary.occurrences ?? 0}</span>
+          <span>الحصص المسجلة: {done.summary.occurrences ?? 0}</span>
           <span>التحصيلات: {done.summary.receipts ?? 0}</span>
-          {done.summary.skippedShadowSessions > 0 && (
-            <span>تم تحويل جلسات تقدم الباقة الوهمية إلى Opening Progress بدل نقلها كحصص.</span>
-          )}
-          {done.warnings.includes('LEGACY_MONTHLY_DUES_PRESERVED_AS_LEGACY_ONLY') && (
-            <span>وجدت آثارًا من نظام Monthly القديم وتم الاحتفاظ بإشارتها للمراجعة، بدون جعلها مستحقات جديدة.</span>
-          )}
+          {done.summary.skippedShadowSessions > 0 && <span>تم تحويل تقدم الباقات القديمة إلى تقدم حقيقي داخل الباقة الجديدة بدون إنشاء حصص وهمية.</span>}
+          {done.warnings.includes('LEGACY_MONTHLY_DUES_PRESERVED_AS_LEGACY_ONLY') && <span>وجدت بيانات من نظام حساب قديم وتم الاحتفاظ بها للمراجعة بدون إنشاء مستحقات جديدة.</span>}
         </div>
       )}
       {error && <div className="status bad">{error}</div>}
@@ -147,18 +127,18 @@ export function Sozan1MigrationPanel({
 }
 
 function money(pence: number, currencyLabel: string): string {
-  return `${(Number(pence || 0) / 100).toFixed(2)} ${currencyLabel}`;
+  return `${(Number(pence || 0) / 100).toLocaleString('ar-EG', { maximumFractionDigits: 2 })} ${currencyLabel}`;
 }
 
 function messageFor(cause: unknown): string {
   const code = cause instanceof Error ? cause.message : 'MIGRATION_FAILED';
   const messages: Record<string, string> = {
-    MIGRATION_FILE_INVALID: 'الملف غير صالح كنسخة تصدير من Sozan1.',
-    MIGRATION_FILE_VERSION_UNSUPPORTED: 'الملف ليس من أداة التصدير الجديدة الخاصة بـSozan1.',
-    MIGRATION_TARGET_NOT_EMPTY: 'مساحة العمل الجديدة تحتوي بيانات بالفعل. النقل الكامل مسموح لمساحة فارغة فقط لمنع التكرار.',
-    MIGRATION_ALREADY_COMPLETED: 'تم نقل Sozan1 إلى مساحة العمل هذه بالفعل.',
-    MIGRATION_OWNER_REQUIRED: 'النقل يحتاج حساب المالك أو مدير مساحة العمل.',
-    UNAUTHENTICATED: 'جلسة الحساب السحابي انتهت. سجل الدخول مرة أخرى.',
+    MIGRATION_FILE_INVALID: 'الملف غير صالح كنسخة تصدير من البرنامج القديم.',
+    MIGRATION_FILE_VERSION_UNSUPPORTED: 'الملف ليس من أداة التصدير الصحيحة للنسخة القديمة.',
+    MIGRATION_TARGET_NOT_EMPTY: 'الحساب يحتوي بيانات بالفعل. النقل الكامل مسموح للحساب الفارغ فقط حتى لا تتكرر البيانات.',
+    MIGRATION_ALREADY_COMPLETED: 'تم نقل بيانات النسخة القديمة إلى الحساب ده بالفعل.',
+    MIGRATION_OWNER_REQUIRED: 'النقل يحتاج حساب المالك أو المدير.',
+    UNAUTHENTICATED: 'جلسة الحساب انتهت. سجلي الدخول مرة أخرى.',
   };
   return messages[code] ?? `تعذر نقل البيانات (${code})`;
 }

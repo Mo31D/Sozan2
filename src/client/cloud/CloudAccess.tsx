@@ -53,7 +53,7 @@ export function ExistingAccountLogin({
     <section className="cloud-access-block">
       <div className="section-heading compact-heading">
         <div>
-          <p className="eyebrow">Cloud account</p>
+          <p className="eyebrow">الحساب</p>
           <h2>عندي حساب بالفعل</h2>
         </div>
       </div>
@@ -107,17 +107,17 @@ export function CloudLinkPanel({
     return (
       <section className="panel cloud-link-panel cloud-linked-panel">
         <div className="cloud-register-copy">
-          <span className="panel-label">الحساب السحابي</span>
+          <span className="panel-label">الحساب</span>
           <strong>{snapshot.cloudLink.loginName}</strong>
-          <small>مساحة العمل مرتبطة بالسحابة ويمكن فتحها من أجهزة أخرى.</small>
+          <small>بياناتك مرتبطة بالحساب ويمكن فتحها من أي جهاز بعد تسجيل الدخول.</small>
           <small>
-            آخر تنزيل: {snapshot.cloudLink.lastCloudPullAt
+            آخر مزامنة: {snapshot.cloudLink.lastCloudPullAt
               ? new Date(snapshot.cloudLink.lastCloudPullAt).toLocaleString('ar-EG')
               : 'لم تتم المزامنة بعد'}
           </small>
         </div>
         <div className="cloud-actions">
-          <span className="cloud-linked-mark">مرتبط</span>
+          <span className="cloud-linked-mark">متصل</span>
           <button className="secondary-button" type="button" disabled={busy} onClick={() => void syncNow(false)}>
             {busy ? 'جاري المزامنة…' : 'زامن الآن'}
           </button>
@@ -125,7 +125,7 @@ export function CloudLinkPanel({
         {syncResult && (
           <div className={`status ${syncResult.failed ? 'bad' : 'good'}`}>
             <span>تم رفع {syncResult.pushed} تغيير.</span>
-            <span>{syncResult.pulled ? 'تم تنزيل أحدث نسخة سحابية.' : 'لم يتم التنزيل لحماية تغييرات محلية غير مرفوعة.'}</span>
+            <span>{syncResult.pulled ? 'تم تنزيل أحدث بيانات.' : 'تم تأجيل التنزيل لحماية تغييرات لم تُرفع بعد.'}</span>
             {syncResult.pending > 0 && <span>متبقي {syncResult.pending} تغيير للمزامنة.</span>}
           </div>
         )}
@@ -138,9 +138,9 @@ export function CloudLinkPanel({
     return (
       <section className="panel cloud-link-panel muted-panel">
         <div>
-          <span className="panel-label">الحساب السحابي</span>
-          <strong>غير متاح بعد</strong>
-          <small>النسخة المحلية تعمل بشكل مستقل. ربط D1 سيُفعّل الحسابات متعددة الأجهزة.</small>
+          <span className="panel-label">الحساب</span>
+          <strong>غير متاح الآن</strong>
+          <small>تقدري تكملي شغلك على الجهاز، والمزامنة ترجع لما الاتصال يكون متاح.</small>
         </div>
       </section>
     );
@@ -174,26 +174,26 @@ export function CloudLinkPanel({
     <section className="panel cloud-link-panel cloud-register-panel">
       <div className="cloud-register-copy">
         <span className="panel-label">الدخول من أي جهاز</span>
-        <strong>اربط مساحة العمل بحساب</strong>
-        <small>نفس IDs المحلية ستصبح IDs السحابية؛ لن نصنع نسخة منفصلة من بياناتك.</small>
+        <strong>اربط بياناتك بحساب</strong>
+        <small>نفس البيانات الموجودة على الجهاز ستُحفظ في حسابك، بدون إنشاء نسخة منفصلة.</small>
       </div>
       <form className="inline-cloud-form" onSubmit={submit}>
         <input name="loginName" placeholder="اسم الدخول" autoComplete="username" minLength={3} maxLength={64} required />
         <input name="password" type="password" placeholder="كلمة مرور — 10 أحرف على الأقل" autoComplete="new-password" minLength={10} required />
         <button className="primary-button" type="submit" disabled={busy}>
-          {busy ? 'جاري الربط والمزامنة…' : 'تفعيل الحساب السحابي'}
+          {busy ? 'جاري الربط والمزامنة…' : 'تفعيل الحساب'}
         </button>
       </form>
       {error && <div className="status bad">{error}</div>}
       {recoveryCode && (
         <div className="recovery-code-box">
-          <strong>احفظ Recovery Code الآن</strong>
+          <strong>احفظي رمز الاسترداد الآن</strong>
           <code>{recoveryCode}</code>
-          <small>يظهر مرة واحدة. يُستخدم لاستعادة الحساب إذا نسيت كلمة المرور.</small>
+          <small>يظهر مرة واحدة ويُستخدم إذا نسيتي كلمة المرور.</small>
         </div>
       )}
       {syncResult && !syncResult.failed && (
-        <div className="status good">تم رفع البيانات المحلية وربطها بالحساب السحابي.</div>
+        <div className="status good">تم ربط البيانات بالحساب ومزامنتها.</div>
       )}
     </section>
   );
@@ -205,11 +205,11 @@ function messageFor(cause: unknown): string {
     INVALID_CREDENTIALS: 'اسم الدخول أو كلمة المرور غير صحيحة.',
     ACCOUNT_TEMPORARILY_LOCKED: 'تم إيقاف محاولات الدخول مؤقتًا بعد عدة محاولات فاشلة.',
     LOGIN_NAME_TAKEN: 'اسم الدخول مستخدم بالفعل.',
-    AUTH_RATE_LIMITED: 'محاولات كثيرة. حاول لاحقًا.',
-    DATABASE_NOT_CONFIGURED: 'قاعدة البيانات السحابية غير مربوطة بعد.',
-    ACCOUNT_HAS_NO_WORKSPACE: 'الحساب لا يحتوي مساحة عمل متاحة.',
-    UNAUTHENTICATED: 'الجلسة انتهت. سجل الدخول مرة أخرى.',
-    WORKSPACE_FORBIDDEN: 'هذا الحساب لا يملك صلاحية لهذه المساحة.',
+    AUTH_RATE_LIMITED: 'محاولات كثيرة. حاولي لاحقًا.',
+    DATABASE_NOT_CONFIGURED: 'التخزين السحابي غير جاهز بعد.',
+    ACCOUNT_HAS_NO_WORKSPACE: 'الحساب لا يحتوي بيانات متاحة.',
+    UNAUTHENTICATED: 'الجلسة انتهت. سجلي الدخول مرة أخرى.',
+    WORKSPACE_FORBIDDEN: 'هذا الحساب لا يملك صلاحية لهذه البيانات.',
     SYNC_MODULE_UNSUPPORTED: 'يوجد جزء من البرنامج لم يُجهز للمزامنة بعد.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
