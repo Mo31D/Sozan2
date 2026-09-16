@@ -17,32 +17,41 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Validate initial D1 schema
+      - name: Validate modular D1 schema
         run: |
           python3 - <<'PY'
           import pathlib
           import sqlite3
 
-          sql = pathlib.Path('migrations/0001_core.sql').read_text(encoding='utf-8')
           db = sqlite3.connect(':memory:')
-          db.executescript(sql)
+          db.execute('PRAGMA foreign_keys = ON')
+          for migration in sorted(pathlib.Path('migrations').glob('*.sql')):
+              db.executescript(migration.read_text(encoding='utf-8'))
 
           expected = {
-              'students',
-              'recurring_sessions',
-              'recurring_session_students',
-              'lesson_occurrences',
-              'billing_plans',
-              'billing_cycles',
-              'billing_cycle_occurrences',
-              'receipts',
-              'receipt_allocations',
-              'expenses',
-              'other_income',
-              'cash_checks',
-              'activity_log',
-              'mutation_dedupe',
-              'settings',
+              'core_schema_meta',
+              'core_users',
+              'core_auth_credentials',
+              'core_workspaces',
+              'core_workspace_members',
+              'core_workspace_modules',
+              'core_workspace_labels',
+              'core_workspace_settings',
+              'core_surface_layouts',
+              'core_activity_events',
+              'core_idempotency_keys',
+              'tutoring_students',
+              'tutoring_recurring_sessions',
+              'tutoring_session_students',
+              'tutoring_occurrences',
+              'tutoring_billing_plans',
+              'tutoring_billing_cycles',
+              'tutoring_billing_cycle_occurrences',
+              'finance_receipts',
+              'finance_receipt_allocations',
+              'finance_expenses',
+              'finance_other_income',
+              'finance_cash_checks',
           }
           actual = {
               row[0]
@@ -54,23 +63,54 @@ jobs:
           if missing:
               raise SystemExit(f'Missing schema tables: {sorted(missing)}')
 
-          # Core planning invariant: pending schedules may be unscheduled, but
-          # confirmed schedules must have a day and time.
+          forbidden_legacy = {
+              'students', 'recurring_sessions', 'lesson_occurrences', 'payments',
+              'receipts', 'activity_log', 'settings', 'student_billing_v6',
+              'package_cycles_v6', 'mutation_dedupe_v1'
+          }
+          present_legacy = forbidden_legacy & actual
+          if present_legacy:
+              raise SystemExit(f'Legacy tables leaked into Sozan2: {sorted(present_legacy)}')
+
+          # The initial cloud database must not seed a personal user/workspace.
+          if db.execute('SELECT COUNT(*) FROM core_users').fetchone()[0] != 0:
+              raise SystemExit('Initial schema must be user-neutral')
+          if db.execute('SELECT COUNT(*) FROM core_workspaces').fetchone()[0] != 0:
+              raise SystemExit('Initial schema must not create a personal workspace')
+
           db.execute(
-              "INSERT INTO recurring_sessions(title, session_type, schedule_status) "
-              "VALUES ('pending', 'online', 'pending')"
+              "INSERT INTO core_workspaces(id, name, template_key) VALUES ('ws-ci', 'CI', 'tutoring')"
           )
+
+          # Pending tutoring schedules may be missing day/time.
+          db.execute(
+              "INSERT INTO tutoring_recurring_sessions(id, workspace_id, title, session_type, schedule_status) "
+              "VALUES ('session-pending', 'ws-ci', 'pending', 'online', 'pending')"
+          )
+
+          # Confirmed schedules must have both weekday and time.
           try:
               db.execute(
-                  "INSERT INTO recurring_sessions(title, session_type, schedule_status) "
-                  "VALUES ('broken', 'online', 'confirmed')"
+                  "INSERT INTO tutoring_recurring_sessions(id, workspace_id, title, session_type, schedule_status) "
+                  "VALUES ('session-broken', 'ws-ci', 'broken', 'online', 'confirmed')"
               )
           except sqlite3.IntegrityError:
               pass
           else:
-              raise SystemExit('Confirmed schedule invariant is not enforced')
+              raise SystemExit('Confirmed tutoring schedule invariant is not enforced')
 
-          print('Initial D1 schema validated')
+          # Workspace foreign keys must reject orphan module data.
+          try:
+              db.execute(
+                  "INSERT INTO tutoring_students(id, workspace_id, name) "
+                  "VALUES ('student-orphan', 'missing-workspace', 'orphan')"
+              )
+          except sqlite3.IntegrityError:
+              pass
+          else:
+              raise SystemExit('Workspace isolation foreign key is not enforced')
+
+          print('Modular D1 schema validated')
           PY
       - run: npm run check
       - run: npm run build
