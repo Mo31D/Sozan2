@@ -72,36 +72,37 @@ export class BillingService {
           effectiveFrom: parsed.effectiveFrom,
         };
 
+    if (parsed.billingMode === 'package' && current
+      && current.openingCompletedCount !== parsed.openingCompletedCount) {
+      const due = parsed.openingCompletedCount + current.realCompletedCount === current.sessionLimit;
+      await this.repository.updateOpeningProgress({
+        workspaceId,
+        cycleId: current.id,
+        openingCompletedCount: parsed.openingCompletedCount,
+        status: due ? 'due' : 'open',
+        completedOn: due ? (current.completedOn ?? parsed.effectiveFrom) : null,
+      });
+    }
+
     await this.repository.upsertPlan(plan);
 
-    if (parsed.billingMode === 'package') {
-      if (!current) {
-        await this.repository.createCycle({
-          id: this.idFactory(),
-          workspaceId,
-          studentId,
-          sequenceNo: 1,
-          sessionLimit: parsed.packageSize,
-          pricePence: parsed.packagePricePence,
-          openingCompletedCount: parsed.openingCompletedCount,
-          openingProgressLockedAt: null,
-          status: parsed.openingCompletedCount === parsed.packageSize ? 'due' : 'open',
-          startedOn: parsed.cycleAnchorDate ?? parsed.effectiveFrom,
-          completedOn: parsed.openingCompletedCount === parsed.packageSize
-            ? parsed.effectiveFrom
-            : null,
-          paidOn: null,
-        });
-      } else if (current.openingCompletedCount !== parsed.openingCompletedCount) {
-        const due = parsed.openingCompletedCount + current.realCompletedCount === current.sessionLimit;
-        await this.repository.updateOpeningProgress({
-          workspaceId,
-          cycleId: current.id,
-          openingCompletedCount: parsed.openingCompletedCount,
-          status: due ? 'due' : 'open',
-          completedOn: due ? (current.completedOn ?? parsed.effectiveFrom) : null,
-        });
-      }
+    if (parsed.billingMode === 'package' && !current) {
+      await this.repository.createCycle({
+        id: this.idFactory(),
+        workspaceId,
+        studentId,
+        sequenceNo: 1,
+        sessionLimit: parsed.packageSize,
+        pricePence: parsed.packagePricePence,
+        openingCompletedCount: parsed.openingCompletedCount,
+        openingProgressLockedAt: null,
+        status: parsed.openingCompletedCount === parsed.packageSize ? 'due' : 'open',
+        startedOn: parsed.cycleAnchorDate ?? parsed.effectiveFrom,
+        completedOn: parsed.openingCompletedCount === parsed.packageSize
+          ? parsed.effectiveFrom
+          : null,
+        paidOn: null,
+      });
     }
 
     return this.getStudentBilling(workspaceId, studentId);
