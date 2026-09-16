@@ -34,6 +34,12 @@ type ActivityRow = {
   created_at: string;
 };
 
+type SettingRow = {
+  workspace_id: string;
+  key: string;
+  value: string;
+};
+
 export const coreSyncHandler: ModuleSyncHandler = {
   moduleKey: 'core',
 
@@ -80,18 +86,24 @@ export const coreSyncHandler: ModuleSyncHandler = {
   },
 
   async snapshot(db: D1Database, workspaceId: string): Promise<ModuleSnapshot> {
-    const result = await db.prepare(
-      `SELECT id, workspace_id, module_key, entity_type, entity_id, action, title, detail,
-              before_json, after_json, undoable, undone_at, created_at
-       FROM core_activity_events
-       WHERE workspace_id=?1
-       ORDER BY created_at DESC, id DESC
-       LIMIT 500`,
-    ).bind(workspaceId).all<ActivityRow>();
+    const [activityResult, settingsResult] = await Promise.all([
+      db.prepare(
+        `SELECT id, workspace_id, module_key, entity_type, entity_id, action, title, detail,
+                before_json, after_json, undoable, undone_at, created_at
+         FROM core_activity_events
+         WHERE workspace_id=?1
+         ORDER BY created_at DESC, id DESC
+         LIMIT 500`,
+      ).bind(workspaceId).all<ActivityRow>(),
+      db.prepare(
+        `SELECT workspace_id,key,value FROM core_workspace_settings
+         WHERE workspace_id=?1 ORDER BY key`,
+      ).bind(workspaceId).all<SettingRow>(),
+    ]);
     return {
       moduleKey: 'core',
       data: {
-        activityEvents: (result.results ?? []).map((row) => ({
+        activityEvents: (activityResult.results ?? []).map((row) => ({
           id: row.id,
           workspaceId: row.workspace_id,
           moduleKey: row.module_key,
@@ -105,6 +117,11 @@ export const coreSyncHandler: ModuleSyncHandler = {
           undoable: row.undoable === 1,
           undoneAt: row.undone_at,
           createdAt: row.created_at,
+        })),
+        workspaceSettings: (settingsResult.results ?? []).map((row) => ({
+          workspaceId: row.workspace_id,
+          key: row.key,
+          value: row.value,
         })),
       },
     };
