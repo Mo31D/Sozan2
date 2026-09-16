@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authRoutes } from './auth/routes';
 import type { Env } from './env';
+import { migrationRoutes } from './migration/routes';
 import { plannerRoutes } from './planner/routes';
 import { syncRoutes } from './sync/routes';
 import { tutoringRoutes } from './tutoring/routes';
@@ -26,6 +27,7 @@ app.route('/api/workspaces', workspaceRoutes);
 app.route('/api/tutoring', tutoringRoutes);
 app.route('/api/planner', plannerRoutes);
 app.route('/api/sync', syncRoutes);
+app.route('/api/migration', migrationRoutes);
 
 app.notFound((c) => {
   if (c.req.path.startsWith('/api/')) {
