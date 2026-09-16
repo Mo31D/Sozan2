@@ -9,5 +9,11 @@
     "noEmit": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/server", "src/domain"]
+  "include": [
+    "src/server",
+    "src/domain",
+    "src/platform",
+    "src/modules",
+    "src/templates"
+  ]
 }
