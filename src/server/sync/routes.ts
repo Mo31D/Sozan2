@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { accessError, requireWorkspaceAccess } from '../auth/guard';
 import type { Env } from '../env';
 import { requireDatabase } from '../env';
+import { coreSyncHandler } from './core.sync';
 import { financeSyncHandler } from './finance.sync';
 import { getSyncHandler, type SyncMutation } from './contracts';
 import { tutoringSyncHandler } from './tutoring.sync';
 
-const handlers = [tutoringSyncHandler, financeSyncHandler] as const;
+const handlers = [coreSyncHandler, tutoringSyncHandler, financeSyncHandler] as const;
 
 const mutationSchema = z.object({
   id: z.string().uuid(),
