@@ -7,6 +7,7 @@ import {
   type LocalPlatformSnapshot,
 } from './adapters/indexeddb/platform.repository';
 import { CloudLinkPanel, ExistingAccountLogin } from './cloud/CloudAccess';
+import { Sozan1MigrationPanel } from './migration/Sozan1MigrationPanel';
 import { TutoringSurface } from './tutoring/TutoringSurface';
 import { BUILTIN_MODULES } from '../platform/modules/catalog';
 import { composeSurface } from '../platform/surfaces/layout';
@@ -259,6 +260,13 @@ function MeSurface({
         snapshot={snapshot}
         available={cloudAccountsAvailable(cloud)}
         onLinked={onChanged}
+      />
+
+      <Sozan1MigrationPanel
+        workspaceId={snapshot.workspace.id}
+        cloudLinked={Boolean(snapshot.cloudLink)}
+        currencyLabel={snapshot.workspace.currencyLabel}
+        onImported={onChanged}
       />
 
       <section className="section-block">
