@@ -36,12 +36,12 @@ export type LocalReceipt = {
   amountPence: number;
   receivedAt: string;
   paymentMethod: 'cash' | 'bank' | 'wallet' | 'other';
-  sourceKind: 'manual';
-  sourceModule: null;
-  sourceEntityType: null;
-  sourceEntityId: null;
+  sourceKind: 'manual' | 'quick' | 'migration';
+  sourceModule: string | null;
+  sourceEntityType: string | null;
+  sourceEntityId: string | null;
   note: string | null;
-  deletedAt: null;
+  deletedAt: string | null;
   pendingSync: boolean;
 };
 
