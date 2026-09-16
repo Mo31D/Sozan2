@@ -20,7 +20,7 @@ export function App() {
         if (active) {
           setState({
             status: 'error',
-            message: error instanceof Error ? error.message : 'تعذر الاتصال بالخادم',
+            message: error instanceof Error ? error.message : 'تعذر فحص بيئة التشغيل',
           });
         }
       });
@@ -33,14 +33,14 @@ export function App() {
   return (
     <main className="shell">
       <section className="card">
-        <div className="mark">س</div>
-        <p className="eyebrow">Sozan2</p>
-        <h1>بداية نظيفة</h1>
+        <div className="mark">S2</div>
+        <p className="eyebrow">Sozan2 Platform</p>
+        <h1>الهيكل الأساسي يعمل</h1>
         <p className="lead">
-          هذه شاشة فحص للبنية الجديدة فقط. لم يتم نقل بيانات أو منطق مالي من النسخة القديمة.
+          Core محايد + Modules مستقلة + Local-first. التدريس هو أول Template وليس هو الـCore.
         </p>
 
-        {state.status === 'loading' && <div className="status neutral">جاري فحص الخادم…</div>}
+        {state.status === 'loading' && <div className="status neutral">جاري فحص بيئة التشغيل…</div>}
 
         {state.status === 'error' && (
           <div className="status bad">تعذر الاتصال: {state.message}</div>
@@ -48,10 +48,11 @@ export function App() {
 
         {state.status === 'ready' && (
           <div className="status good">
-            <strong>الخادم يعمل</strong>
+            <strong>الـWorker والواجهة يعملان</strong>
             <span>الإصدار {state.health.version}</span>
+            <span>Local mode: {state.health.localModeAvailable ? 'متاح' : 'غير متاح'}</span>
             <span>
-              قاعدة البيانات: {state.health.databaseConfigured ? 'مربوطة' : 'لم تُربط بعد'}
+              D1: {state.health.cloudDatabaseConfigured ? 'مربوطة' : 'لم تُربط بعد'}
             </span>
           </div>
         )}
