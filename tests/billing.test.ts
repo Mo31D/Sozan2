@@ -88,7 +88,10 @@ function packagePlan(): BillingPlan {
   };
 }
 
-function packageCycle(realCompletedCount = 0): BillingCycle {
+function packageCycle(
+  realCompletedCount = 0,
+  openingProgressLockedAt: string | null = null,
+): BillingCycle {
   return {
     id: 'cycle-1',
     workspaceId: 'workspace-1',
@@ -97,6 +100,7 @@ function packageCycle(realCompletedCount = 0): BillingCycle {
     sessionLimit: 8,
     pricePence: 8000,
     openingCompletedCount: 3,
+    openingProgressLockedAt,
     realCompletedCount,
     status: 'open',
     startedOn: '2026-09-01',
@@ -135,6 +139,7 @@ describe('package billing', () => {
     expect(canChangeOpeningProgress(3, 4, 0)).toBe(true);
     expect(canChangeOpeningProgress(3, 3, 2)).toBe(true);
     expect(canChangeOpeningProgress(3, 4, 2)).toBe(false);
+    expect(canChangeOpeningProgress(3, 4, 0, true)).toBe(false);
   });
 
   it('rejects impossible progress', () => {
@@ -179,5 +184,41 @@ describe('package billing', () => {
 
     expect(repository.cycle?.openingCompletedCount).toBe(3);
     expect(repository.plan?.packagePricePence).toBe(8000);
+  });
+
+  it('keeps opening progress locked after a real lesson is reopened', async () => {
+    const repository = new MemoryBillingRepository(
+      packagePlan(),
+      packageCycle(0, '2026-09-10T12:00:00.000Z'),
+    );
+    const service = new BillingService(repository, () => 'new-cycle');
+
+    await expect(service.configure('workspace-1', 'student-1', {
+      billingMode: 'package',
+      packageSize: 8,
+      packagePricePence: 8000,
+      cycleAnchorDate: '2026-09-01',
+      effectiveFrom: '2026-09-16',
+      openingCompletedCount: 4,
+    })).rejects.toThrow('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+
+    expect(repository.cycle?.openingCompletedCount).toBe(3);
+  });
+
+  it('rejects impossible opening progress before writing a new plan', async () => {
+    const repository = new MemoryBillingRepository(null, null);
+    const service = new BillingService(repository, () => 'new-cycle');
+
+    await expect(service.configure('workspace-1', 'student-1', {
+      billingMode: 'package',
+      packageSize: 8,
+      packagePricePence: 8000,
+      cycleAnchorDate: '2026-09-01',
+      effectiveFrom: '2026-09-16',
+      openingCompletedCount: 9,
+    })).rejects.toThrow('OPENING_PROGRESS_EXCEEDS_PACKAGE');
+
+    expect(repository.plan).toBeNull();
+    expect(repository.cycle).toBeNull();
   });
 });
