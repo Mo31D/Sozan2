@@ -4,7 +4,7 @@ import {
   effectiveOccurrenceDate,
   effectiveOccurrenceStart,
   validateRecurringSchedule,
-} from '../src/domain/schedule';
+} from '../src/modules/tutoring/domain/schedule';
 
 describe('schedule planning', () => {
   it('never generates occurrences from pending schedules', () => {
