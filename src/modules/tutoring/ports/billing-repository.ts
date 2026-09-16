@@ -8,6 +8,13 @@ export interface BillingRepository {
   getOpenCycle(workspaceId: string, studentId: string): Promise<BillingCycle | null>;
   getNextSequenceNo(workspaceId: string, studentId: string): Promise<number>;
   createCycle(input: Omit<BillingCycle, 'realCompletedCount'>): Promise<BillingCycle>;
+  updateOpeningProgress(input: {
+    workspaceId: string;
+    cycleId: string;
+    openingCompletedCount: number;
+    status: 'open' | 'due';
+    completedOn: string | null;
+  }): Promise<void>;
   addOccurrenceToCycle(input: {
     workspaceId: string;
     cycleId: string;
