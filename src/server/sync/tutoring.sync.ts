@@ -1,5 +1,7 @@
 import { createRecurringSessionSchema, updateRecurringScheduleSchema } from '../../modules/tutoring/domain/session';
 import { createStudentSchema } from '../../modules/tutoring/domain/student';
+import { BillingService } from '../../modules/tutoring/services/billing.service';
+import { D1BillingRepository } from '../adapters/d1/tutoring-billing.repository';
 import { D1SessionRepository } from '../adapters/d1/tutoring-sessions.repository';
 import { D1StudentRepository } from '../adapters/d1/tutoring-students.repository';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
@@ -38,6 +40,7 @@ type BillingCycleRow = {
   session_limit: number;
   price_pence: number;
   opening_completed_count: number;
+  real_completed_count: number;
   status: 'open' | 'due' | 'paid' | 'cancelled';
   started_on: string | null;
   completed_on: string | null;
@@ -92,6 +95,17 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
       return;
     }
 
+    if (mutation.operation === 'billing.configure') {
+      const student = await db.prepare(
+        `SELECT 1 AS found FROM tutoring_students
+         WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL LIMIT 1`,
+      ).bind(workspaceId, mutation.entityId).first<{ found: number }>();
+      if (!student) throw new Error('STUDENT_NOT_FOUND');
+      const service = new BillingService(new D1BillingRepository(db), crypto.randomUUID);
+      await service.configure(workspaceId, mutation.entityId, mutation.payload);
+      return;
+    }
+
     throw new Error('SYNC_OPERATION_UNSUPPORTED');
   },
 
@@ -115,11 +129,14 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
          ORDER BY student_id`,
       ).bind(workspaceId).all<BillingPlanRow>(),
       db.prepare(
-        `SELECT id, workspace_id, student_id, sequence_no, session_limit, price_pence,
-                opening_completed_count, status, started_on, completed_on, paid_on
-         FROM tutoring_billing_cycles
-         WHERE workspace_id = ?1
-         ORDER BY student_id, sequence_no`,
+        `SELECT c.id, c.workspace_id, c.student_id, c.sequence_no, c.session_limit, c.price_pence,
+                c.opening_completed_count,
+                (SELECT COUNT(*) FROM tutoring_billing_cycle_occurrences co
+                  WHERE co.workspace_id = c.workspace_id AND co.billing_cycle_id = c.id) AS real_completed_count,
+                c.status, c.started_on, c.completed_on, c.paid_on
+         FROM tutoring_billing_cycles c
+         WHERE c.workspace_id = ?1
+         ORDER BY c.student_id, c.sequence_no`,
       ).bind(workspaceId).all<BillingCycleRow>(),
     ]);
 
@@ -176,6 +193,7 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
           sessionLimit: row.session_limit,
           pricePence: row.price_pence,
           openingCompletedCount: row.opening_completed_count,
+          realCompletedCount: row.real_completed_count,
           status: row.status,
           startedOn: row.started_on,
           completedOn: row.completed_on,
