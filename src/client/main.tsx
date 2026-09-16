@@ -5,6 +5,7 @@ import './styles.css';
 import './simple-ui.css';
 import './simple-v2.css';
 import './simple/v2/attendance.css';
+import './simple/v2/schedule.css';
 import './control-center.css';
 
 const root = document.getElementById('root');
