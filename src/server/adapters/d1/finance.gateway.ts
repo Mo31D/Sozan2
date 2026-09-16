@@ -1,6 +1,7 @@
 import {
   assertReceiptCommand,
   type AllocateReceiptCommand,
+  type ExternalReference,
   type FinanceGateway,
   type RecordReceiptCommand,
 } from '../../../modules/finance/contracts';
@@ -49,5 +50,20 @@ export class D1FinanceGateway implements FinanceGateway {
       command.target.id,
       command.amountPence,
     ).run();
+  }
+
+  async getAllocatedTotal(workspaceId: string, target: ExternalReference): Promise<number> {
+    const row = await this.db.prepare(
+      `SELECT COALESCE(SUM(a.amount_pence), 0) AS allocated
+       FROM finance_receipt_allocations a
+       JOIN finance_receipts r
+         ON r.workspace_id = a.workspace_id AND r.id = a.receipt_id
+       WHERE a.workspace_id = ?1
+         AND a.target_module = ?2
+         AND a.target_type = ?3
+         AND a.target_id = ?4
+         AND r.deleted_at IS NULL`,
+    ).bind(workspaceId, target.module, target.type, target.id).first<{ allocated: number }>();
+    return row?.allocated ?? 0;
   }
 }
