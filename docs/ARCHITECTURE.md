@@ -86,6 +86,30 @@ Finance / Activity / Reports react independently
 
 This prevents a change in one piece from forcing edits across the whole product.
 
+## UI composition rules
+
+The same Lego rule applies above the domain layer.
+
+```text
+App
+ ↓
+workspace shell / control shell
+ ↓
+feature screens
+ ↓
+application workflows
+ ↓
+module commands/services
+```
+
+A shell owns only navigation, loading, notifications and orchestration. It must not accumulate finance, tutoring, planner or reporting business rules.
+
+Feature screens own presentation and form state. Reusable pure helpers stay separate from persistence. Screens call an application workflow when one user action spans modules.
+
+A cross-module convenience action such as **complete lesson + collect money** is an application workflow, not a second attendance/payment implementation. Tutoring remains the owner of completion; Finance remains the owner of the canonical receipt. If the first durable step succeeds and a later independent step fails, the UI reloads local truth and exposes an explicit recovery state rather than pretending the whole operation rolled back.
+
+Stable module names are preferred over `V2`, `Final`, `new`, `patch` or similar names. When a replacement becomes canonical, the obsolete parallel implementation is removed instead of kept as a fallback code path.
+
 ## Persistence and zero-backend mode
 
 ### Local mode
