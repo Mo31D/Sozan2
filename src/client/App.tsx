@@ -6,6 +6,7 @@ import {
   setLocalModuleEnabled,
   type LocalPlatformSnapshot,
 } from './adapters/indexeddb/platform.repository';
+import { CloudLinkPanel, ExistingAccountLogin } from './cloud/CloudAccess';
 import { BUILTIN_MODULES } from '../platform/modules/catalog';
 import { composeSurface } from '../platform/surfaces/layout';
 
@@ -69,16 +70,22 @@ export function App() {
     );
   }
 
+  const reloadLocal = async () => {
+    const snapshot = await loadLocalPlatform();
+    setLocal({ status: 'ready', snapshot });
+  };
+
   return (
     <MeSurface
       snapshot={local.snapshot}
       cloud={cloud}
-      onChanged={async () => {
-        const snapshot = await loadLocalPlatform();
-        setLocal({ status: 'ready', snapshot });
-      }}
+      onChanged={reloadLocal}
     />
   );
+}
+
+function cloudAccountsAvailable(cloud: CloudState): boolean {
+  return cloud.status === 'ready' && cloud.health.cloudAccountsAvailable;
 }
 
 function LocalSetup({
@@ -115,31 +122,46 @@ function LocalSetup({
     <main className="shell setup-shell" dir="rtl">
       <section className="card setup-card">
         <div className="mark">S2</div>
-        <p className="eyebrow">Local-first setup</p>
-        <h1>ابدأ باسمك أنت</h1>
+        <p className="eyebrow">Local-first</p>
+        <h1>ابدأ أو ادخل لحسابك</h1>
         <p className="lead">
-          البيانات تُحفظ محليًا في هذا الجهاز أولًا. السحابة اختيارية، ولا يوجد اعتماد على API مدفوع.
+          على جهازك الأساسي يمكنك البدء محليًا ثم ربطه بالسحابة. على أي جهاز آخر ادخل بنفس الحساب لتنزيل نفس مساحة العمل.
         </p>
 
-        <form className="setup-form" onSubmit={submit}>
-          <label>
-            اسم المستخدم
-            <input name="displayName" autoComplete="name" placeholder="مثال: سوزان" required />
-          </label>
-          <label>
-            اسم مساحة العمل
-            <input name="workspaceName" placeholder="مثال: دروسي" required />
-          </label>
-          <label>
-            نوع البداية
-            <select name="templateKey" defaultValue="tutoring">
-              <option value="tutoring">Teaching / Tutoring</option>
-            </select>
-          </label>
-          <button className="primary-button" type="submit" disabled={busy}>
-            {busy ? 'جاري الإنشاء…' : 'إنشاء النسخة المحلية'}
-          </button>
-        </form>
+        <ExistingAccountLogin
+          available={cloudAccountsAvailable(cloud)}
+          onReady={onReady}
+        />
+
+        {cloudAccountsAvailable(cloud) && <div className="setup-divider"><span>أو</span></div>}
+
+        <section className="local-start-block">
+          <div className="section-heading compact-heading">
+            <div>
+              <p className="eyebrow">New local workspace</p>
+              <h2>ابدأ نسخة جديدة</h2>
+            </div>
+          </div>
+          <form className="setup-form" onSubmit={submit}>
+            <label>
+              اسم المستخدم
+              <input name="displayName" autoComplete="name" placeholder="مثال: سوزان" required />
+            </label>
+            <label>
+              اسم مساحة العمل
+              <input name="workspaceName" placeholder="مثال: دروسي" required />
+            </label>
+            <label>
+              نوع البداية
+              <select name="templateKey" defaultValue="tutoring">
+                <option value="tutoring">Teaching / Tutoring</option>
+              </select>
+            </label>
+            <button className="primary-button" type="submit" disabled={busy}>
+              {busy ? 'جاري الإنشاء…' : 'إنشاء النسخة المحلية'}
+            </button>
+          </form>
+        </section>
 
         {error && <div className="status bad">{error}</div>}
         <CloudBadge cloud={cloud} />
@@ -183,15 +205,25 @@ function MeSurface({
       <section className="panel identity-panel">
         <div>
           <span className="panel-label">وضع التخزين الحالي</span>
-          <strong>Local-first</strong>
-          <small>يعمل من IndexedDB حتى لو الـWorker أو الإنترنت غير متاح.</small>
+          <strong>{snapshot.cloudLink ? 'Local + Cloud' : 'Local-first'}</strong>
+          <small>
+            {snapshot.cloudLink
+              ? 'النسخة المحلية مرتبطة بنفس مساحة العمل السحابية.'
+              : 'يعمل من IndexedDB حتى لو الـWorker أو الإنترنت غير متاح.'}
+          </small>
         </div>
         <div>
           <span className="panel-label">Template</span>
           <strong>{snapshot.workspace.templateKey}</strong>
-          <small>يمكن تغييره مستقبلًا دون تغيير الـCore.</small>
+          <small>نوع النشاط منفصل عن الـCore ويمكن إضافة Templates أخرى لاحقًا.</small>
         </div>
       </section>
+
+      <CloudLinkPanel
+        snapshot={snapshot}
+        available={cloudAccountsAvailable(cloud)}
+        onLinked={onChanged}
+      />
 
       <section className="section-block">
         <div className="section-heading">
@@ -267,7 +299,7 @@ function CloudBadge({ cloud, compact = false }: { cloud: CloudState; compact?: b
       : cloud.status === 'offline'
         ? 'Local فقط'
         : cloud.health.cloudDatabaseConfigured
-          ? 'Cloud متاح'
+          ? 'Cloud جاهز'
           : 'Worker متاح · D1 غير مربوطة';
 
   return <div className={`cloud-badge ${compact ? 'compact' : ''}`}>{text}</div>;
