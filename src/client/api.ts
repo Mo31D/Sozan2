@@ -2,7 +2,9 @@ export type HealthResponse = {
   ok: boolean;
   app: string;
   version: string;
-  databaseConfigured: boolean;
+  architecture: string;
+  localModeAvailable: boolean;
+  cloudDatabaseConfigured: boolean;
 };
 
 export async function getHealth(): Promise<HealthResponse> {
