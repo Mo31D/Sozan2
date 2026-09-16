@@ -61,6 +61,36 @@ describe('FinanceCollectionService', () => {
     });
   });
 
+  it('uses a stable target tie-breaker when obligations share a due date', async () => {
+    const gateway = new MemoryFinanceGateway();
+    const service = new FinanceCollectionService(
+      gateway,
+      [{
+        async listOpenObligations() {
+          return [
+            { target: { module: 'tutoring', type: 'package_cycle', id: 'cycle-b' }, dueAt: '2026-09-01', amountDuePence: 1000 },
+            { target: { module: 'tutoring', type: 'package_cycle', id: 'cycle-a' }, dueAt: '2026-09-01', amountDuePence: 1000 },
+          ];
+        },
+      }],
+      () => `generated-${gateway.allocations.length + 1}`,
+    );
+
+    await service.collect({
+      workspaceId: 'workspace-1',
+      payer: { type: 'tutoring.student', id: 'student-1' },
+      amountPence: 1200,
+      receivedAt: '2026-09-16',
+      paymentMethod: 'cash',
+      sourceKind: 'manual',
+    });
+
+    expect(gateway.allocations.map((item) => [item.target.id, item.amountPence])).toEqual([
+      ['cycle-a', 1000],
+      ['cycle-b', 200],
+    ]);
+  });
+
   it('keeps excess money as credit after all obligations are covered', async () => {
     const gateway = new MemoryFinanceGateway();
     const service = new FinanceCollectionService(
