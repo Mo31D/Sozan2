@@ -62,6 +62,12 @@ export type LocalAllocation = {
   amountPence: number;
 };
 
+export type LocalWorkspaceSetting = {
+  workspaceId: string;
+  key: string;
+  value: string;
+};
+
 export type SimpleWorkspaceData = {
   students: Student[];
   sessions: RecurringSession[];
@@ -73,11 +79,14 @@ export type SimpleWorkspaceData = {
   expenses: LocalExpense[];
   otherIncome: LocalOtherIncome[];
   cashChecks: LocalCashCheck[];
+  workspaceSettings: LocalWorkspaceSetting[];
+  openingBalancePence: number;
 };
 
 export async function loadSimpleWorkspaceData(workspaceId: string): Promise<SimpleWorkspaceData> {
   const db = await openLocalDatabase();
   const stores = [
+    STORES.coreWorkspaceSettings,
     STORES.tutoringStudents,
     STORES.tutoringSessions,
     STORES.tutoringOccurrences,
@@ -90,7 +99,8 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     STORES.financeCashChecks,
   ];
   const transaction = db.transaction(stores, 'readonly');
-  const [students, sessions, occurrences, billingPlans, billingCycles, receipts, allocations, expenses, otherIncome, cashChecks] = await Promise.all([
+  const [settings, students, sessions, occurrences, billingPlans, billingCycles, receipts, allocations, expenses, otherIncome, cashChecks] = await Promise.all([
+    requestResult<LocalWorkspaceSetting[]>(transaction.objectStore(STORES.coreWorkspaceSettings).getAll()),
     requestResult<Student[]>(transaction.objectStore(STORES.tutoringStudents).getAll()),
     requestResult<RecurringSession[]>(transaction.objectStore(STORES.tutoringSessions).getAll()),
     requestResult<LocalOccurrence[]>(transaction.objectStore(STORES.tutoringOccurrences).getAll()),
@@ -104,6 +114,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
   ]);
 
   const mine = <T extends { workspaceId: string }>(rows: T[]) => rows.filter((row) => row.workspaceId === workspaceId);
+  const workspaceSettings = mine(settings);
+  const openingRaw = workspaceSettings.find((row) => row.key === 'finance.opening_balance_pence')?.value ?? '0';
+  const openingBalancePence = Number.isFinite(Number(openingRaw)) ? Math.round(Number(openingRaw)) : 0;
   return {
     students: mine(students).filter((row) => row.active),
     sessions: mine(sessions).filter((row) => row.active),
@@ -115,6 +128,8 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     expenses: mine(expenses).filter((row) => !row.deletedAt),
     otherIncome: mine(otherIncome).filter((row) => !row.deletedAt),
     cashChecks: mine(cashChecks).filter((row) => !row.deletedAt),
+    workspaceSettings,
+    openingBalancePence,
   };
 }
 
