@@ -239,7 +239,10 @@ function MeSurface({
                 module.widgets.some((widget) => widget.id === placement.widgetId),
               );
               const widget = owner?.widgets.find((item) => item.id === placement.widgetId);
-              const label = widget ? owner?.labels[widget.labelKey] ?? placement.widgetId : placement.widgetId;
+              const ownerLabels: Readonly<Record<string, string>> | undefined = owner?.labels;
+              const label = widget
+                ? ownerLabels?.[widget.labelKey] ?? placement.widgetId
+                : placement.widgetId;
               return (
                 <article className="widget-card" key={placement.widgetId}>
                   <span>{owner?.title ?? 'Module'}</span>
