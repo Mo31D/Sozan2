@@ -16,6 +16,7 @@ const activitySchema = z.object({
   undoneAt: z.string().max(50).nullable(),
   createdAt: z.string().min(10).max(50),
 });
+const undoSchema = z.object({ undoneAt: z.string().min(10).max(50) });
 
 type ActivityRow = {
   id: string;
@@ -37,31 +38,45 @@ export const coreSyncHandler: ModuleSyncHandler = {
   moduleKey: 'core',
 
   async apply(db: D1Database, workspaceId: string, mutation: SyncMutation): Promise<void> {
-    if (mutation.operation !== 'activity.record') throw new Error('SYNC_OPERATION_UNSUPPORTED');
-    const parsed = activitySchema.parse(mutation.payload);
-    if (parsed.workspaceId !== workspaceId || parsed.id !== mutation.entityId) {
-      throw new Error('ACTIVITY_IDENTITY_MISMATCH');
+    if (mutation.operation === 'activity.record') {
+      const parsed = activitySchema.parse(mutation.payload);
+      if (parsed.workspaceId !== workspaceId || parsed.id !== mutation.entityId) {
+        throw new Error('ACTIVITY_IDENTITY_MISMATCH');
+      }
+      await db.prepare(
+        `INSERT OR IGNORE INTO core_activity_events(
+           id, workspace_id, module_key, entity_type, entity_id, action, title, detail,
+           before_json, after_json, undoable, undone_at, created_at
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)`,
+      ).bind(
+        parsed.id,
+        workspaceId,
+        parsed.moduleKey,
+        parsed.entityType,
+        parsed.entityId,
+        parsed.action,
+        parsed.title,
+        parsed.detail,
+        parsed.beforeJson,
+        parsed.afterJson,
+        parsed.undoable ? 1 : 0,
+        parsed.undoneAt,
+        parsed.createdAt,
+      ).run();
+      return;
     }
-    await db.prepare(
-      `INSERT OR IGNORE INTO core_activity_events(
-         id, workspace_id, module_key, entity_type, entity_id, action, title, detail,
-         before_json, after_json, undoable, undone_at, created_at
-       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)`,
-    ).bind(
-      parsed.id,
-      workspaceId,
-      parsed.moduleKey,
-      parsed.entityType,
-      parsed.entityId,
-      parsed.action,
-      parsed.title,
-      parsed.detail,
-      parsed.beforeJson,
-      parsed.afterJson,
-      parsed.undoable ? 1 : 0,
-      parsed.undoneAt,
-      parsed.createdAt,
-    ).run();
+
+    if (mutation.operation === 'activity.undo') {
+      const parsed = undoSchema.parse(mutation.payload);
+      const result = await db.prepare(
+        `UPDATE core_activity_events SET undone_at=?1, undoable=0
+         WHERE workspace_id=?2 AND id=?3`,
+      ).bind(parsed.undoneAt, workspaceId, mutation.entityId).run();
+      if ((result.meta?.changes ?? 0) === 0) throw new Error('ACTIVITY_NOT_FOUND');
+      return;
+    }
+
+    throw new Error('SYNC_OPERATION_UNSUPPORTED');
   },
 
   async snapshot(db: D1Database, workspaceId: string): Promise<ModuleSnapshot> {
