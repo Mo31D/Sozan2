@@ -72,7 +72,7 @@ export function MeScreen({
               const completed = cycle ? cycle.openingCompletedCount + cycle.realCompletedCount : 0;
               const remaining = Math.max(0, packageSize - completed);
               const nextPosition = completed < packageSize ? completed + 1 : null;
-              const openingLocked = (cycle?.realCompletedCount ?? 0) > 0;
+              const openingLocked = Boolean(cycle?.openingProgressLockedAt) || (cycle?.realCompletedCount ?? 0) > 0;
               return (
                 <details className="student-setting-row" key={student.id}>
                   <summary>
