@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { accessError, requireWorkspaceAccess } from '../auth/guard';
 import type { Env } from '../env';
 import { requireDatabase } from '../env';
+import { normalizeSozan1PayloadForImport } from './normalize';
 import { markMigrationUnverified, reconcileSozan1Migration } from './reconcile';
 import { importSozan1, parseSozan1Export } from './sozan1';
 
@@ -16,7 +17,8 @@ migrationRoutes.post('/:workspaceId/sozan1', async (c) => {
     }
 
     const rawPayload: unknown = await c.req.json();
-    const payload = parseSozan1Export(rawPayload);
+    const normalizedPayload = normalizeSozan1PayloadForImport(rawPayload);
+    const payload = parseSozan1Export(normalizedPayload);
     const db = requireDatabase(c.env);
     const result = await importSozan1(
       db,
@@ -25,7 +27,7 @@ migrationRoutes.post('/:workspaceId/sozan1', async (c) => {
       payload,
     );
 
-    const reconciliation = await reconcileSozan1Migration(db, workspaceId, rawPayload);
+    const reconciliation = await reconcileSozan1Migration(db, workspaceId, normalizedPayload);
     if (!reconciliation.ok) {
       await markMigrationUnverified(db, workspaceId);
       console.error('Sozan1 migration reconciliation failed', reconciliation.mismatches);
