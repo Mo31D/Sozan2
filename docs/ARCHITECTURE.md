@@ -25,7 +25,7 @@ The domain layer must not import Cloudflare, Hono, React, DOM or browser APIs.
 3. **Schedule & Planner** — recurring sessions, participants, pending/confirmed planning, availability range.
 4. **Lessons** — occurrence generation, completion, cancellation, reopen, one-off reschedule.
 5. **Billing** — per-session vs package, package cycles, opening progress.
-6. **Receipts & Allocation** — one canonical student-money model, credit and deterministic reallocation.
+6. **Receipts & Allocation** — one canonical teaching-cash model, credit and deterministic reallocation.
 7. **Expenses & Other Income**.
 8. **Reconciliation** — expected balance and cash checks.
 9. **Activity & Review** — append-only audit log and derived correction signals.
@@ -71,16 +71,16 @@ The only place allowed to create or alter production tables.
 Sozan2 deliberately removes the old split between direct lesson payments and student receipts.
 
 ```text
-money from student
-      ↓
-   receipt
-      ↓
+teaching cash
+     ↓
+  receipt
+     ↓
 allocation service
    ↙       ↘
 lesson      completed package cycle
 ```
 
-A quick “completed and paid” action creates the same receipt entity as the manual “قبضت فلوس” flow. This leaves one source of truth for cash received.
+Most receipts belong to a student. A group lesson that has no single named student account may instead create a receipt linked directly to its occurrence. A quick “completed and paid” action uses this same receipt entity. There is only one source of truth for cash received.
 
 ## Billing model
 
@@ -170,7 +170,7 @@ new D1
 
 Migration responsibilities include:
 
-- map old direct payments into canonical receipts;
+- map old direct payments into canonical receipts, including occurrence-level group payments without a student id;
 - map per-session and package data into the new billing model;
 - convert old package-opening shadow progress into `opening_completed_count`;
 - ignore old monthly compatibility structures after extracting their final business meaning;
