@@ -68,15 +68,40 @@ export function MeScreen({
             {data.students.map((student) => {
               const plan = planFor(data, student.id);
               const cycle = activeCycleFor(data, student.id);
+              const packageSize = cycle?.sessionLimit ?? plan?.packageSize ?? 8;
+              const completed = cycle ? cycle.openingCompletedCount + cycle.realCompletedCount : 0;
+              const remaining = Math.max(0, packageSize - completed);
+              const nextPosition = completed < packageSize ? completed + 1 : null;
+              const openingLocked = Boolean(cycle?.openingProgressLockedAt) || (cycle?.realCompletedCount ?? 0) > 0;
               return (
                 <details className="student-setting-row" key={student.id}>
-                  <summary><strong>{student.name}</strong><span>{plan?.billingMode === 'package' ? `باقة ${cycle?.sessionLimit ?? plan.packageSize ?? 8}` : 'بالحصة'}</span></summary>
+                  <summary>
+                    <strong>{student.name}</strong>
+                    <span>{plan?.billingMode === 'package' ? `باقة ${packageSize} · ${completed}/${packageSize}` : 'بالحصة'}</span>
+                  </summary>
+                  {plan?.billingMode === 'package' && cycle && (
+                    <div className="stable-box">
+                      <strong>{completed}/{packageSize} تمت · باقي {remaining}</strong>
+                      <small>{nextPosition ? `الحصة القادمة ${nextPosition}/${packageSize}` : cycle.status === 'paid' ? 'الباقة مكتملة ومدفوعة.' : 'الباقة مكتملة وجاهزة للتحصيل.'}</small>
+                    </div>
+                  )}
                   <form onSubmit={(event) => { event.preventDefault(); onPackage(student.id, new FormData(event.currentTarget)); }}>
                     <div className="inline-fields">
-                      <label>عدد الحصص<input name="packageSize" type="number" min="1" max="100" defaultValue={cycle?.sessionLimit ?? plan?.packageSize ?? 8} /></label>
+                      <label>عدد الحصص<input name="packageSize" type="number" min="1" max="100" defaultValue={packageSize} /></label>
                       <label>سعر الباقة<input name="packagePrice" type="number" min="0" step="0.01" defaultValue={(cycle?.pricePence ?? plan?.packagePricePence ?? 0) / 100 || ''} /></label>
-                      <label>المكتمل قبل البرنامج<input name="openingCompletedCount" type="number" min="0" max="100" defaultValue={cycle?.openingCompletedCount ?? 0} /></label>
+                      <label>
+                        {openingLocked ? 'التقدم عند بدء استخدام البرنامج' : 'تمت كام حصة من الدورة الحالية؟'}
+                        <input
+                          name="openingCompletedCount"
+                          type="number"
+                          min="0"
+                          max={cycle?.sessionLimit ?? 100}
+                          defaultValue={cycle?.openingCompletedCount ?? 0}
+                          readOnly={openingLocked}
+                        />
+                      </label>
                     </div>
+                    {openingLocked && <small>بعد تسجيل أول حصة جديدة، تقدم البداية بيتقفل والتقدم الحالي بيتحدث تلقائيًا.</small>}
                     <input name="effectiveFrom" type="hidden" value={plan?.effectiveFrom ?? todayIso()} />
                     <button className="secondary-small" type="submit" disabled={busy}>حفظ الباقة</button>
                   </form>

@@ -175,6 +175,8 @@ export function messageFor(cause: unknown): string {
     EXPENSE_AMOUNT_INVALID: 'اكتبي مبلغ المصروف بشكل صحيح.',
     EXPENSE_CATEGORY_REQUIRED: 'اكتبي تصنيف المصروف.',
     BILLING_MODE_LOCKED_BY_HISTORY: 'لا يمكن تغيير نظام الحساب بعد وجود تاريخ مالي؛ يمكن تعديل تفاصيل الباقة نفسها.',
+    OPENING_PROGRESS_EXCEEDS_PACKAGE: 'عدد الحصص المكتملة لا يمكن أن يتجاوز حجم الدورة الحالية.',
+    OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS: 'بعد تسجيل حصص جديدة، تقدم البداية بيتقفل والتقدم الحالي بيتحدث تلقائيًا.',
     OCCURRENCE_STATE_INVALID: 'حالة الحصة لا تسمح بهذا التعديل.',
     SESSION_NOT_FOUND: 'الموعد لم يعد موجودًا.',
     SCHEDULE_DAY_REQUIRED: 'اختاري يومًا للموعد المؤكد.',

@@ -62,6 +62,7 @@ type BillingCycleRow = {
   session_limit: number;
   price_pence: number;
   opening_completed_count: number;
+  opening_progress_locked_at: string | null;
   real_completed_count: number;
   status: 'open' | 'due' | 'paid' | 'cancelled';
   started_on: string | null;
@@ -205,7 +206,9 @@ async function reopenCompletedOccurrence(db: D1Database, workspaceId: string, oc
     }
     await db.prepare(
       `UPDATE tutoring_billing_cycles
-       SET status=?1, completed_on=?2, paid_on=NULL, updated_at=CURRENT_TIMESTAMP
+       SET status=?1, completed_on=?2, paid_on=NULL,
+           opening_progress_locked_at=COALESCE(opening_progress_locked_at,CURRENT_TIMESTAMP),
+           updated_at=CURRENT_TIMESTAMP
        WHERE workspace_id=?3 AND id=?4`,
     ).bind(completed ? 'due' : 'open', completedOn, workspaceId, cycle.billing_cycle_id).run();
   }
@@ -376,7 +379,7 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
       ).bind(workspaceId).all<BillingPlanRow>(),
       db.prepare(
         `SELECT c.id, c.workspace_id, c.student_id, c.sequence_no, c.session_limit, c.price_pence,
-                c.opening_completed_count,
+                c.opening_completed_count, c.opening_progress_locked_at,
                 (SELECT COUNT(*) FROM tutoring_billing_cycle_occurrences co
                   WHERE co.workspace_id = c.workspace_id AND co.billing_cycle_id = c.id) AS real_completed_count,
                 c.status, c.started_on, c.completed_on, c.paid_on
@@ -445,6 +448,7 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
           sessionLimit: row.session_limit,
           pricePence: row.price_pence,
           openingCompletedCount: row.opening_completed_count,
+          openingProgressLockedAt: row.opening_progress_locked_at,
           realCompletedCount: row.real_completed_count,
           status: row.status,
           startedOn: row.started_on,

@@ -36,6 +36,7 @@ export type BillingCycle = {
   sessionLimit: number;
   pricePence: number;
   openingCompletedCount: number;
+  openingProgressLockedAt?: string | null;
   realCompletedCount: number;
   status: 'open' | 'due' | 'paid' | 'cancelled';
   startedOn: string | null;

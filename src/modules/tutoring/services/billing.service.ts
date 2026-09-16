@@ -1,4 +1,4 @@
-import { packageUnitShare } from '../domain/billing';
+import { canChangeOpeningProgress, packageUnitShare } from '../domain/billing';
 import {
   configureBillingSchema,
   snapshotCycle,
@@ -25,9 +25,31 @@ export class BillingService {
     const parsed = configureBillingSchema.parse(input);
     const existing = await this.repository.getPlan(workspaceId, studentId);
     const hasHistory = await this.repository.hasBillingHistory(workspaceId, studentId);
+    const current = parsed.billingMode === 'package'
+      ? await this.repository.getCurrentCycle(workspaceId, studentId)
+      : null;
 
     if (existing && hasHistory && existing.billingMode !== parsed.billingMode) {
       throw new Error('BILLING_MODE_LOCKED_BY_HISTORY');
+    }
+
+    if (parsed.billingMode === 'package') {
+      if (!current && parsed.openingCompletedCount > parsed.packageSize) {
+        throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
+      }
+      if (current) {
+        if (parsed.openingCompletedCount > current.sessionLimit) {
+          throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
+        }
+        if (!canChangeOpeningProgress(
+          current.openingCompletedCount,
+          parsed.openingCompletedCount,
+          current.realCompletedCount,
+          Boolean(current.openingProgressLockedAt),
+        )) {
+          throw new Error('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+        }
+      }
     }
 
     const plan: BillingPlan = parsed.billingMode === 'package'
@@ -50,30 +72,37 @@ export class BillingService {
           effectiveFrom: parsed.effectiveFrom,
         };
 
+    if (parsed.billingMode === 'package' && current
+      && current.openingCompletedCount !== parsed.openingCompletedCount) {
+      const due = parsed.openingCompletedCount + current.realCompletedCount === current.sessionLimit;
+      await this.repository.updateOpeningProgress({
+        workspaceId,
+        cycleId: current.id,
+        openingCompletedCount: parsed.openingCompletedCount,
+        status: due ? 'due' : 'open',
+        completedOn: due ? (current.completedOn ?? parsed.effectiveFrom) : null,
+      });
+    }
+
     await this.repository.upsertPlan(plan);
 
-    if (parsed.billingMode === 'package') {
-      const current = await this.repository.getCurrentCycle(workspaceId, studentId);
-      if (!current) {
-        if (parsed.openingCompletedCount > parsed.packageSize) {
-          throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
-        }
-        await this.repository.createCycle({
-          id: this.idFactory(),
-          workspaceId,
-          studentId,
-          sequenceNo: 1,
-          sessionLimit: parsed.packageSize,
-          pricePence: parsed.packagePricePence,
-          openingCompletedCount: parsed.openingCompletedCount,
-          status: parsed.openingCompletedCount === parsed.packageSize ? 'due' : 'open',
-          startedOn: parsed.cycleAnchorDate ?? parsed.effectiveFrom,
-          completedOn: parsed.openingCompletedCount === parsed.packageSize
-            ? parsed.effectiveFrom
-            : null,
-          paidOn: null,
-        });
-      }
+    if (parsed.billingMode === 'package' && !current) {
+      await this.repository.createCycle({
+        id: this.idFactory(),
+        workspaceId,
+        studentId,
+        sequenceNo: 1,
+        sessionLimit: parsed.packageSize,
+        pricePence: parsed.packagePricePence,
+        openingCompletedCount: parsed.openingCompletedCount,
+        openingProgressLockedAt: null,
+        status: parsed.openingCompletedCount === parsed.packageSize ? 'due' : 'open',
+        startedOn: parsed.cycleAnchorDate ?? parsed.effectiveFrom,
+        completedOn: parsed.openingCompletedCount === parsed.packageSize
+          ? parsed.effectiveFrom
+          : null,
+        paidOn: null,
+      });
     }
 
     return this.getStudentBilling(workspaceId, studentId);
@@ -103,6 +132,7 @@ export class BillingService {
         sessionLimit: plan.packageSize,
         pricePence: plan.packagePricePence,
         openingCompletedCount: 0,
+        openingProgressLockedAt: null,
         status: 'open',
         startedOn: occurredOn,
         completedOn: null,

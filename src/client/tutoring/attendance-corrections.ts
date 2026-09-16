@@ -203,6 +203,7 @@ export async function reopenLocalOccurrence(
     throw new Error('CORRECTION_REQUIRES_SYNC');
   }
 
+  const correctionAt = new Date().toISOString();
   const updatedOccurrence: LocalOccurrence = {
     ...occurrence,
     status: 'scheduled',
@@ -259,6 +260,7 @@ export async function reopenLocalOccurrence(
     const completed = cycle.openingCompletedCount + realCompletedCount >= cycle.sessionLimit;
     cycleStore.put({
       ...cycle,
+      openingProgressLockedAt: cycle.openingProgressLockedAt ?? correctionAt,
       realCompletedCount,
       status: completed ? 'due' : 'open',
       completedOn: completed ? cycle.completedOn : null,
