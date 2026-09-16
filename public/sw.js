@@ -1,9 +1,27 @@
-const CACHE = 'sozan2-shell-v1';
-const CORE = ['/', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'sozan2-shell-v2';
+const CORE = ['/manifest.webmanifest', '/icon.svg'];
+
+async function cacheProductionShell() {
+  const cache = await caches.open(CACHE);
+  await cache.addAll(CORE);
+  const response = await fetch('/', { cache: 'no-store' });
+  if (!response.ok) throw new Error('SHELL_FETCH_FAILED');
+  const html = await response.clone().text();
+  await cache.put('/', response.clone());
+  const assets = [...html.matchAll(/(?:src|href)=["'](\/assets\/[^"']+)["']/gu)].map((match) => match[1]);
+  for (const path of [...new Set(assets)]) {
+    try {
+      const asset = await fetch(path, { cache: 'no-store' });
+      if (asset.ok) await cache.put(path, asset);
+    } catch {
+      // A non-critical asset can refresh on the next online navigation.
+    }
+  }
+}
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(CORE)));
+  event.waitUntil(cacheProductionShell());
 });
 
 self.addEventListener('activate', (event) => {
@@ -25,6 +43,7 @@ self.addEventListener('fetch', (event) => {
         if (fresh.ok) {
           const cache = await caches.open(CACHE);
           await cache.put('/', fresh.clone());
+          event.waitUntil(cacheProductionShell().catch(() => undefined));
         }
         return fresh;
       } catch {
