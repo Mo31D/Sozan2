@@ -54,6 +54,7 @@ type FinanceSnapshot = {
   allocations: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   expenses: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
   otherIncome: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
+  cashChecks?: Array<Record<string, unknown> & { id: string; workspaceId: string }>;
 };
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -165,6 +166,7 @@ async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
     STORES.financeAllocations,
     STORES.financeExpenses,
     STORES.financeOtherIncome,
+    STORES.financeCashChecks,
   ];
   const db = await openLocalDatabase();
   const transaction = db.transaction(stores, 'readwrite');
@@ -185,6 +187,7 @@ async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
     await replaceWorkspaceRows(transaction.objectStore(STORES.financeAllocations), snapshot.workspaceId, finance.allocations);
     await replaceWorkspaceRows(transaction.objectStore(STORES.financeExpenses), snapshot.workspaceId, finance.expenses);
     await replaceWorkspaceRows(transaction.objectStore(STORES.financeOtherIncome), snapshot.workspaceId, finance.otherIncome);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.financeCashChecks), snapshot.workspaceId, finance.cashChecks ?? []);
   }
   await transactionDone(transaction);
 }
