@@ -1,225 +1,212 @@
-# Sozan → Sozan2 feature audit
+# Sozan1 → Sozan2 tutoring feature audit
 
 Audit baseline: `Mo31D/sozan@b3187092b051ecbd0e1e6b7161acd7b57213a5a3`.
 
-This document freezes the product behaviour that Sozan2 must preserve or deliberately redesign before the first Sozan2 D1 database is created.
+This audit is intentionally limited to the **tutoring template and the reusable finance/planner/report ideas learned from Sozan1**. Platform-wide decisions are defined in `MODULAR_PLATFORM.md` and supersede the old assumption that Sozan2 itself is a tutoring-only app.
 
 ## Decision rule
 
-The old repository is a product specification, not a code foundation.
+The old repository is a behavioural specification, not a code foundation.
 
-For each old behaviour:
-
-- **KEEP** — user-facing behaviour is valuable and should exist in Sozan2.
-- **REDESIGN** — preserve the outcome, replace the implementation.
+- **KEEP** — valuable user behaviour.
+- **REDESIGN** — preserve outcome, replace implementation.
 - **DROP** — compatibility/patch machinery that must not enter Sozan2.
 
-## 1. Core daily workflow
+## Daily tutoring workflow
 
 | Capability | Decision | Sozan2 target |
 |---|---|---|
-| Today view with today's lessons | KEEP | Native Today query/service |
-| Mark lesson completed and paid | KEEP + REDESIGN | Complete occurrence + create one canonical receipt/allocation |
-| Mark lesson completed but unpaid | KEEP | Attendance service |
-| Cancel / restore / reopen lesson | KEEP | Explicit state transitions with audit events |
-| Move one lesson without changing the weekly schedule | KEEP | Occurrence override fields |
-| Edit the recurring schedule for future lessons only | KEEP | Schedule service regenerates future scheduled occurrences only |
-| Quick receipt: “قبضت فلوس” | KEEP | Receipt service |
-| Quick expense entry | KEEP | Expense service |
+| Today view with today's lessons | KEEP | Tutoring read model/widget |
+| Completed and paid | KEEP + REDESIGN | Complete occurrence + command Finance to create canonical receipt |
+| Completed but unpaid | KEEP | Tutoring attendance service |
+| Cancel / restore / reopen | KEEP | Explicit audited transitions |
+| Move one lesson only | KEEP | Occurrence override |
+| Change future recurring schedule | KEEP | Tutoring schedule service |
+| Quick “قبضت فلوس” | KEEP | Finance receipt command |
+| Quick expense | KEEP | Finance expense command |
 
-## 2. Students and accounts
+## Students, groups and accounts
 
-| Capability | Decision | Sozan2 target |
-|---|---|---|
-| Student profile | KEEP | Student aggregate endpoint |
-| Guardian name and phone | KEEP | Student fields |
-| Age, level, notes | KEEP | Student fields |
-| Student balance: due / paid / credit | KEEP | Derived from obligations + allocations |
-| Last payment | KEEP | Derived receipt query |
-| Student timeline | KEEP | Activity/account query |
-| Multiple recurring schedules for one student | KEEP | Many-to-many schedule participants |
-| Groups | KEEP + IMPROVE | A recurring session can contain multiple students instead of a fake single-student model |
+Keep student profile, guardian details, age, level, notes, due/credit state, last payment, timeline and multiple schedules.
 
-## 3. Schedule and availability planner
+Groups are redesigned as real many-to-many session participants instead of relying on a fake single-student representation.
 
-The latest Sozan added a meaningful product concept: a recurring schedule can be **confirmed** or **pending**.
+All of this belongs to the `tutoring` module. The platform core does not contain a Student entity.
 
-| Capability | Decision | Sozan2 target |
-|---|---|---|
-| Weekly availability board | KEEP | First-class planner view |
-| Display lessons, free time and travel time | KEEP | Derived planner projection |
-| Pending schedule: “هظبطه بعدين” | KEEP | `recurring_sessions.schedule_status` |
-| Pending schedule must not generate live occurrences | KEEP | Service invariant, covered by tests |
-| Keep last known day/time while pending | KEEP | Day/time may remain as reference |
-| Quick change of future weekday/time | KEEP | Schedule command |
-| Planner date range endpoint | KEEP | Schedule read model |
-| No continuous UI polling | KEEP | Event/refetch based UI |
+## Schedule and availability
 
-## 4. Billing
+Keep the latest useful Sozan1 concept: a recurring tutoring schedule is either `confirmed` or `pending`.
 
-Current product billing is **per-session or lesson package**. The old monthly model is legacy compatibility and is not a Sozan2 product mode.
+- pending means “هظبطه بعدين”;
+- pending schedules stay visible to planning but create no occurrences;
+- the last known day/time may remain as reference;
+- quick future weekday/time changes are preserved;
+- one-off rescheduling remains occurrence-specific;
+- weekly availability and travel time remain planner projections;
+- no continuous hidden-view polling.
 
-| Capability | Decision | Sozan2 target |
-|---|---|---|
-| Per-session billing | KEEP | Session price snapshot on occurrence |
-| Package billing | KEEP | Student billing plan + package cycles |
-| Configurable package size and price | KEEP | Billing plan |
-| Package progress `x / n` | KEEP | Native cycle progress |
-| Payment becomes due when package completes | KEEP | Cycle state transition `open → due` |
-| Paid cycle | KEEP | `due → paid` after allocations cover cycle price |
-| Work done inside open package but not due yet | KEEP | Derived `work_not_due` metric |
-| New schedule inherits student's package configuration | KEEP | Billing service, not route patch |
-| Prevent unsafe billing-mode changes after history exists | KEEP | Domain invariant |
+Tutoring owns its recurring schedule data. The `planner` module consumes a public schedule-provider contract rather than querying tutoring tables directly.
+
+## Billing and packages
+
+The product modes are **per-session** and **lesson package**. Old monthly billing is compatibility history only.
+
+Keep:
+
+- configurable package size and price;
+- progress `x / n`;
+- `open → due → paid` cycle states;
+- work performed in an open package before payment is due;
+- package configuration inherited by new tutoring schedules;
+- protection against unsafe billing-mode changes after history exists.
 
 ### Existing package progress at onboarding
 
-Latest Sozan supports a student who already completed part of the current package before being entered into the app:
+Keep the ability to add a student who is already part-way through the current package:
 
 - cycle start date;
-- number of lessons already completed;
-- current progress, remaining lessons and next position;
-- opening progress becomes fixed after real new lessons are recorded.
+- opening completed count;
+- current progress / remaining / next position;
+- lock opening progress after real new lessons begin.
 
-**KEEP the feature, REDESIGN the implementation.**
+Redesign: opening progress is stored directly on `tutoring_billing_cycles.opening_completed_count`.
 
-Old Sozan represents opening progress with hidden/shadow recurring sessions and synthetic occurrences. Sozan2 will store it directly as `billing_cycles.opening_completed_count`. No fake lessons, fake dates, hidden sessions or sentinel titles.
+Drop hidden recurring sessions, sentinel titles and synthetic 1900-date occurrences.
 
-## 5. Money model
+## Finance model
 
-Old Sozan has two teaching-money paths: direct occurrence payments and student receipts. Sozan2 should have one canonical incoming-money model.
+Old Sozan has more than one path representing incoming teaching money. Sozan2 has one Finance receipt model.
 
-### Sozan2 rule
+- a normal collection can reference a tutoring student as payer;
+- a group/session quick payment can reference a tutoring occurrence as source;
+- “تمت واتدفعت” creates the same Finance receipt entity;
+- allocations target typed external obligations such as a tutoring occurrence or package cycle;
+- surplus student cash remains prepaid credit;
+- editing/deleting/restoring a receipt deterministically recalculates allocation;
+- payment correction edits the canonical receipt/allocation rather than a second ledger;
+- duplicate mutations are protected by idempotency.
 
-All teaching cash is a **receipt**.
+Finance stores typed cross-module references and does not foreign-key into tutoring tables. This is required by the Lego boundary.
 
-- Normal “قبضت فلوس” receipts are linked to a student.
-- A lesson-level group payment may be linked directly to its occurrence when there is no individual student account.
-- A “تمت واتدفعت” action creates the same receipt entity automatically.
+## Expenses, other income and reconciliation
 
-This removes duplicate financial truth while preserving the old ability to record income for group lessons that are not attached to one named student.
+Keep:
 
-| Capability | Decision | Sozan2 target |
-|---|---|---|
-| Manual receipt by student | KEEP | `receipts.student_id` |
-| Lesson/group payment without a named student | KEEP + REDESIGN | Receipt tied to `source_occurrence_id` |
-| Automatic allocation to oldest due items | KEEP | Allocation service |
-| Surplus becomes prepaid credit | KEEP | Unallocated student receipt balance |
-| Edit receipt and reallocate deterministically | KEEP | Rebalance service |
-| Soft-delete / restore receipt | KEEP | Rebalance after mutation |
-| Per-session payment correction | KEEP + REDESIGN | Correct the underlying canonical receipt/allocation |
-| Package receipt allocation | KEEP | Same allocation table, package-cycle target |
-| Duplicate mutation protection | KEEP | Idempotency table/middleware |
-
-## 6. Expenses, other income and reconciliation
-
-| Capability | Decision | Sozan2 target |
-|---|---|---|
-| Business expenses | KEEP | Expense entity |
-| Personal expenses | KEEP | Expense entity |
-| Expense categories | KEEP | Domain enum/config |
-| Other income | KEEP | Other-income entity |
-| Edit/delete/restore | KEEP | Soft delete + activity event |
-| Expected current balance | KEEP | Derived ledger calculation |
-| Cash check: expected vs actual | KEEP | `cash_checks` |
-| Difference / unrecorded spending signal | KEEP | Reconciliation service |
-
-## 7. Activity, correction and intelligence
-
-| Capability | Decision | Sozan2 target |
-|---|---|---|
-| Searchable activity log | KEEP | Append-only activity events |
-| Before/after snapshots where useful | KEEP | JSON snapshots |
-| Correction centre | KEEP | Read model / rules, not stored duplicate truth |
-| Duplicate-expense warning | KEEP | Review rule |
-| Old unpaid lesson warning | KEEP | Review rule |
-| Package completed and ready for payment | KEEP | Review rule |
-| Local numerical insights | KEEP | Deterministic insight service |
-| No paid AI dependency | KEEP | Core product remains deterministic |
-
-## 8. Reports and dashboard
-
-Sozan2 must preserve the separation between three concepts:
-
-1. **Work earned/performed**.
-2. **Cash received**.
-3. **Amount currently due**.
-
-For packages, work can exist inside an open cycle before the package price is due.
-
-Required reports:
-
-- monthly work value;
-- completed lessons;
-- student cash received;
+- business and personal expenses;
+- categories;
 - other income;
-- business/personal expenses;
-- cash net;
-- due now;
-- package work not due;
-- breakdown by lesson type;
-- breakdown by billing mode;
-- expense categories;
-- true hourly return including travel time.
+- edit / soft-delete / restore;
+- expected current balance;
+- expected-vs-actual cash check;
+- unrecorded spending/income signal.
 
-## 9. Security and reliability
+These belong to the `finance` module and can later be reused by non-tutoring templates.
 
-| Capability | Decision | Sozan2 target |
-|---|---|---|
-| Passcode login | KEEP | Auth service |
-| Signed HttpOnly cookie | KEEP | Auth middleware |
-| Rate limiting / abuse control | ADD | Missing hardening in old app |
-| Idempotent mutations | KEEP | First-class middleware |
-| Soft deletion for financial records | KEEP | Schema invariant |
-| CI/type checks/tests | IMPROVE | Required before merge/deploy |
+## Activity, review and insights
 
-## 10. PWA and performance
+Keep:
 
-Keep the useful outcomes from recent performance work:
+- searchable activity history;
+- before/after snapshots where useful;
+- correction/review centre;
+- duplicate-expense warning;
+- old unpaid obligation warning;
+- package-ready-for-payment warning;
+- deterministic local insights;
+- no paid AI dependency.
 
-- PWA installability;
-- cache-first application shell with background refresh;
-- no continuous hidden-view polling;
-- load expensive views only when needed;
+Core owns the audit envelope; modules own the meaning of their events/review rules.
+
+## Reports
+
+Preserve these as separate concepts:
+
+1. work performed/earned;
+2. cash received;
+3. amount due now;
+4. package work performed but not due yet;
+5. prepaid credit.
+
+Required tutoring/finance reports include monthly work value, completed lessons, student cash, other income, business/personal expenses, cash net, due now, package work not due, lesson type, billing mode, expense categories and true hourly return including travel time.
+
+Reports are derived projections. They are not stored duplicate financial truth.
+
+## Security and reliability
+
+Keep passcode-style simple access where appropriate, but redesign cloud auth around users/workspaces and signed HttpOnly sessions.
+
+Add:
+
+- workspace membership authorization;
+- login abuse/rate control;
+- idempotency as a first-class platform facility;
+- CI/type/tests as merge/deploy gates.
+
+## PWA and performance outcomes
+
+Keep:
+
+- installable PWA direction;
+- cacheable application shell;
+- lazy loading of expensive views;
+- no hidden background polling loops;
 - indexed planner/report queries;
 - fast Worker startup.
 
-Do **not** port the implementation hacks used to reach those outcomes.
+Do not copy the implementation hacks used in Sozan1.
 
-## 11. Explicitly NOT ported
+## Explicitly not ported
 
-The following are legacy/compatibility mechanisms, not product features:
-
-- `runtime-entry → final → v6 → worker` request interception chain;
+- `runtime-entry → final → v6 → worker` interception chain;
 - runtime `CREATE TABLE` / compatibility DDL;
-- database proxy that suppresses compatibility SQL;
-- `runtime-pre.js` / `runtime-post.js` browser monkey patches;
-- HTML/script injection at runtime;
-- V3/V4/V5/V6/V7 API/version compatibility layers;
-- old monthly billing tables and monthly-to-package runtime conversion;
-- shadow recurring sessions and synthetic 1900-date occurrences for opening package progress;
-- separate direct-payment truth alongside receipts.
+- DB proxy/no-op SQL suppression;
+- browser API monkey patches;
+- runtime HTML/script injection;
+- V3/V4/V5/V6/V7 compatibility APIs;
+- old monthly billing compatibility structures;
+- shadow package sessions / fake 1900 dates;
+- duplicate direct-payment and receipt ledgers.
 
-## 12. Sozan2 bounded contexts
+## Platform mapping
 
-Sozan2 is frozen around these modules:
+The retained behaviour maps to these pieces:
 
-1. **Auth**
-2. **Students**
-3. **Schedule & Planner**
-4. **Lessons / Attendance**
-5. **Billing & Packages**
-6. **Receipts & Allocation**
-7. **Expenses & Other Income**
-8. **Reconciliation**
-9. **Activity & Review**
-10. **Dashboard / Reports / Insights**
-11. **Settings**
-12. **Migration**
+```text
+Core
+├── identity/workspaces
+├── module registry
+├── labels/layouts
+├── audit
+└── idempotency
 
-Each module may expose routes, but cross-module financial rules must run through domain services rather than direct SQL from route handlers.
+Tutoring
+├── students/groups
+├── schedule/occurrences
+└── package billing state
 
-## 13. Freeze result
+Finance
+├── receipts/allocations
+├── expenses/income
+└── reconciliation
 
-The Sozan2 architecture is compatible with the current product direction, but the original `0001_core.sql` was incomplete for the newest planner, package-opening-progress, reconciliation and idempotency behaviours.
+Planner
+└── combined planning/availability surface
 
-The initial Sozan2 migration must be updated **before any D1 database is created**. That is safe because no Sozan2 production D1 migration has been applied yet.
+Reports
+└── derived reports and deterministic insights
+```
+
+## Freeze result
+
+Sozan1's useful product behaviour has been retained as evidence for the first template, while the new platform remains user-neutral, workspace-scoped, local-first and modular.
+
+The first Sozan2 D1 schema therefore uses:
+
+- TEXT application-generated IDs;
+- `workspace_id` on business data;
+- module-prefixed tables;
+- no personal name defaults;
+- no cross-module tutoring→finance foreign keys;
+- native package opening progress;
+- configurable labels and page layouts;
+- optional cloud persistence rather than a cloud-only product assumption.
