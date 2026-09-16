@@ -1,3 +1,4 @@
+import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { newSyncOutboxRecord } from '../sync/outbox';
 import type { LocalExpense } from '../simple/data';
@@ -25,10 +26,23 @@ export async function addLocalExpense(input: {
     note: input.note?.trim() || null,
     deletedAt: null,
   };
+  const activity = makeActivityEvent({
+    workspaceId: input.workspaceId,
+    moduleKey: 'finance',
+    entityType: 'expense',
+    entityId: expense.id,
+    action: 'expense.created',
+    title: `تم تسجيل مصروف · ${category}`,
+    after: expense,
+  });
 
   const db = await openLocalDatabase();
-  const transaction = db.transaction([STORES.financeExpenses, STORES.syncOutbox], 'readwrite');
+  const transaction = db.transaction(
+    [STORES.financeExpenses, STORES.coreActivityEvents, STORES.syncOutbox],
+    'readwrite',
+  );
   transaction.objectStore(STORES.financeExpenses).add(expense);
+  transaction.objectStore(STORES.coreActivityEvents).add(activity);
   transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
     workspaceId: input.workspaceId,
     moduleKey: 'finance',
@@ -43,6 +57,7 @@ export async function addLocalExpense(input: {
       note: expense.note,
     },
   }));
+  transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
   return expense;
 }
