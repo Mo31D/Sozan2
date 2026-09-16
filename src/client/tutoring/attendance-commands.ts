@@ -63,40 +63,38 @@ export async function completeLocalSession(
     studentIds: session.studentIds,
   } satisfies LocalOccurrence);
 
-  if (existing?.status !== 'completed') {
-    for (const studentId of session.studentIds) {
-      const plan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId);
-      if (!plan || plan.billingMode !== 'package') continue;
-      const studentCycles = cycles
-        .filter((row) => row.workspaceId === workspaceId && row.studentId === studentId && row.status !== 'cancelled')
-        .sort((a, b) => b.sequenceNo - a.sequenceNo);
-      let cycle = studentCycles.find((row) => row.status === 'open') ?? studentCycles[0] ?? null;
-      if (!cycle || cycle.status !== 'open') {
-        const maxSequence = studentCycles.reduce((max, row) => Math.max(max, row.sequenceNo), 0);
-        cycle = {
-          id: crypto.randomUUID(),
-          workspaceId,
-          studentId,
-          sequenceNo: maxSequence + 1,
-          sessionLimit: plan.packageSize ?? 8,
-          pricePence: plan.packagePricePence ?? 0,
-          openingCompletedCount: 0,
-          realCompletedCount: 0,
-          status: 'open',
-          startedOn: sessionDate,
-          completedOn: null,
-          paidOn: null,
-        };
-      }
-      const realCompletedCount = cycle.realCompletedCount + 1;
-      const completed = cycle.openingCompletedCount + realCompletedCount >= cycle.sessionLimit;
-      cycleStore.put({
-        ...cycle,
-        realCompletedCount,
-        status: completed ? 'due' : 'open',
-        completedOn: completed ? sessionDate : cycle.completedOn,
-      } satisfies LocalBillingCycle);
+  for (const studentId of session.studentIds) {
+    const plan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId);
+    if (!plan || plan.billingMode !== 'package') continue;
+    const studentCycles = cycles
+      .filter((row) => row.workspaceId === workspaceId && row.studentId === studentId && row.status !== 'cancelled')
+      .sort((a, b) => b.sequenceNo - a.sequenceNo);
+    let cycle = studentCycles.find((row) => row.status === 'open') ?? studentCycles[0] ?? null;
+    if (!cycle || cycle.status !== 'open') {
+      const maxSequence = studentCycles.reduce((max, row) => Math.max(max, row.sequenceNo), 0);
+      cycle = {
+        id: crypto.randomUUID(),
+        workspaceId,
+        studentId,
+        sequenceNo: maxSequence + 1,
+        sessionLimit: plan.packageSize ?? 8,
+        pricePence: plan.packagePricePence ?? 0,
+        openingCompletedCount: 0,
+        realCompletedCount: 0,
+        status: 'open',
+        startedOn: sessionDate,
+        completedOn: null,
+        paidOn: null,
+      };
     }
+    const realCompletedCount = cycle.realCompletedCount + 1;
+    const completed = cycle.openingCompletedCount + realCompletedCount >= cycle.sessionLimit;
+    cycleStore.put({
+      ...cycle,
+      realCompletedCount,
+      status: completed ? 'due' : 'open',
+      completedOn: completed ? sessionDate : cycle.completedOn,
+    } satisfies LocalBillingCycle);
   }
 
   transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
