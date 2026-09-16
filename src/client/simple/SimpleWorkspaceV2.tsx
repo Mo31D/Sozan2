@@ -162,6 +162,8 @@ export function SimpleWorkspaceV2({
             onAdd={async (form) => runAction(async () => {
               const pending = String(form.get('scheduleStatus') ?? 'confirmed') === 'pending';
               const weekdayRaw = String(form.get('weekday') ?? '');
+              const studentIds = form.getAll('studentIds').map(String);
+              const expectedCount = Math.max(1, Number(form.get('expectedStudentCount') ?? studentIds.length || 1));
               await sessionsService.create(workspaceId, {
                 title: String(form.get('title') ?? ''),
                 sessionType: String(form.get('sessionType') ?? 'private_student_home'),
@@ -171,11 +173,11 @@ export function SimpleWorkspaceV2({
                 durationMinutes: Number(form.get('durationMinutes') ?? 60),
                 travelMinutes: Number(form.get('travelMinutes') ?? 0),
                 location: String(form.get('location') ?? ''),
-                priceBasis: 'total_session',
+                priceBasis: String(form.get('priceBasis') ?? 'total_session') as 'total_session' | 'per_student',
                 defaultPricePence: toPence(form.get('price'), true),
-                expectedStudentCount: 1,
-                centerCutBps: 0,
-                studentIds: form.get('studentId') ? [String(form.get('studentId'))] : [],
+                expectedStudentCount: expectedCount,
+                centerCutBps: Math.round(Number(form.get('centerCut') ?? 0) * 100),
+                studentIds,
               });
             }, 'تم حفظ الموعد.')}
             onUpdate={async (sessionId, form) => runAction(async () => {
