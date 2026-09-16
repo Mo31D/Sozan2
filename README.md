@@ -20,15 +20,16 @@ Repositories
 Cloudflare D1
 ```
 
-## Rules
+## Non-negotiable rules
 
 - The old `sozan` repository is a behavioural reference only.
 - No V3/V4/V6 compatibility layers.
 - No runtime schema creation.
 - No monkey-patching browser APIs.
-- Financial logic must live in domain services and be covered by tests.
+- Financial logic belongs in domain services and must be covered by tests.
 - Database changes happen only through migrations.
-- Production data will not be copied until migration validation is complete.
+- Production data is not copied until migration validation is complete.
+- No private data endpoint is exposed before authentication is in place.
 
 ## Stack
 
@@ -45,9 +46,17 @@ Cloudflare D1
 ```bash
 npm install
 cp .dev.vars.example .dev.vars
-npm run db:migrate:local
+npm run build
+npm run dev:worker
+```
+
+For UI hot reload in a second terminal:
+
+```bash
 npm run dev
 ```
+
+Vite proxies `/api` to the local Worker on port 8787.
 
 ## Checks
 
@@ -58,19 +67,21 @@ npm run build
 
 ## Cloudflare deployment
 
-The first deployment can run without D1 while the shell is being verified. After creating the new `sozan2-db` database, add a D1 binding named `DB` to `wrangler.jsonc` and apply migrations.
+For the first shell deployment use:
 
-Recommended Cloudflare build command:
+**Build command**
 
 ```bash
 npm run build
 ```
 
-Recommended deploy command:
+**Deploy command**
 
 ```bash
 npx wrangler deploy
 ```
+
+The first deployment does not require D1. After `sozan2-db` is created, add a D1 binding named `DB` to `wrangler.jsonc`, apply `migrations/0001_core.sql`, then enable authenticated data routes.
 
 ## Status
 

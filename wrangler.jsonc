@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sozan2",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "APP_NAME": "Sozan2"
+  },
+  "observability": {
+    "enabled": true
+  }
+
+  // Add the new D1 database only after Cloudflare creates `sozan2-db`:
+  // "d1_databases": [
+  //   {
+  //     "binding": "DB",
+  //     "database_name": "sozan2-db",
+  //     "database_id": "<new-database-id>"
+  //   }
+  // ]
+}
