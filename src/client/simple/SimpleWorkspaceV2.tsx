@@ -163,7 +163,7 @@ export function SimpleWorkspaceV2({
               const pending = String(form.get('scheduleStatus') ?? 'confirmed') === 'pending';
               const weekdayRaw = String(form.get('weekday') ?? '');
               const studentIds = form.getAll('studentIds').map(String);
-              const expectedCount = Math.max(1, Number(form.get('expectedStudentCount') ?? studentIds.length || 1));
+              const expectedCount = Math.max(1, Number(form.get('expectedStudentCount') ?? (studentIds.length || 1)));
               await sessionsService.create(workspaceId, {
                 title: String(form.get('title') ?? ''),
                 sessionType: String(form.get('sessionType') ?? 'private_student_home'),
