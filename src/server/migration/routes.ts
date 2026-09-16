@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { accessError, requireWorkspaceAccess } from '../auth/guard';
 import type { Env } from '../env';
 import { requireDatabase } from '../env';
+import { markMigrationUnverified, reconcileSozan1Migration } from './reconcile';
 import { importSozan1, parseSozan1Export } from './sozan1';
 
 export const migrationRoutes = new Hono<{ Bindings: Env }>();
@@ -14,14 +15,27 @@ migrationRoutes.post('/:workspaceId/sozan1', async (c) => {
       return c.json({ error: 'MIGRATION_OWNER_REQUIRED' }, 403);
     }
 
-    const payload = parseSozan1Export(await c.req.json());
+    const rawPayload: unknown = await c.req.json();
+    const payload = parseSozan1Export(rawPayload);
+    const db = requireDatabase(c.env);
     const result = await importSozan1(
-      requireDatabase(c.env),
+      db,
       workspaceId,
       access.userId,
       payload,
     );
-    return c.json({ ok: true, ...result });
+
+    const reconciliation = await reconcileSozan1Migration(db, workspaceId, rawPayload);
+    if (!reconciliation.ok) {
+      await markMigrationUnverified(db, workspaceId);
+      console.error('Sozan1 migration reconciliation failed', reconciliation.mismatches);
+      return c.json({
+        error: 'MIGRATION_RECONCILIATION_FAILED',
+        reconciliation,
+      }, 409);
+    }
+
+    return c.json({ ok: true, ...result, reconciliation });
   } catch (error) {
     const access = accessError(error);
     if (access) return c.json({ error: access.error }, access.status);
