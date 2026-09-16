@@ -116,6 +116,7 @@ export async function completeLocalSession(
         sessionLimit: plan.packageSize ?? 8,
         pricePence: plan.packagePricePence ?? 0,
         openingCompletedCount: 0,
+        openingProgressLockedAt: null,
         realCompletedCount: 0,
         status: 'open',
         startedOn: effectiveDate,
@@ -140,6 +141,7 @@ export async function completeLocalSession(
     const completed = cycle.openingCompletedCount + realCompletedCount >= cycle.sessionLimit;
     const updatedCycle: LocalBillingCycle = {
       ...cycle,
+      openingProgressLockedAt: cycle.openingProgressLockedAt ?? completedAt,
       realCompletedCount,
       status: completed ? 'due' : 'open',
       completedOn: completed ? effectiveDate : cycle.completedOn,
