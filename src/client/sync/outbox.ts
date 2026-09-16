@@ -14,17 +14,26 @@ export type SyncOutboxRecord = {
   lastError: string | null;
 };
 
-export async function enqueueSyncMutation(input: Omit<SyncOutboxRecord, 'id' | 'createdAt' | 'status' | 'attempts' | 'lastError'>): Promise<void> {
-  const db = await openLocalDatabase();
-  const transaction = db.transaction(STORES.syncOutbox, 'readwrite');
-  transaction.objectStore(STORES.syncOutbox).add({
+export type NewSyncMutation = Omit<
+  SyncOutboxRecord,
+  'id' | 'createdAt' | 'status' | 'attempts' | 'lastError'
+>;
+
+export function newSyncOutboxRecord(input: NewSyncMutation): SyncOutboxRecord {
+  return {
     ...input,
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     status: 'pending',
     attempts: 0,
     lastError: null,
-  } satisfies SyncOutboxRecord);
+  };
+}
+
+export async function enqueueSyncMutation(input: NewSyncMutation): Promise<void> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(STORES.syncOutbox, 'readwrite');
+  transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord(input));
   await transactionDone(transaction);
 }
 
@@ -37,6 +46,10 @@ export async function listPendingSyncMutations(workspaceId: string): Promise<Syn
   return rows
     .filter((row) => row.workspaceId === workspaceId && (row.status === 'pending' || row.status === 'failed'))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export async function pendingSyncCount(workspaceId: string): Promise<number> {
+  return (await listPendingSyncMutations(workspaceId)).length;
 }
 
 export async function removeSyncMutation(id: string): Promise<void> {
