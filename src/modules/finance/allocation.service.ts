@@ -22,6 +22,10 @@ export type CollectionResult = {
   allocations: Array<{ target: ExternalReference; amountPence: number }>;
 };
 
+export type CollectCommand = Omit<RecordReceiptCommand, 'id'> & {
+  receiptId?: string;
+};
+
 export class FinanceCollectionService {
   constructor(
     private readonly gateway: FinanceGateway,
@@ -29,9 +33,10 @@ export class FinanceCollectionService {
     private readonly idFactory: () => string,
   ) {}
 
-  async collect(command: Omit<RecordReceiptCommand, 'id'>): Promise<CollectionResult> {
-    const receiptId = this.idFactory();
-    await this.gateway.recordReceipt({ ...command, id: receiptId });
+  async collect(command: CollectCommand): Promise<CollectionResult> {
+    const receiptId = command.receiptId ?? this.idFactory();
+    const { receiptId: _clientReceiptId, ...receiptCommand } = command;
+    await this.gateway.recordReceipt({ ...receiptCommand, id: receiptId });
 
     const payer = command.payer;
     if (!payer) {
