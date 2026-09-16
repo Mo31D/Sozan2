@@ -11,18 +11,20 @@ The latest old-Sozan product behaviour was audited before the first Sozan2 D1 da
 - Cloudflare build/deploy verified
 - health endpoint only
 
-## Stage 0.5 — Product/schema freeze — CURRENT
+## Stage 0.5 — Product/schema freeze — DONE
 
-- Audit current `sozan` through latest planner/package-progress behaviour
-- Freeze bounded contexts
-- Replace opening-package shadow records with native cycle progress
-- Add pending/confirmed schedule state
-- Unify student cash around canonical receipts
-- Add cash checks and idempotency to initial schema
-- Add domain tests for package progress and schedule generation
-- Do not create D1 until this stage passes CI
+- Audited current `sozan` through planner and package-progress behaviour
+- Froze bounded contexts
+- Replaced opening-package shadow records with native cycle progress
+- Added pending/confirmed schedule state to the target model
+- Unified teaching cash around canonical receipts
+- Preserved session-level group payments without requiring a fake student
+- Added cash checks and idempotency to the initial schema
+- Added domain tests for package progress and schedule generation
+- Added CI execution/validation of `migrations/0001_core.sql`
+- CI passed schema validation, type checks, tests and production build
 
-## Stage 1 — Security and database
+## Stage 1 — Security and database — NEXT
 
 - Create `sozan2-db`
 - Bind as `DB`
@@ -59,11 +61,11 @@ The latest old-Sozan product behaviour was audited before the first Sozan2 D1 da
 
 ## Stage 4 — Money
 
-- Canonical student receipts
+- Canonical receipts for student and lesson-level teaching income
 - “Completed and paid” implemented as receipt creation
 - Deterministic allocation to oldest due obligations
 - Package-cycle allocation
-- Prepaid credit
+- Prepaid student credit
 - Receipt edit / soft delete / restore / full rebalance
 - Safe payment correction workflow
 - Expenses and other income
