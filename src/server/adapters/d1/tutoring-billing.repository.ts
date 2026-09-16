@@ -183,6 +183,43 @@ export class D1BillingRepository implements BillingRepository {
     return cycle;
   }
 
+  async updateOpeningProgress(input: {
+    workspaceId: string;
+    cycleId: string;
+    openingCompletedCount: number;
+    status: 'open' | 'due';
+    completedOn: string | null;
+  }): Promise<void> {
+    const result = await this.db.prepare(
+      `UPDATE tutoring_billing_cycles
+       SET opening_completed_count=?3,
+           status=?4,
+           completed_on=?5,
+           paid_on=NULL,
+           opening_progress_locked_at=NULL,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE workspace_id=?1 AND id=?2
+         AND NOT EXISTS (
+           SELECT 1
+           FROM tutoring_billing_cycle_occurrences co
+           JOIN tutoring_occurrences o
+             ON o.workspace_id=co.workspace_id AND o.id=co.occurrence_id
+           WHERE co.workspace_id=?1
+             AND co.billing_cycle_id=?2
+             AND o.status='completed'
+         )`,
+    ).bind(
+      input.workspaceId,
+      input.cycleId,
+      input.openingCompletedCount,
+      input.status,
+      input.completedOn,
+    ).run();
+    if ((result.meta?.changes ?? 0) === 0) {
+      throw new Error('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+    }
+  }
+
   async addOccurrenceToCycle(input: {
     workspaceId: string;
     cycleId: string;
