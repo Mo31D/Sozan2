@@ -24,6 +24,7 @@ export type LocalBillingCycle = {
   sessionLimit: number;
   pricePence: number;
   openingCompletedCount: number;
+  openingProgressLockedAt?: string | null;
   realCompletedCount: number;
   status: 'open' | 'due' | 'paid' | 'cancelled';
   startedOn: string | null;
@@ -98,16 +99,22 @@ export async function configureLocalStudentBilling(
     throw new Error('BILLING_MODE_LOCKED_BY_HISTORY');
   }
 
-  if (parsed.billingMode === 'package' && currentCycle) {
-    if (parsed.openingCompletedCount > currentCycle.sessionLimit) {
+  if (parsed.billingMode === 'package') {
+    if (!currentCycle && parsed.openingCompletedCount > parsed.packageSize) {
       throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
     }
-    if (!canChangeOpeningProgress(
-      currentCycle.openingCompletedCount,
-      parsed.openingCompletedCount,
-      currentCycle.realCompletedCount,
-    )) {
-      throw new Error('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+    if (currentCycle) {
+      if (parsed.openingCompletedCount > currentCycle.sessionLimit) {
+        throw new Error('OPENING_PROGRESS_EXCEEDS_PACKAGE');
+      }
+      if (!canChangeOpeningProgress(
+        currentCycle.openingCompletedCount,
+        parsed.openingCompletedCount,
+        currentCycle.realCompletedCount,
+        Boolean(currentCycle.openingProgressLockedAt),
+      )) {
+        throw new Error('OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS');
+      }
     }
   }
 
@@ -190,6 +197,7 @@ export async function configureLocalStudentBilling(
       sessionLimit: parsed.packageSize,
       pricePence: parsed.packagePricePence,
       openingCompletedCount: parsed.openingCompletedCount,
+      openingProgressLockedAt: null,
       realCompletedCount: 0,
       status: due ? 'due' : 'open',
       startedOn: parsed.cycleAnchorDate ?? parsed.effectiveFrom,
