@@ -63,10 +63,12 @@ export function canChangeOpeningProgress(
   currentOpeningCompleted: number,
   requestedOpeningCompleted: number,
   realCompleted: number,
+  openingProgressLocked = false,
 ): boolean {
   assertCount(currentOpeningCompleted, 'Current opening progress');
   assertCount(requestedOpeningCompleted, 'Requested opening progress');
   assertCount(realCompleted, 'Real progress');
 
-  return realCompleted === 0 || currentOpeningCompleted === requestedOpeningCompleted;
+  return currentOpeningCompleted === requestedOpeningCompleted
+    || (!openingProgressLocked && realCompleted === 0);
 }
