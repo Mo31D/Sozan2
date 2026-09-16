@@ -1,3 +1,4 @@
+import { packageUnitShare } from '../../modules/tutoring/domain/billing';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { newSyncOutboxRecord } from '../sync/outbox';
@@ -5,6 +6,15 @@ import type { LocalBillingCycle, LocalBillingPlan } from './local-commands';
 import type { LocalOccurrence } from '../simple/data';
 
 const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/u;
+
+export type LocalBillingCycleOccurrence = {
+  id: string;
+  workspaceId: string;
+  billingCycleId: string;
+  occurrenceId: string;
+  position: number;
+  earnedPence: number;
+};
 
 export async function completeLocalSession(
   workspaceId: string,
@@ -14,17 +24,25 @@ export async function completeLocalSession(
 ): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(
-    [STORES.tutoringOccurrences, STORES.tutoringBillingPlans, STORES.tutoringBillingCycles, STORES.syncOutbox],
+    [
+      STORES.tutoringOccurrences,
+      STORES.tutoringBillingPlans,
+      STORES.tutoringBillingCycles,
+      STORES.tutoringBillingCycleOccurrences,
+      STORES.syncOutbox,
+    ],
     'readwrite',
   );
   const occurrenceStore = transaction.objectStore(STORES.tutoringOccurrences);
   const planStore = transaction.objectStore(STORES.tutoringBillingPlans);
   const cycleStore = transaction.objectStore(STORES.tutoringBillingCycles);
+  const cycleOccurrenceStore = transaction.objectStore(STORES.tutoringBillingCycleOccurrences);
 
-  const [occurrences, plans, cycles] = await Promise.all([
+  const [occurrences, plans, cycles, cycleOccurrences] = await Promise.all([
     requestResult<LocalOccurrence[]>(occurrenceStore.getAll()),
     requestResult<LocalBillingPlan[]>(planStore.getAll()),
     requestResult<LocalBillingCycle[]>(cycleStore.getAll()),
+    requestResult<LocalBillingCycleOccurrence[]>(cycleOccurrenceStore.getAll()),
   ]);
 
   const matching = occurrences.filter((row) => row.workspaceId === workspaceId && row.recurringSessionId === session.id);
@@ -73,11 +91,18 @@ export async function completeLocalSession(
   for (const studentId of session.studentIds) {
     const plan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId);
     if (!plan || plan.billingMode !== 'package') continue;
+
+    const alreadyLinked = cycleOccurrences.some((row) =>
+      row.workspaceId === workspaceId && row.occurrenceId === occurrenceId
+      && cycles.some((cycle) => cycle.id === row.billingCycleId && cycle.studentId === studentId),
+    );
+    if (alreadyLinked) continue;
+
     const studentCycles = cycles
       .filter((row) => row.workspaceId === workspaceId && row.studentId === studentId && row.status !== 'cancelled')
       .sort((a, b) => b.sequenceNo - a.sequenceNo);
-    let cycle = studentCycles.find((row) => row.status === 'open') ?? studentCycles[0] ?? null;
-    if (!cycle || cycle.status !== 'open') {
+    let cycle = studentCycles.find((row) => row.status === 'open') ?? null;
+    if (!cycle) {
       const maxSequence = studentCycles.reduce((max, row) => Math.max(max, row.sequenceNo), 0);
       cycle = {
         id: crypto.randomUUID(),
@@ -94,14 +119,33 @@ export async function completeLocalSession(
         paidOn: null,
       };
     }
+
+    const position = cycle.openingCompletedCount + cycle.realCompletedCount + 1;
+    if (position > cycle.sessionLimit) throw new Error('PACKAGE_CYCLE_ALREADY_COMPLETE');
+    const mapping: LocalBillingCycleOccurrence = {
+      id: `${cycle.id}:${occurrenceId}`,
+      workspaceId,
+      billingCycleId: cycle.id,
+      occurrenceId,
+      position,
+      earnedPence: packageUnitShare(cycle.pricePence, cycle.sessionLimit, position),
+    };
+    cycleOccurrenceStore.put(mapping);
+
     const realCompletedCount = cycle.realCompletedCount + 1;
     const completed = cycle.openingCompletedCount + realCompletedCount >= cycle.sessionLimit;
-    cycleStore.put({
+    const updatedCycle: LocalBillingCycle = {
       ...cycle,
       realCompletedCount,
       status: completed ? 'due' : 'open',
       completedOn: completed ? effectiveDate : cycle.completedOn,
-    } satisfies LocalBillingCycle);
+      paidOn: completed ? cycle.paidOn : null,
+    };
+    cycleStore.put(updatedCycle);
+    const existingIndex = cycles.findIndex((row) => row.id === cycle.id);
+    if (existingIndex >= 0) cycles[existingIndex] = updatedCycle;
+    else cycles.push(updatedCycle);
+    cycleOccurrences.push(mapping);
   }
 
   transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
