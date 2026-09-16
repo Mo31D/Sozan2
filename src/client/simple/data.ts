@@ -41,6 +41,17 @@ export type LocalOtherIncome = {
   deletedAt: string | null;
 };
 
+export type LocalCashCheck = {
+  id: string;
+  workspaceId: string;
+  checkDate: string;
+  expectedBalancePence: number;
+  actualBalancePence: number;
+  differencePence: number;
+  note: string | null;
+  deletedAt: string | null;
+};
+
 export type LocalAllocation = {
   id: string;
   workspaceId: string;
@@ -61,6 +72,7 @@ export type SimpleWorkspaceData = {
   allocations: LocalAllocation[];
   expenses: LocalExpense[];
   otherIncome: LocalOtherIncome[];
+  cashChecks: LocalCashCheck[];
 };
 
 export async function loadSimpleWorkspaceData(workspaceId: string): Promise<SimpleWorkspaceData> {
@@ -75,9 +87,10 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     STORES.financeAllocations,
     STORES.financeExpenses,
     STORES.financeOtherIncome,
+    STORES.financeCashChecks,
   ];
   const transaction = db.transaction(stores, 'readonly');
-  const [students, sessions, occurrences, billingPlans, billingCycles, receipts, allocations, expenses, otherIncome] = await Promise.all([
+  const [students, sessions, occurrences, billingPlans, billingCycles, receipts, allocations, expenses, otherIncome, cashChecks] = await Promise.all([
     requestResult<Student[]>(transaction.objectStore(STORES.tutoringStudents).getAll()),
     requestResult<RecurringSession[]>(transaction.objectStore(STORES.tutoringSessions).getAll()),
     requestResult<LocalOccurrence[]>(transaction.objectStore(STORES.tutoringOccurrences).getAll()),
@@ -87,6 +100,7 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     requestResult<LocalAllocation[]>(transaction.objectStore(STORES.financeAllocations).getAll()),
     requestResult<LocalExpense[]>(transaction.objectStore(STORES.financeExpenses).getAll()),
     requestResult<LocalOtherIncome[]>(transaction.objectStore(STORES.financeOtherIncome).getAll()),
+    requestResult<LocalCashCheck[]>(transaction.objectStore(STORES.financeCashChecks).getAll()),
   ]);
 
   const mine = <T extends { workspaceId: string }>(rows: T[]) => rows.filter((row) => row.workspaceId === workspaceId);
@@ -100,6 +114,7 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     allocations: mine(allocations),
     expenses: mine(expenses).filter((row) => !row.deletedAt),
     otherIncome: mine(otherIncome).filter((row) => !row.deletedAt),
+    cashChecks: mine(cashChecks).filter((row) => !row.deletedAt),
   };
 }
 
