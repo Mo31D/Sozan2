@@ -21,6 +21,7 @@ export const STORES = {
   financeAllocations: 'finance_allocations',
   financeExpenses: 'finance_expenses',
   financeOtherIncome: 'finance_other_income',
+  financeCashChecks: 'finance_cash_checks',
 } as const;
 
 let databasePromise: Promise<IDBDatabase> | null = null;
@@ -90,6 +91,7 @@ export function openLocalDatabase(): Promise<IDBDatabase> {
         STORES.financeAllocations,
         STORES.financeExpenses,
         STORES.financeOtherIncome,
+        STORES.financeCashChecks,
       ]) {
         ensureStore(db, storeName, { keyPath: 'id' }, [
           { name: 'workspaceId', keyPath: 'workspaceId' },
