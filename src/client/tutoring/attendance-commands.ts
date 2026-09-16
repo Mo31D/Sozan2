@@ -1,5 +1,6 @@
 import { packageUnitShare } from '../../modules/tutoring/domain/billing';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
+import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { newSyncOutboxRecord } from '../sync/outbox';
 import type { LocalBillingCycle, LocalBillingPlan } from './local-commands';
@@ -29,6 +30,7 @@ export async function completeLocalSession(
       STORES.tutoringBillingPlans,
       STORES.tutoringBillingCycles,
       STORES.tutoringBillingCycleOccurrences,
+      STORES.coreActivityEvents,
       STORES.syncOutbox,
     ],
     'readwrite',
@@ -71,7 +73,7 @@ export async function completeLocalSession(
     ? existing.scheduledStart
     : fallbackStart;
 
-  occurrenceStore.put({
+  const completedOccurrence: LocalOccurrence = {
     id: occurrenceId,
     workspaceId,
     recurringSessionId: session.id,
@@ -86,7 +88,8 @@ export async function completeLocalSession(
     completedAt,
     note: existing?.note ?? null,
     studentIds: session.studentIds,
-  } satisfies LocalOccurrence);
+  };
+  occurrenceStore.put(completedOccurrence);
 
   for (const studentId of session.studentIds) {
     const plan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId);
@@ -148,6 +151,17 @@ export async function completeLocalSession(
     cycleOccurrences.push(mapping);
   }
 
+  const activity = makeActivityEvent({
+    workspaceId,
+    moduleKey: 'tutoring',
+    entityType: 'occurrence',
+    entityId: occurrenceId,
+    action: 'occurrence.completed',
+    title: `تم تسجيل حصة ${session.title}`,
+    before: existing ?? null,
+    after: completedOccurrence,
+  });
+  transaction.objectStore(STORES.coreActivityEvents).add(activity);
   transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
     workspaceId,
     moduleKey: 'tutoring',
@@ -162,6 +176,7 @@ export async function completeLocalSession(
       note: null,
     },
   }));
+  transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
 
   await transactionDone(transaction);
 }
