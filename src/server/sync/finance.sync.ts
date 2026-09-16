@@ -12,6 +12,14 @@ const studentCollectionSchema = z.object({
   note: z.string().trim().max(500).nullable().optional().default(null),
 });
 
+const expenseCreateSchema = z.object({
+  expenseDate: z.string().min(10).max(40),
+  scope: z.enum(['business', 'personal']).default('personal'),
+  category: z.string().trim().min(1).max(120),
+  amountPence: z.number().int().positive(),
+  note: z.string().trim().max(500).nullable().optional().default(null),
+});
+
 type ReceiptRow = {
   id: string;
   workspace_id: string;
@@ -87,6 +95,28 @@ export const financeSyncHandler: ModuleSyncHandler = {
         sourceKind: 'manual',
         note: parsed.note,
       });
+      return;
+    }
+
+    if (mutation.operation === 'expense.create') {
+      const parsed = expenseCreateSchema.parse(mutation.payload);
+      const existing = await db.prepare(
+        `SELECT 1 AS found FROM finance_expenses WHERE workspace_id=?1 AND id=?2 LIMIT 1`,
+      ).bind(workspaceId, mutation.entityId).first<{ found: number }>();
+      if (existing) return;
+      await db.prepare(
+        `INSERT INTO finance_expenses(
+           id,workspace_id,expense_date,scope,category,amount_pence,note,created_at,updated_at
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+      ).bind(
+        mutation.entityId,
+        workspaceId,
+        parsed.expenseDate,
+        parsed.scope,
+        parsed.category,
+        parsed.amountPence,
+        parsed.note,
+      ).run();
       return;
     }
 
