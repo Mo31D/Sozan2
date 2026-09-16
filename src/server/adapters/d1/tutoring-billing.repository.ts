@@ -19,6 +19,7 @@ type CycleRow = {
   session_limit: number;
   price_pence: number;
   opening_completed_count: number;
+  opening_progress_locked_at: string | null;
   real_completed_count: number;
   status: BillingCycle['status'];
   started_on: string | null;
@@ -28,7 +29,7 @@ type CycleRow = {
 
 const CYCLE_SELECT = `
   SELECT c.id, c.workspace_id, c.student_id, c.sequence_no, c.session_limit,
-         c.price_pence, c.opening_completed_count,
+         c.price_pence, c.opening_completed_count, c.opening_progress_locked_at,
          COALESCE(SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END), 0) AS real_completed_count,
          c.status, c.started_on, c.completed_on, c.paid_on
   FROM tutoring_billing_cycles c
@@ -59,6 +60,7 @@ function mapCycle(row: CycleRow): BillingCycle {
     sessionLimit: row.session_limit,
     pricePence: row.price_pence,
     openingCompletedCount: row.opening_completed_count,
+    openingProgressLockedAt: row.opening_progress_locked_at,
     realCompletedCount: Number(row.real_completed_count),
     status: row.status,
     startedOn: row.started_on,
@@ -161,8 +163,8 @@ export class D1BillingRepository implements BillingRepository {
     await this.db.prepare(
       `INSERT INTO tutoring_billing_cycles(
          id, workspace_id, student_id, sequence_no, session_limit, price_pence,
-         opening_completed_count, status, started_on, completed_on, paid_on
-       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+         opening_completed_count, opening_progress_locked_at, status, started_on, completed_on, paid_on
+       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
     ).bind(
       input.id,
       input.workspaceId,
@@ -171,6 +173,7 @@ export class D1BillingRepository implements BillingRepository {
       input.sessionLimit,
       input.pricePence,
       input.openingCompletedCount,
+      input.openingProgressLockedAt ?? null,
       input.status,
       input.startedOn,
       input.completedOn,
@@ -196,9 +199,9 @@ export class D1BillingRepository implements BillingRepository {
            status=?4,
            completed_on=?5,
            paid_on=NULL,
-           opening_progress_locked_at=NULL,
            updated_at=CURRENT_TIMESTAMP
        WHERE workspace_id=?1 AND id=?2
+         AND opening_progress_locked_at IS NULL
          AND NOT EXISTS (
            SELECT 1
            FROM tutoring_billing_cycle_occurrences co
@@ -238,6 +241,12 @@ export class D1BillingRepository implements BillingRepository {
       input.position,
       input.earnedPence,
     ).run();
+    await this.db.prepare(
+      `UPDATE tutoring_billing_cycles
+       SET opening_progress_locked_at=COALESCE(opening_progress_locked_at,CURRENT_TIMESTAMP),
+           updated_at=CURRENT_TIMESTAMP
+       WHERE workspace_id=?1 AND id=?2`,
+    ).bind(input.workspaceId, input.cycleId).run();
   }
 
   async markCycleDue(input: {
