@@ -12,6 +12,8 @@ import { consumeAuthAttempt } from './rate-limit';
 const SESSION_COOKIE = 's2_session';
 
 const registerSchema = z.object({
+  userId: z.string().uuid().optional(),
+  workspaceId: z.string().uuid().optional(),
   loginName: z.string().min(3).max(64),
   password: z.string().min(10).max(200),
   displayName: z.string().trim().min(1).max(100),
