@@ -6,7 +6,7 @@ import {
   type LocalPlatformSnapshot,
 } from './adapters/indexeddb/platform.repository';
 import { ExistingAccountLogin } from './cloud/CloudAccess';
-import { SimpleWorkspace } from './simple/SimpleWorkspace';
+import { SimpleWorkspaceV2 } from './simple/SimpleWorkspaceV2';
 
 type CloudState =
   | { status: 'checking' }
@@ -50,7 +50,7 @@ export function App() {
   };
 
   return (
-    <SimpleWorkspace
+    <SimpleWorkspaceV2
       snapshot={local.snapshot}
       cloudAvailable={cloudAccountsAvailable(cloud)}
       onPlatformChanged={reloadLocal}
