@@ -1,4 +1,5 @@
 import { configureBillingSchema, type ConfigureBillingInput } from '../../modules/tutoring/domain/billing-plan';
+import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { newSyncOutboxRecord } from '../sync/outbox';
 
@@ -112,9 +113,20 @@ export async function configureLocalStudentBilling(
         cycleAnchorDate: null,
         effectiveFrom: parsed.effectiveFrom,
       };
+  const activity = makeActivityEvent({
+    workspaceId,
+    moduleKey: 'tutoring',
+    entityType: 'billing_plan',
+    entityId: studentId,
+    action: existingPlan ? 'billing.updated' : 'billing.created',
+    title: parsed.billingMode === 'package' ? `تم ضبط باقة ${parsed.packageSize} حصص` : 'تم ضبط الحساب بالحصة',
+    before: existingPlan,
+    after: plan,
+    undoable: false,
+  });
 
   const transaction = db.transaction(
-    [STORES.tutoringBillingPlans, STORES.tutoringBillingCycles, STORES.syncOutbox],
+    [STORES.tutoringBillingPlans, STORES.tutoringBillingCycles, STORES.coreActivityEvents, STORES.syncOutbox],
     'readwrite',
   );
   transaction.objectStore(STORES.tutoringBillingPlans).put(plan);
@@ -137,6 +149,7 @@ export async function configureLocalStudentBilling(
     } satisfies LocalBillingCycle);
   }
 
+  transaction.objectStore(STORES.coreActivityEvents).add(activity);
   transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
     workspaceId,
     moduleKey: 'tutoring',
@@ -145,6 +158,7 @@ export async function configureLocalStudentBilling(
     entityId: studentId,
     payload: parsed,
   }));
+  transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
 }
 
@@ -175,13 +189,23 @@ export async function collectLocalStudentPayment(input: {
     deletedAt: null,
     pendingSync: true,
   };
+  const activity = makeActivityEvent({
+    workspaceId: input.workspaceId,
+    moduleKey: 'finance',
+    entityType: 'receipt',
+    entityId: receipt.id,
+    action: 'receipt.created',
+    title: 'تم تسجيل تحصيل',
+    after: receipt,
+  });
 
   const db = await openLocalDatabase();
   const transaction = db.transaction(
-    [STORES.financeReceipts, STORES.syncOutbox],
+    [STORES.financeReceipts, STORES.coreActivityEvents, STORES.syncOutbox],
     'readwrite',
   );
   transaction.objectStore(STORES.financeReceipts).add(receipt);
+  transaction.objectStore(STORES.coreActivityEvents).add(activity);
   transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
     workspaceId: input.workspaceId,
     moduleKey: 'finance',
@@ -196,6 +220,7 @@ export async function collectLocalStudentPayment(input: {
       note: receipt.note,
     },
   }));
+  transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
   return receipt;
 }
