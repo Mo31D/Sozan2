@@ -1,123 +1,181 @@
 # Sozan2 architecture
 
-Product baseline: see `docs/FEATURE_AUDIT.md`.
+Sozan2 is a **modular, local-first workspace platform**. The tutoring workflow is the first implemented template and uses Sozan1 as behavioural evidence; it is not part of the platform core.
 
-## Dependency direction
+See `MODULAR_PLATFORM.md` for the product contract and `FEATURE_AUDIT.md` for the Sozan1 keep/redesign/drop decisions.
 
-```text
-React client
-   ↓ HTTP
-Hono routes / middleware
-   ↓
-Application services
-   ↓
-Domain rules ←→ repositories
-                   ↓
-                   D1
-```
-
-The domain layer must not import Cloudflare, Hono, React, DOM or browser APIs.
-
-## Bounded modules
-
-1. **Auth** — passcode, session cookie, abuse control.
-2. **Students** — profile, guardian details, status.
-3. **Schedule & Planner** — recurring sessions, participants, pending/confirmed planning, availability range.
-4. **Lessons** — occurrence generation, completion, cancellation, reopen, one-off reschedule.
-5. **Billing** — per-session vs package, package cycles, opening progress.
-6. **Receipts & Allocation** — one canonical teaching-cash model, credit and deterministic reallocation.
-7. **Expenses & Other Income**.
-8. **Reconciliation** — expected balance and cash checks.
-9. **Activity & Review** — append-only audit log and derived correction signals.
-10. **Dashboard / Reports / Insights**.
-11. **Settings**.
-12. **Migration** — old Sozan import only; never runtime compatibility.
-
-## Ownership
-
-### Client
-
-Rendering, forms, local interaction state and API calls. Client code never calculates canonical balances or mutates financial state optimistically as truth.
-
-### Routes
-
-HTTP-only concerns: authentication, request validation, idempotency key handling, status codes and response shape.
-
-### Services
-
-Business transactions and cross-entity rules. Examples:
-
-- generate occurrences only for confirmed schedules;
-- complete/cancel/reopen a lesson;
-- create/rebalance a package cycle;
-- create/edit/delete/restore a receipt and fully rebalance allocations;
-- calculate dashboard/report projections;
-- append activity events.
-
-### Repositories
-
-SQL and persistence only. Repositories do not decide whether a billing transition is valid.
-
-### Domain
-
-Pure types, validation, calculations and invariants. This is the highest-priority unit-test surface.
-
-### Migrations
-
-The only place allowed to create or alter production tables.
-
-## Canonical financial model
-
-Sozan2 deliberately removes the old split between direct lesson payments and student receipts.
+## Layers
 
 ```text
-teaching cash
-     ↓
-  receipt
-     ↓
-allocation service
-   ↙       ↘
-lesson      completed package cycle
+UI surfaces
+   ↓
+application services
+   ↓
+domain rules + module ports
+   ↓
+persistence adapters
+  ↙              ↘
+IndexedDB         D1
 ```
 
-Most receipts belong to a student. A group lesson that has no single named student account may instead create a receipt linked directly to its occurrence. A quick “completed and paid” action uses this same receipt entity. There is only one source of truth for cash received.
+HTTP/Hono exists only in cloud mode. Core business services must not require HTTP, Cloudflare or D1.
 
-## Billing model
+## Core ownership
 
-### Per-session
+Core owns only platform concerns:
 
-The recurring session supplies the default price. When an occurrence becomes billable, the occurrence stores a financial snapshot (`gross_pence`, `center_cut_pence`, `earned_pence`). Future schedule-price changes never rewrite completed history.
+- users;
+- workspaces and membership;
+- enabled modules and order;
+- terminology overrides;
+- user/workspace surface layouts;
+- activity/audit envelope;
+- idempotency;
+- persistence contracts and IDs.
 
-### Package
+Core does **not** know what a student, lesson, package, appointment or client is.
 
-A student's current package configuration lives in `billing_plans`. Each cycle snapshots its own size and price.
+## Module ownership
+
+### Tutoring
+
+Owns students, recurring teaching sessions, lesson occurrences, attendance state, per-session billing configuration and package cycles.
+
+### Finance
+
+Owns receipts, receipt allocations, expenses, other income and cash reconciliation.
+
+Finance does not foreign-key directly into tutoring tables. It stores typed external references such as:
+
+```text
+module=tutoring
+type=occurrence
+id=<text-id>
+```
+
+Application services validate these references when commands cross module boundaries.
+
+### Planner
+
+Owns the planning surface and consumes schedule-provider contracts from enabled modules. A tutoring recurring schedule remains tutoring-owned data.
+
+### Reports
+
+Produces derived read models and deterministic insights. It does not store duplicate canonical totals.
+
+## Lego boundary
+
+A module may not:
+
+- query another module's private tables directly;
+- import another module's persistence adapter;
+- write another module's canonical state;
+- require an unrelated module unless declared as a dependency.
+
+Cross-module effects use a public contract or a domain event.
+
+Example:
+
+```text
+Tutoring completes lesson
+        ↓
+tutoring.lesson.completed
+        ↓
+Finance / Activity / Reports react independently
+```
+
+This prevents a change in one piece from forcing edits across the whole product.
+
+## Persistence and zero-backend mode
+
+### Local mode
+
+```text
+React/PWA → IndexedDB
+```
+
+Local mode is a supported architecture, not a demo fallback. It requires no D1 and no paid external API.
+
+### Cloud mode
+
+```text
+React/PWA → Hono Worker → D1
+```
+
+Cloud mode is optional and enables multi-device/shared-workspace use.
+
+Module services depend on repository interfaces. The tutoring student repository is the reference implementation with both IndexedDB and D1 adapters.
+
+## Identity and workspaces
+
+Entity IDs are application-generated TEXT IDs so offline-created records can later sync without integer collisions.
+
+Every business record is scoped to a workspace. `workspace_id` is a mandatory security and data-isolation boundary in module tables.
+
+A workspace carries:
+
+- name;
+- template key;
+- locale/timezone/currency;
+- enabled modules;
+- label overrides;
+- surface layout.
+
+No schema default contains a personal user's name.
+
+## Templates
+
+Templates select modules and default vocabulary. They do not change core schema semantics.
+
+`tutoring` is implemented. `appointments`, `small_business` and `custom` are catalogued as future templates but are marked unimplemented until their real modules exist.
+
+Changing `حصة` to `موعد` is allowed as a display label only when the underlying workflow is actually compatible. Behaviourally different workflows receive separate modules instead of conditionals inside tutoring.
+
+## Customisable surfaces
+
+Navigation and pages such as "أنا" are compositions of module contributions.
+
+A module may contribute:
+
+- navigation items;
+- widgets;
+- actions;
+- read models.
+
+`core_surface_layouts` stores ordering/visibility/size configuration. Canonical business values remain in module data and are always derived at render/query time.
+
+## Tutoring rules preserved from Sozan1
+
+### Schedule
+
+A recurring tutoring schedule is `confirmed` or `pending`.
+
+- confirmed schedules can generate occurrences;
+- pending schedules remain visible to planning but generate none;
+- changing the recurring schedule affects future scheduled work only;
+- one-off movement belongs to the occurrence.
+
+### Package billing
+
+Current configuration is stored on a student billing plan. Every package cycle snapshots its own size and price.
 
 Package progress is:
 
 ```text
-opening_completed_count + real linked completed occurrences
+opening_completed_count + real completed occurrences
 ```
 
-`opening_completed_count` represents lessons completed before the current cycle was entered into Sozan2. It replaces the old hidden-session/synthetic-occurrence technique.
+Opening progress represents work completed before onboarding. It is native state and is locked after real new occurrences begin unless a dedicated correction workflow proves the change safe.
 
-Once a real occurrence is attached to a cycle, the opening count is locked unless a dedicated correction workflow explicitly proves the change safe.
+### Finance
 
-## Schedule model
+All incoming teaching cash is a finance receipt. "Completed and paid" is a convenience command that creates the same receipt entity as manual collection; it is not a second payment ledger.
 
-A recurring schedule has one of two states:
+Receipt allocation may target a tutoring occurrence or completed package cycle through typed cross-module references.
 
-- `confirmed` — eligible to generate occurrences;
-- `pending` — visible in the planner but must not generate occurrences.
+### Reporting concepts
 
-A pending schedule may retain its last known day/time as reference. New pending schedules may have no day/time yet.
-
-A one-off reschedule belongs to the occurrence. Changing the recurring schedule affects future generated/scheduled occurrences only.
-
-## Read models
-
-Dashboard, student account, planner, review centre and reports are projections of canonical tables. They do not maintain duplicate financial totals as stored truth.
-
-Important report concepts stay separate:
+Never merge these concepts:
 
 1. work performed/earned;
 2. cash received;
@@ -125,56 +183,34 @@ Important report concepts stay separate:
 4. package work performed but not due yet;
 5. prepaid credit.
 
-## Idempotency
+## Audit and idempotency
 
-Every money-changing or state-changing HTTP mutation must support a stable idempotency mechanism. Duplicate retries must replay the previous successful result rather than duplicate receipts, attendance or expenses.
+State-changing commands emit activity events. Destructive financial corrections preserve before/after evidence where useful.
 
-## Financial invariants
+Every money-changing or attendance-changing cloud mutation must support a stable idempotency key. Local adapters must preserve the same command-level invariants even though network retry is not involved.
 
-Tests must prove at least:
+## Migration discipline
 
-1. Money is represented as integer pence.
-2. A receipt cannot allocate more than its value.
-3. An occurrence or completed package cycle cannot be overpaid by automatic allocation.
-4. Editing/deleting/restoring a receipt deterministically recalculates allocations.
-5. Completing/cancelling/reopening a lesson cannot silently duplicate cash received.
-6. Package progress and package payment are separate concepts.
-7. Opening package progress is native state, not fake lessons.
-8. Pending schedules never generate occurrences.
-9. Historical completed work is never rewritten by future schedule or billing edits.
-10. Every destructive financial correction is auditable.
+Production schema changes happen only in migrations. No request may create or alter tables.
 
-## Performance rules
-
-Keep the outcomes of the old performance work without its compatibility hacks:
-
-- indexed planner/report queries;
-- lazy-load non-visible product views;
-- no background UI polling loops;
-- PWA shell cache-first with background refresh;
-- no runtime DDL or schema probes on normal requests;
-- no DB proxy/no-op interception;
-- no browser API monkey patching.
-
-## Migration from old Sozan
-
-The old system is not queried live by Sozan2.
+Sozan1 migration is explicit:
 
 ```text
-old D1
-  ↓ extract
-normalised migration model
-  ↓ validate
-new D1
+old D1 → extract → normalise → validate → Sozan2 import
 ```
 
-Migration responsibilities include:
+Compatibility tables, runtime wrappers and patch scripts are never imported as architecture.
 
-- map old direct payments into canonical receipts, including occurrence-level group payments without a student id;
-- map per-session and package data into the new billing model;
-- convert old package-opening shadow progress into `opening_completed_count`;
-- ignore old monthly compatibility structures after extracting their final business meaning;
-- preserve activity/history where it is meaningful;
-- never import runtime compatibility tables as new product architecture.
+## Non-negotiable invariants
 
-Cutover is blocked until old/new totals match for students, completed lessons, receipts/cash, outstanding balances, package progress, prepaid credit, expenses, other income and expected final balance.
+1. Money is integer pence.
+2. IDs are globally safe for local/cloud creation.
+3. All module data is workspace-scoped.
+4. Pending schedules never create occurrences.
+5. Historical completed work is not rewritten by future schedule/billing edits.
+6. Package opening progress is native state, not fake lessons.
+7. A receipt cannot allocate more than its value.
+8. Automatic allocation cannot overpay a target obligation.
+9. Edit/delete/restore of receipts causes deterministic reallocation.
+10. Module boundaries are crossed only through public contracts/events.
+11. No paid AI/external API is required for core operation.
