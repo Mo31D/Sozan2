@@ -129,12 +129,12 @@ CREATE TABLE billing_cycle_occurrences (
   FOREIGN KEY (occurrence_id) REFERENCES lesson_occurrences(id) ON DELETE RESTRICT
 );
 
--- Every amount received from a student uses one canonical receipt model.
--- "Completed and paid" creates a receipt with source_kind='lesson_quick'; it
--- does not create a second payment ledger.
+-- Every teaching payment uses one canonical receipt model. A student receipt
+-- carries student_id. A lesson-level group payment may instead be tied directly
+-- to source_occurrence_id. "Completed and paid" never creates a second ledger.
 CREATE TABLE receipts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  student_id INTEGER NOT NULL,
+  student_id INTEGER,
   amount_pence INTEGER NOT NULL CHECK (amount_pence > 0),
   received_at TEXT NOT NULL,
   payment_method TEXT NOT NULL DEFAULT 'cash' CHECK (payment_method IN ('cash', 'bank', 'wallet', 'other')),
@@ -144,6 +144,7 @@ CREATE TABLE receipts (
   deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK (student_id IS NOT NULL OR source_occurrence_id IS NOT NULL),
   CHECK (
     source_kind <> 'lesson_quick'
     OR source_occurrence_id IS NOT NULL
@@ -246,6 +247,7 @@ CREATE INDEX idx_occurrences_session_status ON lesson_occurrences(recurring_sess
 CREATE INDEX idx_billing_cycles_student ON billing_cycles(student_id, status, sequence_no);
 CREATE INDEX idx_billing_cycle_occurrences_cycle ON billing_cycle_occurrences(billing_cycle_id, position);
 CREATE INDEX idx_receipts_student ON receipts(student_id, received_at, deleted_at);
+CREATE INDEX idx_receipts_source_occurrence ON receipts(source_occurrence_id, deleted_at);
 CREATE INDEX idx_receipt_allocations_receipt ON receipt_allocations(receipt_id);
 CREATE INDEX idx_receipt_allocations_occurrence ON receipt_allocations(occurrence_id);
 CREATE INDEX idx_receipt_allocations_cycle ON receipt_allocations(billing_cycle_id);
