@@ -17,5 +17,60 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Validate initial D1 schema
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import sqlite3
+
+          sql = pathlib.Path('migrations/0001_core.sql').read_text(encoding='utf-8')
+          db = sqlite3.connect(':memory:')
+          db.executescript(sql)
+
+          expected = {
+              'students',
+              'recurring_sessions',
+              'recurring_session_students',
+              'lesson_occurrences',
+              'billing_plans',
+              'billing_cycles',
+              'billing_cycle_occurrences',
+              'receipts',
+              'receipt_allocations',
+              'expenses',
+              'other_income',
+              'cash_checks',
+              'activity_log',
+              'mutation_dedupe',
+              'settings',
+          }
+          actual = {
+              row[0]
+              for row in db.execute(
+                  "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+              )
+          }
+          missing = expected - actual
+          if missing:
+              raise SystemExit(f'Missing schema tables: {sorted(missing)}')
+
+          # Core planning invariant: pending schedules may be unscheduled, but
+          # confirmed schedules must have a day and time.
+          db.execute(
+              "INSERT INTO recurring_sessions(title, session_type, schedule_status) "
+              "VALUES ('pending', 'online', 'pending')"
+          )
+          try:
+              db.execute(
+                  "INSERT INTO recurring_sessions(title, session_type, schedule_status) "
+                  "VALUES ('broken', 'online', 'confirmed')"
+              )
+          except sqlite3.IntegrityError:
+              pass
+          else:
+              raise SystemExit('Confirmed schedule invariant is not enforced')
+
+          print('Initial D1 schema validated')
+          PY
       - run: npm run check
       - run: npm run build
