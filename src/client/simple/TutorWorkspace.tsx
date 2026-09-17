@@ -393,16 +393,6 @@ export function TutorWorkspace({
                     });
                     setShowAddStudent(false);
                   }, 'تمت إضافة الطالب.')}
-                  onPackage={(studentId, form) => void runAction(async () => {
-                    await configureLocalStudentBilling(workspaceId, studentId, {
-                      billingMode: 'package',
-                      packageSize: Number(form.get('packageSize') ?? 8),
-                      packagePricePence: toPence(form.get('packagePrice'), true),
-                      openingCompletedCount: Number(form.get('openingCompletedCount') ?? 0),
-                      effectiveFrom: String(form.get('effectiveFrom') ?? todayIso()),
-                      cycleAnchorDate: null,
-                    });
-                  }, 'تم حفظ الباقة.')}
                 />
               )}
             </>
