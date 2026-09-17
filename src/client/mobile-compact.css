@@ -1,0 +1,149 @@
+/* Mobile density/performance overrides for low-end phones (target: 360–430px Samsung-class devices). */
+@media (max-width:600px){
+  html{font-size:15px}
+  body{background:#f8f6fb}
+  .simple-app{background:#f8f6fb}
+  .simple-content{max-width:100%;padding:14px 12px calc(82px + env(safe-area-inset-bottom))}
+  .simple-screen,.management-home,.management-subview{gap:12px}
+  .simple-header{padding:0 2px}
+  .simple-header span,.simple-section-title span{font-size:.78rem}
+  .simple-header h1{font-size:2.05rem;line-height:1.05;margin-top:5px;letter-spacing:-.025em}
+  .simple-section-title{margin-top:4px}
+  .simple-section-title h2{font-size:1.38rem;margin-top:2px}
+
+  .today-hero{border-radius:20px;padding:15px;box-shadow:none}
+  .today-hero-top{gap:10px}
+  .today-hero-top strong{font-size:1.18rem}
+  .today-hero-top small{font-size:.82rem}
+  .spark{width:42px;height:42px;border-radius:13px;font-size:1.1rem}
+  .hero-money{font-size:2.25rem;margin:11px 0}
+  .hero-split{gap:7px}
+  .hero-split>div{border-radius:14px;padding:10px}
+  .hero-split strong{font-size:1.08rem}
+
+  .quick-actions{gap:8px}
+  .quick-actions button{border-radius:17px;padding:11px 10px;gap:9px;min-height:64px}
+  .quick-actions b{font-size:1.35rem}
+  .quick-actions strong{font-size:.95rem}
+  .quick-actions small{font-size:.72rem}
+  .due-card{border-radius:17px;padding:12px 13px}
+  .due-card strong{font-size:1.35rem}
+  .due-status{padding:5px 9px;font-size:.76rem}
+
+  .lesson-list,.student-money-list,.activity-list,.student-settings-list,.appointment-list{gap:8px}
+  .lesson-card,.appointment-card,.appointment-summary-card{border-radius:18px;padding:12px;box-shadow:none}
+  .lesson-main strong,.appointment-card-top>div strong,.appointment-summary-main>div strong{font-size:1.05rem}
+  .lesson-main small,.appointment-card-top small,.appointment-summary-main small{font-size:.76rem;line-height:1.35}
+  .progress-chip{padding:5px 8px;font-size:.76rem}
+  .lesson-done-button{margin-top:10px;border-radius:13px;padding:11px;min-height:44px;font-size:.95rem}
+
+  .screen-action-row{gap:7px}
+  .primary-small,.secondary-small,.schedule-attention{min-height:44px;border-radius:13px;padding:9px 12px;font-size:.88rem}
+  .quick-form{grid-template-columns:1fr;gap:9px;border-radius:18px;padding:12px}
+  .quick-form h3{grid-column:1;font-size:1.15rem;margin-bottom:1px}
+  .quick-form input,.quick-form select,.edit-schedule-card input,.edit-schedule-card select,.management-settings-form input{min-height:44px;border-radius:12px;padding:10px 11px;font-size:16px}
+  .quick-form .form-submit,.edit-schedule-card .form-submit,.management-settings-form .form-submit{grid-column:1;min-height:46px;border-radius:13px;padding:11px;font-size:.95rem}
+  .compact-form-field{display:flex;flex-direction:column;gap:5px;color:#6d6273;font-size:.78rem;font-weight:800}
+  .quick-form-hint{grid-column:1/-1;margin:0;color:#81778a;font-size:.74rem;line-height:1.5}
+  .quick-student-picker{grid-template-columns:1fr;border-radius:13px;padding:9px;gap:6px}
+  .quick-student-picker label{padding:7px 8px;min-height:40px}
+
+  .money-grid{gap:8px}
+  .metric-card{min-height:82px;border-radius:17px;padding:11px}
+  .metric-card span{font-size:.76rem}
+  .metric-card strong{font-size:1.18rem}
+  .avatar-circle{width:40px;height:40px;border-radius:12px;font-size:1.05rem}
+  .student-money-row{gap:9px;padding:10px 2px}
+  .activity-row{border-radius:14px;padding:10px 12px}
+
+  .schedule-tabs{top:4px;border-radius:14px;padding:3px;backdrop-filter:none;-webkit-backdrop-filter:none;background:#ede8f1;box-shadow:none}
+  .schedule-tabs button{min-height:42px;border-radius:11px;padding:7px 2px;font-size:.72rem}
+  .schedule-week-stack{gap:7px}
+  .day-block{border-radius:18px;box-shadow:none}
+  .day-heading{padding:10px 12px}
+  .day-heading strong{font-size:.9rem}
+  .schedule-row{padding:10px 11px;gap:9px}
+  .schedule-row time{font-size:.8rem}
+  .session-color{height:36px}
+  .schedule-empty-row{padding:12px;color:#817789;font-size:.82rem}
+
+  .month-head>strong{font-size:.95rem}
+  .month-head button{min-width:40px;min-height:40px;border-radius:10px;padding:5px 7px}
+  .month-weekdays,.month-grid{gap:3px}
+  .month-weekdays span{font-size:.64rem}
+  .month-cell{min-height:48px;border-radius:8px;padding:4px 2px;gap:2px}
+  .month-cell b{font-size:.78rem}
+  .month-cell small{font-size:.61rem;line-height:1.1}
+
+  .free-planner{gap:9px}
+  .free-controls{gap:7px}
+  .free-controls label{font-size:.76rem}
+  .free-slots{padding:9px 10px;gap:6px}
+  .free-slots button{border-radius:12px;padding:7px 9px}
+
+  .edit-week-grid{grid-template-columns:repeat(7,minmax(56px,1fr));overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:3px}
+  .edit-day-cell{min-height:58px;border-radius:9px;padding:5px 2px}
+  .edit-day-cell strong{font-size:.72rem}
+  .edit-day-cell small{font-size:.61rem}
+  .edit-pending-cell{border-radius:13px;padding:10px 11px}
+  .edit-schedule-card{border-radius:18px;padding:13px;gap:11px}
+  .edit-title-row h2{font-size:1.35rem;margin-top:2px}
+  .edit-title-row button{min-height:40px;border-radius:11px;padding:7px 10px}
+  .edit-schedule-card form{grid-template-columns:1fr;gap:8px}
+  .edit-schedule-card label{font-size:.76rem;gap:4px}
+  .edit-readonly{border-radius:12px;padding:9px 10px}
+  .edit-duration-preview{grid-column:1/-1}
+  .edit-hint{font-size:.74rem;line-height:1.5}
+  .edit-session-list{gap:6px}
+  .edit-session-list>button{border-radius:14px;padding:10px 11px;gap:9px;min-height:64px}
+  .edit-session-list small{font-size:.72rem;line-height:1.35}
+
+  .management-profile-strip{border-radius:17px;padding:11px 12px;gap:9px}
+  .management-avatar{width:40px;height:40px;border-radius:12px;font-size:1.1rem}
+  .management-report-grid{gap:7px}
+  .management-report-shortcut{border-radius:15px;padding:10px;gap:8px;min-height:68px}
+  .management-report-shortcut>b{width:34px;height:34px;border-radius:10px}
+  .management-report-shortcut strong{font-size:.9rem}
+  .management-report-shortcut small{font-size:.7rem}
+  .management-group{border-radius:17px}
+  .management-row{padding:10px 11px;gap:9px;min-height:58px}
+  .management-row-icon{width:34px;height:34px;border-radius:10px}
+  .management-row strong{font-size:.9rem}
+  .management-row small{font-size:.7rem;line-height:1.35}
+  .management-subheader h2{font-size:1.45rem}
+  .report-answer-card{border-radius:18px;padding:14px}
+  .report-answer-card>strong{font-size:1.75rem}
+  .management-metric-grid{gap:7px}
+  .management-metric-grid>div{border-radius:14px;padding:10px;min-height:68px}
+  .report-person-row{border-radius:15px;padding:10px;gap:8px}
+  .management-settings-form,.management-form-card{border-radius:18px;padding:12px;gap:10px}
+
+  .appointment-month{border-radius:18px;padding:10px}
+  .appointment-upcoming-row{border-radius:14px;padding:10px 11px}
+  .appointment-card-actions,.appointment-summary-actions{gap:6px;margin-top:10px}
+  .appointment-card-actions button,.appointment-summary-actions button{min-height:42px;border-radius:11px;padding:8px 10px}
+  .appointment-client-card{border-radius:15px;padding:10px;gap:9px}
+
+  .simple-bottom-nav{background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none;padding:4px max(8px,env(safe-area-inset-left)) calc(4px + env(safe-area-inset-bottom));box-shadow:0 -2px 8px rgba(52,37,65,.05)}
+  .simple-bottom-nav button{min-height:50px;padding:4px 3px;gap:2px}
+  .simple-bottom-nav b{font-size:1.25rem}
+  .simple-bottom-nav span{font-size:.74rem}
+
+  .lesson-card,.due-card,.metric-card,.attention-card,.cash-card,.settings-card,.day-block,.appointment-card,.appointment-summary-card{box-shadow:none}
+}
+
+@media (max-width:390px){
+  html{font-size:14.5px}
+  .simple-content{padding-left:10px;padding-right:10px}
+  .simple-header h1{font-size:1.9rem}
+  .hero-money{font-size:2.05rem}
+  .quick-actions button{padding:10px 8px}
+  .month-cell{min-height:46px}
+  .month-cell small{font-size:.58rem}
+  .management-report-grid{grid-template-columns:1fr 1fr}
+  .management-report-shortcut{min-height:64px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
+}
