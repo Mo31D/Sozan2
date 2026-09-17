@@ -96,6 +96,13 @@ export function ScheduleScreen({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const openTimelineLesson = (sessionId: string) => {
+    const session = data.sessions.find((row) => row.id === sessionId);
+    const studentId = session?.studentIds.find((id) => data.students.some((student) => student.id === id));
+    if (studentId) onOpenStudent(studentId);
+    else openEdit(sessionId);
+  };
+
   const pendingCount = data.sessions.filter((session) => session.scheduleStatus === 'pending').length;
 
   return (
@@ -148,7 +155,7 @@ export function ScheduleScreen({
 
       {mode === 'week' && <WeekView data={data} onEdit={openEdit} onOpenStudent={onOpenStudent} />}
       {mode === 'month' && <MonthView data={data} cursor={monthCursor} onCursor={onMonthCursor} onOpenDay={onOpenDay} />}
-      {mode === 'free' && <FreeTimeView data={data} start={freeStart} end={freeEnd} onStart={setFreeStart} onEnd={setFreeEnd} onUseSlot={(date, startTime) => openAdd({ weekday: weekdayForIso(date), startTime })} />}
+      {mode === 'free' && <FreeTimeView data={data} start={freeStart} end={freeEnd} onStart={setFreeStart} onEnd={setFreeEnd} onUseSlot={(date, startTime) => openAdd({ weekday: weekdayForIso(date), startTime })} onOpenLesson={openTimelineLesson} onEditTravel={openEdit} />}
       {mode === 'edit' && <EditScheduleView data={data} busy={busy} editingId={editingId} focusPending={focusPending} onEditing={setEditingId} onSave={onUpdate} />}
     </section>
   );
