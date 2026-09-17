@@ -12,6 +12,7 @@ export function StudentsSettings({
   onToggleAddStudent,
   onStudentAdd,
   onOpenStudent,
+  onRestoreStudent,
   onBack,
   onAdvancedStudents,
 }: {
@@ -22,6 +23,7 @@ export function StudentsSettings({
   onToggleAddStudent: () => void;
   onStudentAdd: (form: FormData) => void;
   onOpenStudent: (studentId: string) => void;
+  onRestoreStudent: (studentId: string) => Promise<boolean>;
   onBack: () => void;
   onAdvancedStudents: () => void;
 }) {
@@ -50,12 +52,13 @@ export function StudentsSettings({
           const financial = buildStudentFinancialSummary(data, student.id);
           const packageSize = cycle?.sessionLimit ?? plan?.packageSize ?? 8;
           const completed = cycle ? cycle.openingCompletedCount + cycle.realCompletedCount : 0;
+          const siblings = student.familyId ? data.students.filter((row) => row.id !== student.id && row.familyId === student.familyId) : [];
           return (
             <button className="management-student-link" type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>
               <span className="management-row-icon">{student.name.trim().charAt(0)}</span>
               <span>
                 <strong>{student.name}</strong>
-                <small>{plan?.billingMode === 'package' ? `باقة ${completed}/${packageSize}` : 'الحساب بالحصة'}{financial.duePence ? ` · مطلوب ${money(financial.duePence, currency)}` : ''}</small>
+                <small>{plan?.billingMode === 'package' ? `باقة ${completed}/${packageSize}` : 'الحساب بالحصة'}{financial.duePence ? ` · مطلوب ${money(financial.duePence, currency)}` : ''}{siblings.length ? ` · ${siblings.length} إخوة مرتبطين` : ''}</small>
               </span>
               <b>فتح</b>
             </button>
@@ -63,6 +66,21 @@ export function StudentsSettings({
         })}
         {!data.students.length && <div className="friendly-empty">لا يوجد طلاب حتى الآن.</div>}
       </div>
+
+      {data.archivedStudents.length > 0 && (
+        <details className="archived-students-panel">
+          <summary>طلاب سابقون ({data.archivedStudents.length})</summary>
+          <p>ملفاتهم وتاريخهم محفوظ. الاسترجاع يعيد الطالب للقائمة فقط؛ المواعيد القديمة لا ترجع تلقائيًا.</p>
+          <div className="archived-student-list">
+            {data.archivedStudents.map((student) => (
+              <div key={student.id}>
+                <span><strong>{student.name}</strong><small>{student.guardianName || student.level || 'ملف محفوظ'}</small></span>
+                <button type="button" disabled={busy} onClick={() => void onRestoreStudent(student.id)}>استرجاع</button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </section>
   );
 }
