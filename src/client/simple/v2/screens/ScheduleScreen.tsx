@@ -22,6 +22,7 @@ export function ScheduleScreen({
   onAdd,
   onUpdate,
   onOpenDay,
+  onOpenStudent,
 }: {
   data: SimpleWorkspaceData;
   busy: boolean;
@@ -34,6 +35,7 @@ export function ScheduleScreen({
   onAdd: (form: FormData) => Promise<boolean>;
   onUpdate: (sessionId: string, form: FormData) => Promise<boolean>;
   onOpenDay: (date: string) => void;
+  onOpenStudent: (studentId: string) => void;
 }) {
   const initialDefaults = lessonTimeDefaults(1);
   const [showAdd, setShowAdd] = useState(false);
@@ -144,7 +146,7 @@ export function ScheduleScreen({
         <ScheduleTab active={mode === 'edit'} label="تعديل" onClick={() => { onMode('edit'); setFocusPending(false); }} />
       </div>
 
-      {mode === 'week' && <WeekView data={data} onEdit={openEdit} />}
+      {mode === 'week' && <WeekView data={data} onEdit={openEdit} onOpenStudent={onOpenStudent} />}
       {mode === 'month' && <MonthView data={data} cursor={monthCursor} onCursor={onMonthCursor} onOpenDay={onOpenDay} />}
       {mode === 'free' && <FreeTimeView data={data} start={freeStart} end={freeEnd} onStart={setFreeStart} onEnd={setFreeEnd} onUseSlot={(date, startTime) => openAdd({ weekday: weekdayForIso(date), startTime })} />}
       {mode === 'edit' && <EditScheduleView data={data} busy={busy} editingId={editingId} focusPending={focusPending} onEditing={setEditingId} onSave={onUpdate} />}
