@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { lessonTimeDefaults } from '../src/client/simple/v2/session-defaults';
 import {
   formatArabicDate,
   formatClockTime,
@@ -21,6 +22,13 @@ describe('Arabic schedule presentation', () => {
     expect(formatDurationArabic(120)).toBe('ساعتين');
     expect(formatDurationArabic(150)).toBe('ساعتين و٣٠ دقيقة');
     expect(formatDurationArabic(660)).toBe('١١ ساعة');
+  });
+
+  it('uses realistic tutoring defaults for one or multiple linked students', () => {
+    expect(lessonTimeDefaults(1)).toEqual({ durationMinutes: 90, travelMinutes: 30, expectedStudentCount: 1 });
+    expect(lessonTimeDefaults(2)).toEqual({ durationMinutes: 180, travelMinutes: 0, expectedStudentCount: 2 });
+    expect(lessonTimeDefaults(3)).toEqual({ durationMinutes: 270, travelMinutes: 0, expectedStudentCount: 3 });
+    expect(lessonTimeDefaults(10)).toEqual({ durationMinutes: 360, travelMinutes: 0, expectedStudentCount: 10 });
   });
 
   it('forces Arabic date words and numerals', () => {
