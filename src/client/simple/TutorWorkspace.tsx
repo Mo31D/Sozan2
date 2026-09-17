@@ -36,6 +36,7 @@ export function TutorWorkspace({
   const workspaceId = snapshot.workspace.id;
   const [page, setPage] = useState<PageKey>('today');
   const [selectedDay, setSelectedDay] = useState(todayIso());
+  const [openPendingSchedule, setOpenPendingSchedule] = useState(false);
   const [data, setData] = useState<SimpleWorkspaceData | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
   const [notice, setNotice] = useState('');
@@ -98,6 +99,7 @@ export function TutorWorkspace({
 
   const moveTo = (next: PageKey) => {
     if (next === 'today') setSelectedDay(todayIso());
+    if (next === 'schedule') setOpenPendingSchedule(false);
     setPage(next);
     setNotice('');
     setError('');
@@ -107,6 +109,14 @@ export function TutorWorkspace({
   const openDay = (date: string) => {
     setSelectedDay(date);
     setPage('today');
+    setNotice('');
+    setError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openPendingScheduleEdits = () => {
+    setOpenPendingSchedule(true);
+    setPage('schedule');
     setNotice('');
     setError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -171,6 +181,7 @@ export function TutorWorkspace({
           <ScheduleScreen
             data={data}
             busy={busy}
+            openPendingOnMount={openPendingSchedule}
             onOpenDay={openDay}
             onAdd={async (form) => runAction(async () => {
               const pending = String(form.get('scheduleStatus') ?? 'confirmed') === 'pending';
@@ -215,6 +226,7 @@ export function TutorWorkspace({
             busy={busy}
             showAddStudent={showAddStudent}
             onToggleAddStudent={() => setShowAddStudent((value) => !value)}
+            onOpenPendingSchedule={openPendingScheduleEdits}
             onPlatformChanged={async () => {
               await onPlatformChanged();
               await refresh();
