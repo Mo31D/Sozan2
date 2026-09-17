@@ -1,26 +1,14 @@
-import type { RecurringSession } from '../../modules/tutoring/domain/session';
+import {
+  updateRecurringSessionDetailsSchema,
+  type RecurringSession,
+  type UpdateRecurringSessionDetailsInput,
+} from '../../modules/tutoring/domain/session';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { newSyncOutboxRecord } from '../sync/outbox';
 import type { LocalOccurrence } from '../simple/data';
 
-const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/u;
-
-export type SessionDetailsCorrection = {
-  title: string;
-  sessionType: RecurringSession['sessionType'];
-  scheduleStatus: RecurringSession['scheduleStatus'];
-  weekday: number | null;
-  startTime: string | null;
-  durationMinutes: number;
-  travelMinutes: number;
-  location: string | null;
-  priceBasis: RecurringSession['priceBasis'];
-  defaultPricePence: number;
-  expectedStudentCount: number;
-  centerCutBps: number;
-  studentIds: string[];
-};
+export type SessionDetailsCorrection = UpdateRecurringSessionDetailsInput;
 
 async function getSession(workspaceId: string, sessionId: string): Promise<RecurringSession> {
   const db = await openLocalDatabase();
@@ -31,34 +19,12 @@ async function getSession(workspaceId: string, sessionId: string): Promise<Recur
   return row;
 }
 
-function normalize(input: SessionDetailsCorrection): SessionDetailsCorrection {
-  const title = input.title.trim();
-  if (!title) throw new Error('SESSION_TITLE_REQUIRED');
-  if (input.durationMinutes < 15 || input.durationMinutes > 360) throw new Error('SESSION_DURATION_INVALID');
-  if (input.travelMinutes < 0 || input.travelMinutes > 360) throw new Error('SESSION_TRAVEL_INVALID');
-  if (input.defaultPricePence < 0 || !Number.isSafeInteger(input.defaultPricePence)) throw new Error('AMOUNT_INVALID');
-  if (input.expectedStudentCount < 1 || input.expectedStudentCount > 100) throw new Error('SESSION_STUDENT_COUNT_INVALID');
-  if (input.centerCutBps < 0 || input.centerCutBps > 10_000) throw new Error('SESSION_CENTER_CUT_INVALID');
-  if (input.weekday !== null && (!Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6)) throw new Error('SCHEDULE_DAY_REQUIRED');
-  if (input.startTime !== null && !CLOCK.test(input.startTime)) throw new Error('SCHEDULE_TIME_REQUIRED');
-  if (input.scheduleStatus === 'confirmed') {
-    if (input.weekday === null) throw new Error('SCHEDULE_DAY_REQUIRED');
-    if (!input.startTime) throw new Error('SCHEDULE_TIME_REQUIRED');
-  }
-  return {
-    ...input,
-    title,
-    location: input.location?.trim() || null,
-    studentIds: [...new Set(input.studentIds)],
-  };
-}
-
 export async function updateLocalSessionDetails(
   workspaceId: string,
   sessionId: string,
   rawInput: SessionDetailsCorrection,
 ): Promise<void> {
-  const input = normalize(rawInput);
+  const input = updateRecurringSessionDetailsSchema.parse(rawInput);
   const current = await getSession(workspaceId, sessionId);
   if (!current.active) throw new Error('SESSION_ARCHIVED');
   const db = await openLocalDatabase();
