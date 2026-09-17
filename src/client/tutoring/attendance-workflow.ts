@@ -58,7 +58,16 @@ export type AttendanceWorkflowDependencies = {
   restore: typeof restoreLocalOccurrence;
   reopen: typeof reopenLocalOccurrence;
   reschedule: typeof rescheduleLocalOccurrence;
+  today?: () => string;
 };
+
+function localTodayIso(now = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+export function assertAttendanceDateNotFuture(displayedDate: string, today = localTodayIso()): void {
+  if (displayedDate > today) throw new Error('FUTURE_ATTENDANCE_NOT_ALLOWED');
+}
 
 const defaultDependencies: AttendanceWorkflowDependencies = {
   complete: completeLocalSession,
@@ -67,16 +76,20 @@ const defaultDependencies: AttendanceWorkflowDependencies = {
   restore: restoreLocalOccurrence,
   reopen: reopenLocalOccurrence,
   reschedule: rescheduleLocalOccurrence,
+  today: () => localTodayIso(),
 };
 
 export function createAttendanceWorkflow(dependencies: AttendanceWorkflowDependencies = defaultDependencies) {
+  const today = dependencies.today ?? (() => localTodayIso());
   return async (workspaceId: string, action: AttendanceWorkflowAction): Promise<void> => {
     switch (action.kind) {
       case 'complete':
+        assertAttendanceDateNotFuture(action.displayedDate, today());
         await dependencies.complete(workspaceId, action.session, action.displayedDate, action.occurrenceId);
         return;
 
       case 'complete-and-collect':
+        assertAttendanceDateNotFuture(action.displayedDate, today());
         await dependencies.complete(workspaceId, action.session, action.displayedDate, action.occurrenceId);
         try {
           await dependencies.collect({
