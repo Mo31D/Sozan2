@@ -1,31 +1,32 @@
 import { updateRecurringSessionDetailsSchema } from '../../modules/tutoring/domain/session';
+import { SessionsService } from '../../modules/tutoring/services/sessions.service';
 import { D1SessionRepository } from '../adapters/d1/tutoring-sessions.repository';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
 import { tutoringSyncHandler } from './tutoring.sync';
 
-function sameIds(left: readonly string[], right: readonly string[]): boolean {
-  const a = [...left].sort();
-  const b = [...right].sort();
-  return a.length === b.length && a.every((value, index) => value === b[index]);
-}
+type BaselineRow = {
+  workspace_id: string;
+  student_id: string;
+  completed_lessons_before_tracking: number;
+  source_note: string | null;
+  observed_at: string;
+};
 
 /**
  * Session lifecycle mutations are kept as a decorator around the tutoring sync
  * handler so the generic sync transport never needs tutoring-specific rules.
- * The base handler remains replaceable and this layer can be removed/replaced
- * without touching sync routing or finance.
+ * Domain policy lives in SessionsService; this adapter only supplies D1 and
+ * validates cross-entity references that belong at the persistence boundary.
  */
 export const tutoringSessionSyncHandler: ModuleSyncHandler = {
   moduleKey: tutoringSyncHandler.moduleKey,
 
   async apply(db: D1Database, workspaceId: string, mutation: SyncMutation): Promise<void> {
     const repository = new D1SessionRepository(db);
+    const service = new SessionsService(repository, () => crypto.randomUUID());
 
     if (mutation.operation === 'session.details.update') {
       const details = updateRecurringSessionDetailsSchema.parse(mutation.payload);
-      const current = await repository.getById(workspaceId, mutation.entityId);
-      if (!current.active) throw new Error('SESSION_ARCHIVED');
-
       for (const studentId of details.studentIds) {
         const student = await db.prepare(
           `SELECT 1 AS found FROM tutoring_students
@@ -33,27 +34,17 @@ export const tutoringSessionSyncHandler: ModuleSyncHandler = {
         ).bind(workspaceId, studentId).first<{ found: number }>();
         if (!student) throw new Error('STUDENT_NOT_FOUND');
       }
-
-      if (await repository.hasHistory(workspaceId, mutation.entityId)) {
-        const financeChanged = details.priceBasis !== current.priceBasis
-          || details.defaultPricePence !== current.defaultPricePence
-          || details.expectedStudentCount !== current.expectedStudentCount
-          || details.centerCutBps !== current.centerCutBps
-          || !sameIds(details.studentIds, current.studentIds);
-        if (financeChanged) throw new Error('SESSION_FINANCE_LOCKED_BY_HISTORY');
-      }
-
-      await repository.updateDetails({ workspaceId, sessionId: mutation.entityId, details });
+      await service.updateDetails(workspaceId, mutation.entityId, details);
       return;
     }
 
     if (mutation.operation === 'session.archive') {
-      await repository.archive(workspaceId, mutation.entityId);
+      await service.archive(workspaceId, mutation.entityId);
       return;
     }
 
     if (mutation.operation === 'session.restore') {
-      await repository.restore(workspaceId, mutation.entityId);
+      await service.restore(workspaceId, mutation.entityId);
       return;
     }
 
@@ -61,6 +52,27 @@ export const tutoringSessionSyncHandler: ModuleSyncHandler = {
   },
 
   async snapshot(db: D1Database, workspaceId: string): Promise<ModuleSnapshot> {
-    return tutoringSyncHandler.snapshot(db, workspaceId);
+    const base = await tutoringSyncHandler.snapshot(db, workspaceId);
+    const baselines = await db.prepare(
+      `SELECT workspace_id, student_id, completed_lessons_before_tracking, source_note, observed_at
+       FROM tutoring_student_baselines
+       WHERE workspace_id=?1
+       ORDER BY student_id`,
+    ).bind(workspaceId).all<BaselineRow>();
+    const data = base.data as Record<string, unknown>;
+    return {
+      ...base,
+      data: {
+        ...data,
+        studentBaselines: (baselines.results ?? []).map((row) => ({
+          id: row.student_id,
+          workspaceId: row.workspace_id,
+          studentId: row.student_id,
+          completedLessonsBeforeTracking: row.completed_lessons_before_tracking,
+          sourceNote: row.source_note,
+          observedAt: row.observed_at,
+        })),
+      },
+    };
   },
 };
