@@ -12,6 +12,7 @@ type Reconciliation = {
     otherIncomePence: number;
     expensesPence: number;
     packageCycles: number;
+    openingBalancePence: number;
   };
   actual: {
     students: number;
@@ -21,6 +22,7 @@ type Reconciliation = {
     otherIncomePence: number;
     expensesPence: number;
     packageCycles: number;
+    openingBalancePence: number;
   };
   mismatches: string[];
 };
@@ -42,6 +44,8 @@ export async function reconcileSozan1Migration(
       .filter((row) => shadowSessionIds.has(key(row.recurring_session_id)))
       .map((row) => key(row.id)),
   );
+  const legacyOpeningBalance = table('settings_v3')
+    .find((row) => String(row.key ?? '').trim() === 'opening_balance_pence');
 
   const expected = {
     students: table('students_v3').length,
@@ -53,6 +57,7 @@ export async function reconcileSozan1Migration(
     otherIncomePence: sumActive(table('other_income_v3'), 'amount_pence', (row) => !truthyText(row.deleted_at)),
     expensesPence: sumActive(table('expenses_v3'), 'amount_pence', (row) => !truthyText(row.deleted_at)),
     packageCycles: table('package_cycles_v6').length,
+    openingBalancePence: finiteInt(legacyOpeningBalance?.value),
   };
 
   const counts = await db.prepare(
@@ -66,7 +71,9 @@ export async function reconcileSozan1Migration(
        (SELECT COALESCE(SUM(amount_pence),0) FROM finance_other_income
           WHERE workspace_id=?1 AND deleted_at IS NULL) AS other_income,
        (SELECT COALESCE(SUM(amount_pence),0) FROM finance_expenses
-          WHERE workspace_id=?1 AND deleted_at IS NULL) AS expenses`,
+          WHERE workspace_id=?1 AND deleted_at IS NULL) AS expenses,
+       (SELECT COALESCE(CAST(value AS INTEGER),0) FROM core_workspace_settings
+          WHERE workspace_id=?1 AND key='finance.opening_balance_pence') AS opening_balance`,
   ).bind(workspaceId).first<{
     students: number;
     sessions: number;
@@ -75,6 +82,7 @@ export async function reconcileSozan1Migration(
     teaching_received: number;
     other_income: number;
     expenses: number;
+    opening_balance: number | null;
   }>();
 
   const actual = {
@@ -85,6 +93,7 @@ export async function reconcileSozan1Migration(
     otherIncomePence: Number(counts?.other_income ?? 0),
     expensesPence: Number(counts?.expenses ?? 0),
     packageCycles: Number(counts?.cycles ?? 0),
+    openingBalancePence: Number(counts?.opening_balance ?? 0),
   };
 
   const mismatches: string[] = [];
@@ -95,6 +104,7 @@ export async function reconcileSozan1Migration(
   compare(mismatches, 'otherIncomePence', expected.otherIncomePence, actual.otherIncomePence);
   compare(mismatches, 'expensesPence', expected.expensesPence, actual.expensesPence);
   compare(mismatches, 'packageCycles', expected.packageCycles, actual.packageCycles);
+  compare(mismatches, 'openingBalancePence', expected.openingBalancePence, actual.openingBalancePence);
 
   return { ok: mismatches.length === 0, expected, actual, mismatches };
 }
@@ -115,11 +125,15 @@ function compare(mismatches: string[], field: string, expected: number, actual: 
   if (expected !== actual) mismatches.push(`${field}:${expected}->${actual}`);
 }
 
+function finiteInt(value: unknown): number {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? Math.trunc(number) : 0;
+}
+
 function sumActive(rows: LegacyRow[], keyName: string, include: (row: LegacyRow) => boolean): number {
   return rows.reduce((total, row) => {
     if (!include(row)) return total;
-    const value = Number(row[keyName] ?? 0);
-    return total + (Number.isFinite(value) ? Math.trunc(value) : 0);
+    return total + finiteInt(row[keyName]);
   }, 0);
 }
 
