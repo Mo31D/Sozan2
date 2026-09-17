@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validateAppointmentDate, validateAppointmentTime } from '../../modules/appointments/domain';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
 
 const clientSchema = z.object({
@@ -35,6 +36,10 @@ export const appointmentsSyncHandler: ModuleSyncHandler = {
     if (mutation.operation === 'appointment.upsert') {
       const row = appointmentSchema.parse(mutation.payload);
       if (row.workspaceId !== workspaceId || row.id !== mutation.entityId) throw new Error('APPOINTMENT_IDENTITY_MISMATCH');
+      validateAppointmentDate(row.appointmentDate);
+      validateAppointmentTime(row.startTime);
+      if (row.status === 'completed' && !row.completedAt) throw new Error('APPOINTMENT_COMPLETED_AT_REQUIRED');
+      if (row.status !== 'completed' && row.completedAt) throw new Error('APPOINTMENT_COMPLETED_AT_INVALID');
       if (row.clientId) {
         const client = await db.prepare(`SELECT 1 AS found FROM appointments_clients WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`).bind(workspaceId,row.clientId).first<{found:number}>();
         if (!client) throw new Error('CLIENT_NOT_FOUND');
