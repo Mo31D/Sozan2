@@ -17,12 +17,14 @@ export function ReportsHub({
   currency,
   initialKind = 'work',
   initialPreset = 'week',
+  onOpenStudent,
   onBack,
 }: {
   data: SimpleWorkspaceData;
   currency: string;
   initialKind?: TutoringReportKind;
   initialPreset?: Exclude<ReportPreset, 'last28'>;
+  onOpenStudent: (studentId: string) => void;
   onBack: () => void;
 }) {
   const [kind, setKind] = useState<TutoringReportKind>(initialKind);
@@ -63,9 +65,9 @@ export function ReportsHub({
 
       {kind === 'work' && <WorkReport report={report} currency={currency} />}
       {kind === 'finance' && <FinanceReport report={report} currency={currency} />}
-      {kind === 'students' && <StudentsReport data={data} range={range} currency={currency} />}
+      {kind === 'students' && <StudentsReport data={data} range={range} currency={currency} onOpenStudent={onOpenStudent} />}
       {kind === 'attendance' && <AttendanceReport report={report} />}
-      {kind === 'packages' && <PackagesReport data={data} currency={currency} />}
+      {kind === 'packages' && <PackagesReport data={data} currency={currency} onOpenStudent={onOpenStudent} />}
 
       <div className="report-insights-list">
         {report.insights.map((insight) => (
@@ -79,42 +81,14 @@ export function ReportsHub({
 }
 
 function WorkReport({ report, currency }: { report: ReturnType<typeof buildWorkspaceReportForRange>; currency: string }) {
-  return (
-    <>
-      <article className="report-answer-card">
-        <span>اشتغلتي خلال الفترة</span>
-        <strong>{formatDurationArabic(report.workMinutes)}</strong>
-        <small>{report.completedLessons} حصة مكتملة · قيمة الشغل {money(report.earnedPence, currency)}</small>
-      </article>
-      <MetricGrid items={[
-        ['وقت التدريس', formatDurationArabic(report.teachingMinutes)],
-        ['وقت الانتقال', formatDurationArabic(report.travelMinutes)],
-        ['العائد الحقيقي/ساعة', money(report.effectiveHourlyPence, currency)],
-        ['إلغاء أو فوات', String(report.cancelledLessons)],
-      ]} />
-    </>
-  );
+  return <><article className="report-answer-card"><span>اشتغلتي خلال الفترة</span><strong>{formatDurationArabic(report.workMinutes)}</strong><small>{report.completedLessons} حصة مكتملة · قيمة الشغل {money(report.earnedPence, currency)}</small></article><MetricGrid items={[["وقت التدريس", formatDurationArabic(report.teachingMinutes)],["وقت الانتقال", formatDurationArabic(report.travelMinutes)],["العائد الحقيقي/ساعة", money(report.effectiveHourlyPence, currency)],["إلغاء أو فوات", String(report.cancelledLessons)]]} /></>;
 }
 
 function FinanceReport({ report, currency }: { report: ReturnType<typeof buildWorkspaceReportForRange>; currency: string }) {
-  return (
-    <>
-      <article className="report-answer-card">
-        <span>صافي الحركة خلال الفترة</span>
-        <strong>{money(report.netCashPence, currency)}</strong>
-        <small>المقبوض + الدخل الآخر − المصروفات</small>
-      </article>
-      <MetricGrid items={[
-        ['قبضتي', money(report.receivedPence, currency)],
-        ['دخل آخر', money(report.otherIncomePence, currency)],
-        ['صرفتي', money(report.expensesPence, currency)],
-        ['مطلوب تحصيله الآن', money(report.duePence, currency)],
-      ]} />
-    </>
-  );
+  return <><article className="report-answer-card"><span>صافي الحركة خلال الفترة</span><strong>{money(report.netCashPence, currency)}</strong><small>المقبوض + الدخل الآخر − المصروفات</small></article><MetricGrid items={[["قبضتي", money(report.receivedPence, currency)],["دخل آخر", money(report.otherIncomePence, currency)],["صرفتي", money(report.expensesPence, currency)],["مطلوب تحصيله الآن", money(report.duePence, currency)]]} /></>;
 }
 
-function StudentsReport({ data, range, currency }: { data: SimpleWorkspaceData; range: ReportDateRange; currency: string }) {
+function StudentsReport({ data, range, currency, onOpenStudent }: { data: SimpleWorkspaceData; range: ReportDateRange; currency: string; onOpenStudent: (studentId: string) => void }) {
   const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
   const inRange = (value: string) => value.slice(0, 10) >= range.fromDate && value.slice(0, 10) <= range.toDate;
   const rows = data.students.map((student) => {
@@ -125,48 +99,21 @@ function StudentsReport({ data, range, currency }: { data: SimpleWorkspaceData; 
     const completed = occurrences.filter((row) => row.status === 'completed');
     const cancelled = occurrences.filter((row) => row.status === 'cancelled' || row.status === 'missed').length;
     const minutes = completed.reduce((total, occurrence) => total + (sessionById.get(occurrence.recurringSessionId)?.durationMinutes ?? 0), 0);
-    const received = data.receipts
-      .filter((receipt) => receipt.payerRefId === student.id && inRange(receipt.receivedAt))
-      .reduce((total, receipt) => total + receipt.amountPence, 0);
+    const received = data.receipts.filter((receipt) => receipt.payerRefId === student.id && inRange(receipt.receivedAt)).reduce((total, receipt) => total + receipt.amountPence, 0);
     const financial = buildStudentFinancialSummary(data, student.id);
     return { student, completed: completed.length, cancelled, minutes, received, due: financial.duePence };
   }).sort((a, b) => b.completed - a.completed || a.student.name.localeCompare(b.student.name, 'ar'));
 
-  return (
-    <div className="report-row-list">
-      {rows.map((row) => (
-        <article key={row.student.id} className="report-person-row">
-          <div className="avatar-circle">{row.student.name.trim().charAt(0)}</div>
-          <div><strong>{row.student.name}</strong><small>{row.completed} حصة · {formatDurationArabic(row.minutes)}{row.cancelled ? ` · ${row.cancelled} إلغاء/فوات` : ''}</small></div>
-          <div><b>{money(row.received, currency)}</b><small>{row.due ? `مستحق ${money(row.due, currency)}` : 'لا مستحقات'}</small></div>
-        </article>
-      ))}
-      {!rows.length && <div className="friendly-empty">لا يوجد طلاب لعرضهم.</div>}
-    </div>
-  );
+  return <div className="report-row-list">{rows.map((row) => <button type="button" key={row.student.id} className="report-person-row" onClick={() => onOpenStudent(row.student.id)}><div className="avatar-circle">{row.student.name.trim().charAt(0)}</div><div><strong>{row.student.name}</strong><small>{row.completed} حصة · {formatDurationArabic(row.minutes)}{row.cancelled ? ` · ${row.cancelled} إلغاء/فوات` : ''}</small></div><div><b>{money(row.received, currency)}</b><small>{row.due ? `مستحق ${money(row.due, currency)}` : 'لا مستحقات'}</small></div></button>)}{!rows.length && <div className="friendly-empty">لا يوجد طلاب لعرضهم.</div>}</div>;
 }
 
 function AttendanceReport({ report }: { report: ReturnType<typeof buildWorkspaceReportForRange> }) {
   const total = report.completedLessons + report.cancelledLessons;
   const completedRate = total ? Math.round((report.completedLessons / total) * 100) : 0;
-  return (
-    <>
-      <article className="report-answer-card">
-        <span>الحصص التي تمت</span>
-        <strong>{report.completedLessons}</strong>
-        <small>{total ? `${completedRate}% من الحصص المحسومة خلال الفترة` : 'لا توجد حصص محسومة خلال الفترة'}</small>
-      </article>
-      <MetricGrid items={[
-        ['تمت', String(report.completedLessons)],
-        ['إلغاء/فوات', String(report.cancelledLessons)],
-        ['نسبة الإتمام', `${completedRate}%`],
-        ['الإجمالي المحسوم', String(total)],
-      ]} />
-    </>
-  );
+  return <><article className="report-answer-card"><span>الحصص التي تمت</span><strong>{report.completedLessons}</strong><small>{total ? `${completedRate}% من الحصص المحسومة خلال الفترة` : 'لا توجد حصص محسومة خلال الفترة'}</small></article><MetricGrid items={[["تمت", String(report.completedLessons)],["إلغاء/فوات", String(report.cancelledLessons)],["نسبة الإتمام", `${completedRate}%`],["الإجمالي المحسوم", String(total)]]} /></>;
 }
 
-function PackagesReport({ data, currency }: { data: SimpleWorkspaceData; currency: string }) {
+function PackagesReport({ data, currency, onOpenStudent }: { data: SimpleWorkspaceData; currency: string; onOpenStudent: (studentId: string) => void }) {
   const rows = data.students.flatMap((student) => {
     const plan = planFor(data, student.id);
     const cycle = activeCycleFor(data, student.id);
@@ -174,33 +121,9 @@ function PackagesReport({ data, currency }: { data: SimpleWorkspaceData; currenc
     const completed = cycle.openingCompletedCount + cycle.realCompletedCount;
     return [{ student, cycle, completed, remaining: Math.max(0, cycle.sessionLimit - completed) }];
   });
-  return (
-    <div className="report-row-list">
-      {rows.map((row) => (
-        <article key={row.student.id} className="report-person-row">
-          <div className="avatar-circle">{row.student.name.trim().charAt(0)}</div>
-          <div><strong>{row.student.name}</strong><small>{row.completed}/{row.cycle.sessionLimit} تمت · باقي {row.remaining}</small></div>
-          <div><b>{money(row.cycle.pricePence, currency)}</b><small>{row.cycle.status === 'due' ? 'جاهزة للتحصيل' : row.cycle.status === 'paid' ? 'مدفوعة' : 'جارية'}</small></div>
-        </article>
-      ))}
-      {!rows.length && <div className="friendly-empty">لا توجد باقات نشطة.</div>}
-    </div>
-  );
+  return <div className="report-row-list">{rows.map((row) => <button type="button" key={row.student.id} className="report-person-row" onClick={() => onOpenStudent(row.student.id)}><div className="avatar-circle">{row.student.name.trim().charAt(0)}</div><div><strong>{row.student.name}</strong><small>{row.completed}/{row.cycle.sessionLimit} تمت · باقي {row.remaining}</small></div><div><b>{money(row.cycle.pricePence, currency)}</b><small>{row.cycle.status === 'due' ? 'جاهزة للتحصيل' : row.cycle.status === 'paid' ? 'مدفوعة' : 'جارية'}</small></div></button>)}{!rows.length && <div className="friendly-empty">لا توجد باقات نشطة.</div>}</div>;
 }
 
-function MetricGrid({ items }: { items: Array<[string, string]> }) {
-  return <div className="management-metric-grid">{items.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>;
-}
-
-function ReportKindButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
-  return <button type="button" className={active ? 'active' : ''} onClick={onClick}>{children}</button>;
-}
-
-export function SubHeader({ title, subtitle, onBack }: { title: string; subtitle?: string; onBack: () => void }) {
-  return (
-    <header className="management-subheader">
-      <div>{subtitle && <small>{subtitle}</small>}<h2>{title}</h2></div>
-      <button type="button" onClick={onBack}>رجوع</button>
-    </header>
-  );
-}
+function MetricGrid({ items }: { items: Array<[string, string]> }) { return <div className="management-metric-grid">{items.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>; }
+function ReportKindButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) { return <button type="button" className={active ? 'active' : ''} onClick={onClick}>{children}</button>; }
+export function SubHeader({ title, subtitle, onBack }: { title: string; subtitle?: string; onBack: () => void }) { return <header className="management-subheader"><div>{subtitle && <small>{subtitle}</small>}<h2>{title}</h2></div><button type="button" onClick={onBack}>رجوع</button></header>; }

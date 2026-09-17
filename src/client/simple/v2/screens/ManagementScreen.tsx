@@ -13,7 +13,6 @@ import { ReportsHub, type TutoringReportKind } from './management/ReportsHub';
 import { StudentsSettings } from './management/StudentsSettings';
 
 type ManagementView = 'home' | 'reports' | 'students' | 'account' | 'data' | 'profile';
-
 type ReportLaunch = { kind: TutoringReportKind; preset: 'week' | 'month' };
 
 export function ManagementScreen({
@@ -27,8 +26,9 @@ export function ManagementScreen({
   onPlatformChanged,
   onPresentationSave,
   onStudentAdd,
-  onPackage,
+  onPackage: _onPackage,
   onOpenPendingSchedule,
+  onOpenStudent,
   onOpenAdvanced,
 }: {
   snapshot: LocalPlatformSnapshot;
@@ -43,6 +43,7 @@ export function ManagementScreen({
   onStudentAdd: (form: FormData) => void;
   onPackage: (studentId: string, form: FormData) => void;
   onOpenPendingSchedule: () => void;
+  onOpenStudent: (studentId: string) => void;
   onOpenAdvanced: (tab: ControlTab) => void;
 }) {
   const [view, setView] = useState<ManagementView>('home');
@@ -60,10 +61,10 @@ export function ManagementScreen({
   };
 
   if (view === 'reports') {
-    return <ReportsHub key={`${reportLaunch.kind}-${reportLaunch.preset}`} data={data} currency={presentation.currencyLabel} initialKind={reportLaunch.kind} initialPreset={reportLaunch.preset} onBack={back} />;
+    return <ReportsHub key={`${reportLaunch.kind}-${reportLaunch.preset}`} data={data} currency={presentation.currencyLabel} initialKind={reportLaunch.kind} initialPreset={reportLaunch.preset} onOpenStudent={onOpenStudent} onBack={back} />;
   }
   if (view === 'students') {
-    return <StudentsSettings data={data} busy={busy} showAddStudent={showAddStudent} onToggleAddStudent={onToggleAddStudent} onStudentAdd={onStudentAdd} onPackage={onPackage} onBack={back} onAdvancedStudents={() => onOpenAdvanced('students')} />;
+    return <StudentsSettings data={data} busy={busy} showAddStudent={showAddStudent} onToggleAddStudent={onToggleAddStudent} onStudentAdd={onStudentAdd} onOpenStudent={onOpenStudent} onBack={back} />;
   }
   if (view === 'account') {
     return <AccountSettings snapshot={snapshot} cloudAvailable={cloudAvailable} pendingSync={pendingSync} onPlatformChanged={onPlatformChanged} onBack={back} />;
@@ -112,7 +113,7 @@ export function ManagementScreen({
       </section>
 
       <SettingsGroup title="الشغل">
-        <ManagementRow icon="◎" title="الطلاب والباقات" detail="إضافة الطلاب وتقدم الباقات" onClick={() => setView('students')} />
+        <ManagementRow icon="◎" title="الطلاب" detail="كل طالب له ملف موحد للحصص والباقة والفلوس والسجل" onClick={() => setView('students')} />
         <ManagementRow icon="▦" title="الحصص والمواعيد" detail="التعديل المتقدم وربط الطلاب والأسعار" onClick={() => onOpenAdvanced('sessions')} />
       </SettingsGroup>
 

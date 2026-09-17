@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { buildStudentFinancialSummary } from '../../../../modules/reports/student-finance';
 import type { LocalPlatformSnapshot } from '../../../adapters/indexeddb/platform.repository';
 import type { ControlTab } from '../../../control/contracts';
-import { activeCycleFor, planFor, type SimpleWorkspaceData } from '../../data';
+import { planFor, type SimpleWorkspaceData } from '../../data';
 import { QuickForm, ScreenHeader, SectionTitle } from '../components';
 import { ArabicDateField } from '../localized-fields';
 import type { MoneyMode } from '../types';
@@ -17,7 +17,6 @@ import {
 
 type MoneyView =
   | { kind: 'overview' }
-  | { kind: 'student'; studentId: string }
   | { kind: 'list'; list: 'receipts' | 'expenses' | 'other' | 'due' }
   | { kind: 'movement'; movement: 'receipt' | 'expense' | 'other'; id: string };
 
@@ -30,6 +29,7 @@ export function MoneyScreen({
   onMode,
   onCollect,
   onExpense,
+  onOpenStudent,
   onOpenAdvanced,
 }: {
   snapshot: LocalPlatformSnapshot;
@@ -40,6 +40,7 @@ export function MoneyScreen({
   onMode: (mode: MoneyMode) => void;
   onCollect: (form: FormData) => void;
   onExpense: (form: FormData) => void;
+  onOpenStudent: (studentId: string) => void;
   onOpenAdvanced: (tab: ControlTab) => void;
 }) {
   const [view, setView] = useState<MoneyView>({ kind: 'overview' });
@@ -58,10 +59,6 @@ export function MoneyScreen({
     setView({ kind: 'overview' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  const openStudent = (studentId: string) => {
-    setView({ kind: 'student', studentId });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
   const openList = (list: Extract<MoneyView, { kind: 'list' }>['list']) => {
     setView({ kind: 'list', list });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -70,51 +67,6 @@ export function MoneyScreen({
     setView({ kind: 'movement', movement, id });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  const collectForStudent = (studentId: string) => {
-    setReceiptStudentId(studentId);
-    setView({ kind: 'overview' });
-    onMode('receipt');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  if (view.kind === 'student') {
-    const student = data.students.find((row) => row.id === view.studentId);
-    if (!student) return <MoneySubView title="الطالب غير موجود" onBack={backToOverview}><div className="friendly-empty">تعذر العثور على بيانات الطالب.</div></MoneySubView>;
-    const financial = buildStudentFinancialSummary(data, student.id);
-    const plan = planFor(data, student.id);
-    const cycle = activeCycleFor(data, student.id);
-    const studentReceipts = data.receipts
-      .filter((row) => row.payerRefId === student.id)
-      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.id.localeCompare(a.id));
-    return (
-      <MoneySubView title={student.name} subtitle="الحساب والمدفوعات" onBack={backToOverview}>
-        <article className="money-person-hero">
-          <div className="avatar-circle">{student.name.trim().charAt(0)}</div>
-          <div><strong>{student.name}</strong><span>{plan?.billingMode === 'package' ? `باقة · ${packageProgress(data, student.id)}` : 'الحساب بالحصة'}</span></div>
-          <button type="button" onClick={() => collectForStudent(student.id)}>＋ تحصيل</button>
-        </article>
-        <div className="money-detail-grid">
-          <MoneyDetailMetric label="قبضت منه" value={money(financial.receivedPence, currency)} />
-          <MoneyDetailMetric label="مطلوب الآن" value={money(financial.duePence, currency)} attention={financial.duePence > 0} />
-          <MoneyDetailMetric label="رصيد مقدم" value={money(financial.creditPence, currency)} />
-          <MoneyDetailMetric label="آخر تحصيل" value={financial.lastPayment ? money(financial.lastPayment.amountPence, currency) : '—'} detail={financial.lastPayment ? formatShortDate(financial.lastPayment.receivedAt) : 'لا يوجد'} />
-        </div>
-        {cycle && plan?.billingMode === 'package' && (
-          <article className="money-package-strip"><span>الدورة الحالية</span><strong>{packageProgress(data, student.id)}</strong><small>{cycle.status === 'due' ? 'جاهزة للتحصيل' : cycle.status === 'paid' ? 'مدفوعة' : 'جارية'}</small></article>
-        )}
-        <div className="money-subsection-head"><strong>المدفوعات</strong><span>{studentReceipts.length}</span></div>
-        <div className="money-ledger-list">
-          {studentReceipts.map((row) => (
-            <button type="button" className="money-ledger-row" key={row.id} onClick={() => openMovement('receipt', row.id)}>
-              <span><strong>{formatShortDate(row.receivedAt)}</strong><small>{paymentMethodLabel(row.paymentMethod)}{row.note ? ` · ${row.note}` : ''}</small></span>
-              <b className="in">+ {money(row.amountPence, currency)}</b>
-            </button>
-          ))}
-          {!studentReceipts.length && <div className="friendly-empty">لسه مفيش تحصيلات مسجلة للطالب ده.</div>}
-        </div>
-      </MoneySubView>
-    );
-  }
 
   if (view.kind === 'list') {
     if (view.list === 'due') {
@@ -126,7 +78,7 @@ export function MoneyScreen({
         <MoneySubView title="مطلوب تحصيله الآن" subtitle={`الإجمالي ${money(due, currency)}`} onBack={backToOverview}>
           <div className="money-ledger-list">
             {dueStudents.map(({ student, summary }) => (
-              <button type="button" className="money-person-row" key={student.id} onClick={() => openStudent(student.id)}>
+              <button type="button" className="money-person-row" key={student.id} onClick={() => onOpenStudent(student.id)}>
                 <div className="avatar-circle">{student.name.trim().charAt(0)}</div>
                 <span><strong>{student.name}</strong><small>{planFor(data, student.id)?.billingMode === 'package' ? `باقة · ${packageProgress(data, student.id)}` : 'الحساب بالحصة'}</small></span>
                 <b>{money(summary.duePence, currency)}</b>
@@ -145,7 +97,15 @@ export function MoneyScreen({
         <div className="money-ledger-list">
           {view.list === 'receipts' && receipts.sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).map((row) => {
             const student = data.students.find((item) => item.id === row.payerRefId);
-            return <button type="button" className="money-ledger-row" key={row.id} onClick={() => openMovement('receipt', row.id)}><span><strong>{student ? `تحصيل من ${student.name}` : 'تحصيل'}</strong><small>{formatShortDate(row.receivedAt)} · {paymentMethodLabel(row.paymentMethod)}</small></span><b className="in">+ {money(row.amountPence, currency)}</b></button>;
+            return (
+              <div className="money-ledger-row-wrap" key={row.id}>
+                <button type="button" className="money-ledger-row" onClick={() => openMovement('receipt', row.id)}>
+                  <span><strong>{student ? `تحصيل من ${student.name}` : 'تحصيل'}</strong><small>{formatShortDate(row.receivedAt)} · {paymentMethodLabel(row.paymentMethod)}</small></span>
+                  <b className="in">+ {money(row.amountPence, currency)}</b>
+                </button>
+                {student && <button type="button" className="money-inline-student" onClick={() => onOpenStudent(student.id)}>ملف {student.name}</button>}
+              </div>
+            );
           })}
           {view.list === 'expenses' && expenses.sort((a, b) => b.expenseDate.localeCompare(a.expenseDate)).map((row) => <button type="button" className="money-ledger-row" key={row.id} onClick={() => openMovement('expense', row.id)}><span><strong>{row.category}</strong><small>{formatShortDate(row.expenseDate)} · {row.scope === 'business' ? 'شغل' : 'شخصي'}</small></span><b className="out">− {money(row.amountPence, currency)}</b></button>)}
           {view.list === 'other' && income.sort((a, b) => b.incomeDate.localeCompare(a.incomeDate)).map((row) => <button type="button" className="money-ledger-row" key={row.id} onClick={() => openMovement('other', row.id)}><span><strong>{row.category}</strong><small>{formatShortDate(row.incomeDate)}</small></span><b className="in">+ {money(row.amountPence, currency)}</b></button>)}
@@ -161,7 +121,7 @@ export function MoneyScreen({
     const otherIncome = view.movement === 'other' ? data.otherIncome.find((row) => row.id === view.id) : null;
     if (receipt) {
       const student = data.students.find((row) => row.id === receipt.payerRefId);
-      return <MoneySubView title="تفاصيل التحصيل" onBack={backToOverview}><MovementCard amount={`+ ${money(receipt.amountPence, currency)}`} tone="in" rows={[['التاريخ', formatShortDate(receipt.receivedAt)], ['طريقة الدفع', paymentMethodLabel(receipt.paymentMethod)], ['الطالب', student?.name ?? 'غير مرتبط'], ['ملاحظة', receipt.note || '—']]} /><div className="money-detail-actions">{student && <button type="button" onClick={() => openStudent(student.id)}>ملف {student.name}</button>}<button type="button" onClick={() => onOpenAdvanced('receipts')}>تعديل من الإدارة</button></div></MoneySubView>;
+      return <MoneySubView title="تفاصيل التحصيل" onBack={backToOverview}><MovementCard amount={`+ ${money(receipt.amountPence, currency)}`} tone="in" rows={[['التاريخ', formatShortDate(receipt.receivedAt)], ['طريقة الدفع', paymentMethodLabel(receipt.paymentMethod)], ['الطالب', student?.name ?? 'غير مرتبط'], ['ملاحظة', receipt.note || '—']]} /><div className="money-detail-actions">{student && <button type="button" onClick={() => onOpenStudent(student.id)}>ملف {student.name}</button>}<button type="button" onClick={() => onOpenAdvanced('receipts')}>تعديل من الإدارة</button></div></MoneySubView>;
     }
     if (expense) {
       return <MoneySubView title="تفاصيل المصروف" onBack={backToOverview}><MovementCard amount={`− ${money(expense.amountPence, currency)}`} tone="out" rows={[['التاريخ', formatShortDate(expense.expenseDate)], ['التصنيف', expense.category], ['النوع', expense.scope === 'business' ? 'شغل' : 'شخصي'], ['ملاحظة', expense.note || '—']]} /><div className="money-detail-actions"><button type="button" onClick={() => onOpenAdvanced('expenses')}>تعديل من الإدارة</button></div></MoneySubView>;
@@ -213,7 +173,7 @@ export function MoneyScreen({
         <MoneyMetric label="صرفت" value={money(spent, currency)} onClick={() => openList('expenses')} />
         <MoneyMetric label="مطلوب تحصيله الآن" value={money(due, currency)} accent onClick={() => openList('due')} />
       </div>
-      <p className="money-note">{due > 0 ? 'اضغطي على أي رقم أو اسم لعرض التفاصيل.' : 'مفيش باقات أو حصص مكتملة ومستحقة حاليًا. اضغطي على أي رقم للتفاصيل.'}</p>
+      <p className="money-note">{due > 0 ? 'فيه مستحقات جاهزة للتحصيل.' : 'مفيش باقات أو حصص مكتملة ومستحقة حاليًا.'}</p>
 
       <SectionTitle eyebrow="التحصيل" title="مين دفع ومين لسه؟" />
       <div className="student-money-list">
@@ -227,7 +187,7 @@ export function MoneyScreen({
               ? `رصيد ${money(financial.creditPence, currency)}`
               : 'تمام';
           return (
-            <button type="button" className="student-money-row" key={student.id} onClick={() => openStudent(student.id)}>
+            <button type="button" className="student-money-row" key={student.id} onClick={() => onOpenStudent(student.id)}>
               <div className="avatar-circle">{student.name.trim().charAt(0)}</div>
               <div><strong>{student.name}</strong><small>{plan?.billingMode === 'package' ? `الدورة الحالية · ${progress}` : 'الحساب بالحصة'}</small></div>
               <div className="student-money-status"><span className={financial.duePence > 0 ? 'needs' : 'ok'}>{status}</span>{financial.receivedPence > 0 && <small>دفع {money(financial.receivedPence, currency)}</small>}</div>
@@ -253,10 +213,6 @@ function MoneyMetric({ label, value, accent = false, onClick }: { label: string;
 
 function MoneySubView({ title, subtitle, onBack, children }: { title: string; subtitle?: string; onBack: () => void; children: React.ReactNode }) {
   return <section className="simple-screen money-subview"><header className="money-subheader"><div>{subtitle && <small>{subtitle}</small>}<h2>{title}</h2></div><button type="button" onClick={onBack}>رجوع</button></header>{children}</section>;
-}
-
-function MoneyDetailMetric({ label, value, detail, attention = false }: { label: string; value: string; detail?: string; attention?: boolean }) {
-  return <div className={`money-detail-metric ${attention ? 'attention' : ''}`}><span>{label}</span><strong>{value}</strong>{detail && <small>{detail}</small>}</div>;
 }
 
 function MovementCard({ amount, tone, rows }: { amount: string; tone: 'in' | 'out'; rows: Array<[string, string]> }) {
