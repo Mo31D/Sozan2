@@ -14,6 +14,12 @@ import {
   runAttendanceWorkflow,
   type AttendanceWorkflowAction,
 } from '../tutoring/attendance-workflow';
+import {
+  archiveLocalStudent,
+  linkLocalStudentsAsFamily,
+  restoreLocalStudent,
+  unlinkLocalStudentFromFamily,
+} from '../tutoring/student-lifecycle';
 import { collectLocalStudentPayment, configureLocalStudentBilling } from '../tutoring/local-commands';
 import { updateLocalSessionDetails } from '../tutoring/session-corrections';
 import { updateLocalStudent } from '../tutoring/student-corrections';
@@ -199,8 +205,9 @@ export function TutorWorkspace({
     const status = String(form.get('scheduleStatus') ?? current.scheduleStatus) as 'confirmed' | 'pending';
     const weekdayRaw = String(form.get('weekday') ?? '');
     const timeRaw = String(form.get('startTime') ?? '');
+    const submittedStudentIds = form.getAll('studentIds').map(String).filter(Boolean);
     await updateLocalSessionDetails(workspaceId, sessionId, {
-      title: current.title,
+      title: String(form.get('title') ?? current.title),
       sessionType: String(form.get('sessionType') ?? current.sessionType) as typeof current.sessionType,
       scheduleStatus: status,
       weekday: weekdayRaw === '' ? null : Number(weekdayRaw),
@@ -208,13 +215,13 @@ export function TutorWorkspace({
       durationMinutes: Number(form.get('durationMinutes') ?? current.durationMinutes),
       travelMinutes: Number(form.get('travelMinutes') ?? current.travelMinutes),
       location: String(form.get('location') ?? current.location ?? '') || null,
-      priceBasis: current.priceBasis,
-      defaultPricePence: current.defaultPricePence,
-      expectedStudentCount: current.expectedStudentCount,
-      centerCutBps: current.centerCutBps,
-      studentIds: current.studentIds,
+      priceBasis: String(form.get('priceBasis') ?? current.priceBasis) as typeof current.priceBasis,
+      defaultPricePence: form.has('price') ? toPence(form.get('price'), true) : current.defaultPricePence,
+      expectedStudentCount: Number(form.get('expectedStudentCount') ?? current.expectedStudentCount),
+      centerCutBps: form.has('centerCut') ? Math.round(Number(form.get('centerCut') ?? 0) * 100) : current.centerCutBps,
+      studentIds: submittedStudentIds.length ? submittedStudentIds : current.studentIds,
     });
-  }, 'تم تعديل موعد الطالب.');
+  }, 'تم تعديل بيانات الحصة القادمة.');
 
   const saveStudentBilling = (studentId: string, form: FormData) => runAction(async () => {
     const billingMode = String(form.get('billingMode') ?? 'per_session') as 'per_session' | 'package';
@@ -246,6 +253,21 @@ export function TutorWorkspace({
     });
   }, 'تم تسجيل التحصيل.');
 
+  const linkSibling = (studentId: string, siblingId: string) =>
+    runAction(() => linkLocalStudentsAsFamily(workspaceId, studentId, siblingId), 'تم ربط ملفات الإخوة.');
+
+  const unlinkFamily = (studentId: string) =>
+    runAction(() => unlinkLocalStudentFromFamily(workspaceId, studentId), 'تم فصل رابط الإخوة.');
+
+  const archiveStudent = async (studentId: string) => {
+    const ok = await runAction(() => archiveLocalStudent(workspaceId, studentId), 'تم إيقاف الطالب مع الاحتفاظ بتاريخه.');
+    if (ok) setStudentHubId(null);
+    return ok;
+  };
+
+  const restoreStudent = (studentId: string) =>
+    runAction(() => restoreLocalStudent(workspaceId, studentId), 'تم استرجاع الطالب.');
+
   return (
     <>
       <main className="simple-app" dir="rtl">
@@ -266,6 +288,10 @@ export function TutorWorkspace({
               onBillingSave={saveStudentBilling}
               onCollect={collectForStudent}
               onOpenAdvanced={setAdvancedTab}
+              onOpenStudent={openStudent}
+              onLinkSibling={linkSibling}
+              onUnlinkFamily={unlinkFamily}
+              onArchive={archiveStudent}
             />
           ) : (
             <>
@@ -371,6 +397,7 @@ export function TutorWorkspace({
                   onToggleAddStudent={() => setShowAddStudent((value) => !value)}
                   onOpenPendingSchedule={openPendingScheduleEdits}
                   onOpenStudent={openStudent}
+                  onRestoreStudent={restoreStudent}
                   onOpenAdvanced={setAdvancedTab}
                   onPlatformChanged={platformChanged}
                   onPresentationSave={async (form) => {
