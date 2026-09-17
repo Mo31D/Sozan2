@@ -1,5 +1,6 @@
 import type { AppointmentClient, AppointmentItem, AppointmentStatus } from '../../modules/appointments/domain';
 import {
+  canChangeAppointmentClient,
   canCompleteAppointment,
   validateAppointmentCollectionClient,
   validateAppointmentDate,
@@ -104,7 +105,14 @@ export async function createAppointment(workspaceId: string, input: {
 
 export async function updateAppointment(workspaceId: string, appointmentId: string, input: Partial<Omit<AppointmentItem, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt' | 'deletedAt'>>): Promise<void> {
   const current = await getAppointment(workspaceId, appointmentId);
-  if (input.clientId) await requireClient(workspaceId, input.clientId);
+  const nextClientId = input.clientId !== undefined ? input.clientId : current.clientId;
+  if (nextClientId) await requireClient(workspaceId, nextClientId);
+  if (nextClientId !== current.clientId) {
+    const hasLinkedCollection = await appointmentHasLinkedCollection(workspaceId, appointmentId);
+    if (!canChangeAppointmentClient(current.clientId, nextClientId, hasLinkedCollection)) {
+      throw new Error('APPOINTMENT_CLIENT_LOCKED_BY_COLLECTION');
+    }
+  }
   const next: AppointmentItem = {
     ...current,
     ...input,
@@ -116,6 +124,9 @@ export async function updateAppointment(workspaceId: string, appointmentId: stri
   if (next.durationMinutes < 5 || next.durationMinutes > 1440) throw new Error('APPOINTMENT_DURATION_INVALID');
   if (next.travelMinutes < 0 || next.travelMinutes > 1440) throw new Error('APPOINTMENT_TRAVEL_INVALID');
   if (next.pricePence < 0 || !Number.isSafeInteger(next.pricePence)) throw new Error('AMOUNT_INVALID');
+  if (next.status === 'completed' && !canCompleteAppointment(next.appointmentDate, localToday())) {
+    throw new Error('FUTURE_APPOINTMENT_COMPLETION_NOT_ALLOWED');
+  }
   await putAppointment('appointment.update', next, current);
 }
 
@@ -171,6 +182,18 @@ async function getAppointment(workspaceId: string, appointmentId: string): Promi
   const row = await requestResult<AppointmentItem | undefined>(db.transaction(STORES.appointmentsItems, 'readonly').objectStore(STORES.appointmentsItems).get(appointmentId));
   if (!row || row.workspaceId !== workspaceId || row.deletedAt) throw new Error('APPOINTMENT_NOT_FOUND');
   return row;
+}
+
+async function appointmentHasLinkedCollection(workspaceId: string, appointmentId: string): Promise<boolean> {
+  const db = await openLocalDatabase();
+  const rows = await requestResult<LocalReceipt[]>(db.transaction(STORES.financeReceipts, 'readonly').objectStore(STORES.financeReceipts).getAll());
+  return rows.some((row) =>
+    row.workspaceId === workspaceId
+    && !row.deletedAt
+    && row.sourceModule === 'appointments'
+    && row.sourceEntityType === 'appointment'
+    && row.sourceEntityId === appointmentId,
+  );
 }
 
 async function putAppointment(operation: string, next: AppointmentItem, before: AppointmentItem | null): Promise<void> {
