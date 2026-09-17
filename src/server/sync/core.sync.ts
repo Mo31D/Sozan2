@@ -17,6 +17,10 @@ const activitySchema = z.object({
   createdAt: z.string().min(10).max(50),
 });
 const undoSchema = z.object({ undoneAt: z.string().min(10).max(50) });
+const settingSchema = z.object({
+  key: z.string().trim().min(1).max(120),
+  value: z.string().max(2000),
+});
 
 type ActivityRow = {
   id: string;
@@ -79,6 +83,16 @@ export const coreSyncHandler: ModuleSyncHandler = {
          WHERE workspace_id=?2 AND id=?3`,
       ).bind(parsed.undoneAt, workspaceId, mutation.entityId).run();
       if ((result.meta?.changes ?? 0) === 0) throw new Error('ACTIVITY_NOT_FOUND');
+      return;
+    }
+
+    if (mutation.operation === 'setting.set') {
+      const parsed = settingSchema.parse(mutation.payload);
+      await db.prepare(
+        `INSERT INTO core_workspace_settings(workspace_id,key,value,updated_at)
+         VALUES(?1,?2,?3,CURRENT_TIMESTAMP)
+         ON CONFLICT(workspace_id,key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
+      ).bind(workspaceId, parsed.key, parsed.value).run();
       return;
     }
 
