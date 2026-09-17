@@ -18,6 +18,7 @@ export function MoneyScreen({
   data,
   mode,
   busy,
+  assistantLabel,
   onMode,
   onCollect,
   onExpense,
@@ -26,6 +27,7 @@ export function MoneyScreen({
   data: SimpleWorkspaceData;
   mode: MoneyMode;
   busy: boolean;
+  assistantLabel: string;
   onMode: (mode: MoneyMode) => void;
   onCollect: (form: FormData) => void;
   onExpense: (form: FormData) => void;
@@ -42,7 +44,7 @@ export function MoneyScreen({
 
   return (
     <section className="simple-screen">
-      <ScreenHeader kicker="مساعد سوزان" title="فلوسي" />
+      <ScreenHeader kicker={assistantLabel} title="فلوسي" />
       <div className="screen-action-row">
         <button className="primary-small" type="button" onClick={() => onMode(mode === 'receipt' ? 'none' : 'receipt')}>＋ قبضت فلوس</button>
         <button className="secondary-small" type="button" onClick={() => onMode(mode === 'expense' ? 'none' : 'expense')}>− مصروف</button>
@@ -75,7 +77,7 @@ export function MoneyScreen({
         <Metric label="صرفت" value={money(spent, snapshot.workspace.currencyLabel)} />
         <Metric label="مطلوب تحصيله الآن" value={money(due, snapshot.workspace.currencyLabel)} accent />
       </div>
-      <p className="money-note">{due > 0 ? 'فيه مستحقات جاهزة للتحصيل.' : 'مفيش باقات مكتملة ومستحقة حاليًا.'}</p>
+      <p className="money-note">{due > 0 ? 'فيه مستحقات جاهزة للتحصيل.' : 'مفيش باقات أو حصص مكتملة ومستحقة حاليًا.'}</p>
 
       <SectionTitle eyebrow="التحصيل" title="مين دفع ومين لسه؟" />
       <div className="student-money-list">
