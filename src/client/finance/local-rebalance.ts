@@ -38,17 +38,19 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
 
   const obligations: FinancialObligation[] = [];
 
-  for (const cycle of studentCycles) {
-    const complete = cycle.openingCompletedCount + cycle.realCompletedCount >= cycle.sessionLimit;
-    if (!complete) continue;
-    obligations.push({
-      target: { module: 'tutoring', type: 'package_cycle', id: cycle.id },
-      dueAt: cycle.completedOn ?? cycle.startedOn ?? '9999-12-31',
-      amountDuePence: cycle.pricePence,
-    });
+  if (plan?.billingMode === 'package') {
+    for (const cycle of studentCycles) {
+      const complete = cycle.openingCompletedCount + cycle.realCompletedCount >= cycle.sessionLimit;
+      if (!complete) continue;
+      obligations.push({
+        target: { module: 'tutoring', type: 'package_cycle', id: cycle.id },
+        dueAt: cycle.completedOn ?? cycle.startedOn ?? '9999-12-31',
+        amountDuePence: cycle.pricePence,
+      });
+    }
   }
 
-  if (!plan || plan.billingMode === 'per_session') {
+  if (plan?.billingMode === 'per_session') {
     for (const occurrence of occurrences.filter((row) => row.workspaceId === workspaceId && row.status === 'completed')) {
       const session = sessions.find((row) => row.workspaceId === workspaceId && row.id === occurrence.recurringSessionId);
       if (!session || !session.studentIds.includes(studentId)) continue;
@@ -99,24 +101,26 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
   for (const allocation of generated) allocationStore.put(allocation);
 
   const cycleStore = write.objectStore(STORES.tutoringBillingCycles);
-  for (const cycle of studentCycles) {
-    const complete = cycle.openingCompletedCount + cycle.realCompletedCount >= cycle.sessionLimit;
-    if (!complete) {
-      if (cycle.status !== 'open' || cycle.paidOn) cycleStore.put({ ...cycle, status: 'open', paidOn: null });
-      continue;
+  if (plan?.billingMode === 'package') {
+    for (const cycle of studentCycles) {
+      const complete = cycle.openingCompletedCount + cycle.realCompletedCount >= cycle.sessionLimit;
+      if (!complete) {
+        if (cycle.status !== 'open' || cycle.paidOn) cycleStore.put({ ...cycle, status: 'open', paidOn: null });
+        continue;
+      }
+      const allocated = allocatedByTarget.get(`package_cycle:${cycle.id}`) ?? 0;
+      const paid = allocated >= cycle.pricePence;
+      const paidReceiptDates = generated
+        .filter((row) => row.targetType === 'package_cycle' && row.targetId === cycle.id)
+        .map((row) => activeReceipts.find((receipt) => receipt.id === row.receiptId)?.receivedAt ?? '')
+        .filter(Boolean)
+        .sort();
+      cycleStore.put({
+        ...cycle,
+        status: paid ? 'paid' : 'due',
+        paidOn: paid ? (paidReceiptDates.at(-1) ?? cycle.paidOn ?? null) : null,
+      } satisfies LocalBillingCycle);
     }
-    const allocated = allocatedByTarget.get(`package_cycle:${cycle.id}`) ?? 0;
-    const paid = allocated >= cycle.pricePence;
-    const paidReceiptDates = generated
-      .filter((row) => row.targetType === 'package_cycle' && row.targetId === cycle.id)
-      .map((row) => activeReceipts.find((receipt) => receipt.id === row.receiptId)?.receivedAt ?? '')
-      .filter(Boolean)
-      .sort();
-    cycleStore.put({
-      ...cycle,
-      status: paid ? 'paid' : 'due',
-      paidOn: paid ? (paidReceiptDates.at(-1) ?? cycle.paidOn ?? null) : null,
-    } satisfies LocalBillingCycle);
   }
   await transactionDone(write);
 }
