@@ -56,8 +56,8 @@ export function ReportsHub({
 
       {preset === 'custom' && (
         <div className="report-custom-range">
-          <label>من<ArabicDateField name="reportFrom" value={fromDate} onChange={setFromDate} ariaLabel="بداية التقرير" /></label>
-          <label>إلى<ArabicDateField name="reportTo" value={toDate} onChange={setToDate} ariaLabel="نهاية التقرير" /></label>
+          <label>من<ArabicDateField value={fromDate} onValueChange={setFromDate} ariaLabel="بداية التقرير" /></label>
+          <label>إلى<ArabicDateField value={toDate} onValueChange={setToDate} ariaLabel="نهاية التقرير" /></label>
         </div>
       )}
 
