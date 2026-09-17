@@ -1,3 +1,5 @@
+import { probableDuplicateExpenseIds } from '../../modules/finance/duplicate-detection';
+import type { LocalExpense } from '../simple/data';
 import type { LocalReceipt } from '../tutoring/local-commands';
 
 export function duplicateReceiptIds(receipts: readonly LocalReceipt[]): Set<string> {
@@ -15,6 +17,10 @@ export function duplicateReceiptIds(receipts: readonly LocalReceipt[]): Set<stri
     for (const row of rows) duplicates.add(row.id);
   }
   return duplicates;
+}
+
+export function duplicateExpenseIds(expenses: readonly LocalExpense[]): Set<string> {
+  return probableDuplicateExpenseIds(expenses);
 }
 
 export function activeReceiptTotal(receipts: readonly LocalReceipt[]): number {

@@ -32,4 +32,27 @@ describe('workspace reports', () => {
     expect(report.insights.some((item) => item.key === 'due')).toBe(true);
     expect(report.insights.some((item) => item.key === 'pending')).toBe(true);
   });
+
+  it('surfaces probable duplicate expenses as an attention insight', () => {
+    const report = buildWorkspaceReport({
+      sessions: [],
+      occurrences: [],
+      receipts: [],
+      expenses: [
+        { id: 'e1', expenseDate: '2026-09-15', scope: 'business', category: 'مواصلات', amountPence: 1250 },
+        { id: 'e2', expenseDate: '2026-09-15', scope: 'business', category: ' مواصلات ', amountPence: 1250 },
+        { id: 'e3', expenseDate: '2026-09-15', scope: 'business', category: 'مواصلات', amountPence: 1400 },
+      ],
+      otherIncome: [],
+      billingCycles: [],
+      allocations: [],
+    }, '2026-09-16');
+
+    const insight = report.insights.find((item) => item.key === 'duplicate-expenses');
+    expect(insight).toMatchObject({
+      level: 'attention',
+      title: 'راجعي المصروفات المتشابهة',
+    });
+    expect(insight?.detail).toContain('2 تسجيلات');
+  });
 });

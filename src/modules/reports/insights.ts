@@ -1,3 +1,8 @@
+import {
+  probableDuplicateExpenseIds,
+  type ExpenseDuplicateCandidate,
+} from '../finance/duplicate-detection';
+
 export type ReportInsight = {
   key: string;
   level: 'info' | 'attention' | 'good';
@@ -21,6 +26,15 @@ export type WorkspaceReport = {
   insights: ReportInsight[];
 };
 
+type ReportExpense = {
+  id?: string;
+  expenseDate: string;
+  scope?: 'business' | 'personal';
+  category?: string;
+  amountPence: number;
+  deletedAt?: string | null;
+};
+
 type ReportInput = {
   sessions: Array<{
     id: string;
@@ -42,7 +56,7 @@ type ReportInput = {
     earnedPence: number;
   }>;
   receipts: Array<{ receivedAt: string; amountPence: number }>;
-  expenses: Array<{ expenseDate: string; amountPence: number }>;
+  expenses: ReportExpense[];
   otherIncome: Array<{ incomeDate: string; amountPence: number }>;
   billingPlans?: Array<{ studentId: string; billingMode: 'per_session' | 'package' }>;
   billingCycles: Array<{ id: string; status: 'open' | 'due' | 'paid' | 'cancelled'; pricePence: number }>;
@@ -57,6 +71,20 @@ function addDays(iso: string, days: number): string {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + Number(value || 0), 0);
+}
+
+function expenseDuplicateCandidates(expenses: readonly ReportExpense[]): ExpenseDuplicateCandidate[] {
+  return expenses.flatMap((expense) => {
+    if (!expense.id || !expense.scope || typeof expense.category !== 'string') return [];
+    return [{
+      id: expense.id,
+      expenseDate: expense.expenseDate,
+      scope: expense.scope,
+      category: expense.category,
+      amountPence: expense.amountPence,
+      deletedAt: expense.deletedAt ?? null,
+    }];
+  });
 }
 
 function currentDue(data: ReportInput): number {
@@ -110,13 +138,15 @@ export function buildWorkspaceReport(data: ReportInput, today = new Date().toISO
   const realMinutes = teachingMinutes + travelMinutes;
   const effectiveHourlyPence = realMinutes > 0 ? Math.round((productivePence * 60) / realMinutes) : 0;
   const pendingSchedules = data.sessions.filter((row) => row.scheduleStatus === 'pending').length;
+  const duplicateExpenseRows = probableDuplicateExpenseIds(expenseDuplicateCandidates(data.expenses)).size;
 
   const insights: ReportInsight[] = [];
   if (duePence > 0) insights.push({ key: 'due', level: 'attention', title: 'فيه تحصيل محتاج متابعة', detail: `${duePence} قرش ما زالت مستحقة على حصص أو باقات مكتملة.` });
   if (pendingSchedules > 0) insights.push({ key: 'pending', level: 'attention', title: 'مواعيد لسه غير محددة', detail: `${pendingSchedules} موعد محتاج يوم أو ساعة.` });
+  if (duplicateExpenseRows > 0) insights.push({ key: 'duplicate-expenses', level: 'attention', title: 'راجعي المصروفات المتشابهة', detail: `${duplicateExpenseRows} تسجيلات مصروف متشابهة في التاريخ والنوع والتصنيف والمبلغ؛ ممكن يكون بينها تكرار.` });
   if (cancelled.length >= Math.max(3, Math.ceil(completed.length * 0.25))) insights.push({ key: 'cancelled', level: 'attention', title: 'الإلغاءات مرتفعة نسبيًا', detail: `${cancelled.length} حصة ألغيت أو فاتت خلال آخر 28 يومًا.` });
   if (travelMinutes > teachingMinutes && completed.length > 0) insights.push({ key: 'travel', level: 'attention', title: 'وقت الانتقال كبير', detail: 'وقت الانتقال خلال الفترة أكبر من وقت التدريس؛ راجعي تجميع المواعيد القريبة.' });
-  if (completed.length > 0 && duePence === 0 && pendingSchedules === 0) insights.push({ key: 'stable', level: 'good', title: 'الصورة مستقرة', detail: 'لا توجد مستحقات مكتملة غير مسددة ولا مواعيد معلقة حاليًا.' });
+  if (completed.length > 0 && duePence === 0 && pendingSchedules === 0 && duplicateExpenseRows === 0) insights.push({ key: 'stable', level: 'good', title: 'الصورة مستقرة', detail: 'لا توجد مستحقات مكتملة غير مسددة ولا مواعيد معلقة حاليًا.' });
   if (!insights.length) insights.push({ key: 'start', level: 'info', title: 'التقرير جاهز', detail: 'كلما زادت الحصص والتحصيلات سيصبح التحليل أكثر فائدة.' });
 
   return {
