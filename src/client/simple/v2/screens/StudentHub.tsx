@@ -185,30 +185,71 @@ export function StudentHub({
 
       <HubSection title="المواعيد والحصص" action={`${sessions.length} ${sessions.length === 1 ? 'موعد' : 'مواعيد'}`}>
         <div className="student-hub-session-list">
-          {sessions.map((session) => (
-            <details key={session.id} className="student-hub-session">
-              <summary>
-                <span className={`session-color type-${session.sessionType}`} />
-                <span><strong>{session.title}</strong><small>{session.scheduleStatus === 'pending' ? 'موعد غير محدد' : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${formatClockTime(session.startTime)}`} · {sessionTypeLabel(session.sessionType)}</small></span>
-                <b>تعديل</b>
-              </summary>
-              <form className="student-hub-form" onSubmit={async (event) => {
-                event.preventDefault();
-                const element = event.currentTarget.closest('details');
-                if (await onSessionSave(session.id, new FormData(event.currentTarget)) && element) element.open = false;
-              }}>
-                <label>نوع الحصة<select name="sessionType" defaultValue={session.sessionType}><option value="private_student_home">خاص عند الطالب</option><option value="private_tutor_home">خاص عند المدرس</option><option value="online">أونلاين</option><option value="center_group">السنتر</option><option value="own_group">مجموعة خاصة</option></select></label>
-                <label>حالة الموعد<select name="scheduleStatus" defaultValue={session.scheduleStatus}><option value="confirmed">موعد محدد</option><option value="pending">لسه غير محدد</option></select></label>
-                <label>اليوم<select name="weekday" defaultValue={session.weekday ?? ''}><option value="">غير محدد</option>{WEEKDAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}</select></label>
-                <label>الوقت<ArabicTimeField name="startTime" defaultValue={session.startTime ?? '16:00'} ariaLabel={`وقت ${session.title}`} /></label>
-                <label>مدة الحصة<input name="durationMinutes" type="number" min="15" max="360" defaultValue={session.durationMinutes} /></label>
-                <label>وقت الانتقال<input name="travelMinutes" type="number" min="0" max="360" defaultValue={session.travelMinutes} /></label>
-                <label className="wide">المكان<input name="location" defaultValue={session.location ?? ''} /></label>
-                <div className="student-hub-session-preview wide"><span>المحجوز في الجدول</span><b>{formatDurationArabic(session.durationMinutes + session.travelMinutes)}</b></div>
-                <button className="student-hub-save wide" type="submit" disabled={busy}>حفظ الموعد</button>
-              </form>
-            </details>
-          ))}
+          {sessions.map((session) => {
+            const hasHistory = data.occurrences.some((row) =>
+              row.recurringSessionId === session.id && ['completed', 'cancelled', 'missed'].includes(row.status),
+            );
+            const linkedStudents = session.studentIds
+              .map((id) => data.students.find((candidate) => candidate.id === id))
+              .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+            const otherStudents = linkedStudents.filter((candidate) => candidate.id !== student.id);
+            return (
+              <details key={session.id} className="student-hub-session">
+                <summary>
+                  <span className={`session-color type-${session.sessionType}`} />
+                  <span>
+                    <strong>{session.title}</strong>
+                    <small>{session.scheduleStatus === 'pending' ? 'موعد غير محدد' : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${formatClockTime(session.startTime)}`} · {sessionTypeLabel(session.sessionType)}</small>
+                  </span>
+                  <b>تعديل</b>
+                </summary>
+                <div className="student-hub-session-body">
+                  {otherStudents.length > 0 && (
+                    <div className="student-hub-related-row">
+                      <span>معه في نفس الحصة</span>
+                      <div className="student-context-links">
+                        {otherStudents.map((candidate) => <button type="button" key={candidate.id} onClick={() => onOpenStudent(candidate.id)}>{candidate.name}</button>)}
+                      </div>
+                    </div>
+                  )}
+                  <form className="student-hub-form" onSubmit={async (event) => {
+                    event.preventDefault();
+                    const element = event.currentTarget.closest('details');
+                    if (await onSessionSave(session.id, new FormData(event.currentTarget)) && element) element.open = false;
+                  }}>
+                    <label className="wide">اسم الحصة<input name="title" defaultValue={session.title} required /></label>
+                    <label>نوع الحصة<select name="sessionType" defaultValue={session.sessionType}><option value="private_student_home">خاص عند الطالب</option><option value="private_tutor_home">خاص عند المدرس</option><option value="online">أونلاين</option><option value="center_group">السنتر</option><option value="own_group">مجموعة خاصة</option></select></label>
+                    <label>حالة الموعد<select name="scheduleStatus" defaultValue={session.scheduleStatus}><option value="confirmed">موعد محدد</option><option value="pending">لسه غير محدد</option></select></label>
+                    <label>اليوم<select name="weekday" defaultValue={session.weekday ?? ''}><option value="">غير محدد</option>{WEEKDAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}</select></label>
+                    <label>الوقت<ArabicTimeField name="startTime" defaultValue={session.startTime ?? '16:00'} ariaLabel={`وقت ${session.title}`} /></label>
+                    <label>مدة الحصة<input name="durationMinutes" type="number" min="15" max="360" defaultValue={session.durationMinutes} /></label>
+                    <label>وقت الانتقال<input name="travelMinutes" type="number" min="0" max="360" defaultValue={session.travelMinutes} /></label>
+                    <label className="wide">المكان<input name="location" defaultValue={session.location ?? ''} /></label>
+                    <label>طريقة التسعير<select name="priceBasis" defaultValue={session.priceBasis} disabled={hasHistory}><option value="total_session">سعر الحصة بالكامل</option><option value="per_student">سعر لكل طالب</option></select></label>
+                    <label>السعر<input name="price" type="number" min="0" step="0.01" defaultValue={session.defaultPricePence / 100} disabled={hasHistory} /></label>
+                    <label>عدد الطلاب المتوقع<input name="expectedStudentCount" type="number" min="1" max="100" defaultValue={session.expectedStudentCount} disabled={hasHistory} /></label>
+                    <label>عمولة السنتر %<input name="centerCut" type="number" min="0" max="100" step="0.01" defaultValue={session.centerCutBps / 100} disabled={hasHistory} /></label>
+                    {!hasHistory ? (
+                      <fieldset className="student-hub-related-students wide">
+                        <legend>الطلاب المرتبطون بالحصة</legend>
+                        <input type="hidden" name="studentIds" value={student.id} />
+                        {data.students.filter((candidate) => candidate.id !== student.id).map((candidate) => (
+                          <label key={candidate.id}><input type="checkbox" name="studentIds" value={candidate.id} defaultChecked={session.studentIds.includes(candidate.id)} />{candidate.name}</label>
+                        ))}
+                      </fieldset>
+                    ) : (
+                      <>
+                        {session.studentIds.map((id) => <input type="hidden" name="studentIds" value={id} key={id} />)}
+                        <p className="student-hub-note wide">يوجد تاريخ حضور لهذه الحصة؛ السعر وطريقة التسعير والطلاب المرتبطون مقفولين لحماية الحسابات القديمة. اليوم والوقت والنوع والمدة والسفر والمكان والاسم يظلوا قابلين للتعديل للمواعيد القادمة.</p>
+                      </>
+                    )}
+                    <div className="student-hub-session-preview wide"><span>المحجوز في الجدول الآن</span><b>{formatDurationArabic(session.durationMinutes + session.travelMinutes)}</b></div>
+                    <button className="student-hub-save wide" type="submit" disabled={busy}>حفظ كل تفاصيل الحصة</button>
+                  </form>
+                </div>
+              </details>
+            );
+          })}
           {!sessions.length && <div className="friendly-empty">لا توجد مواعيد مرتبطة بهذا الطالب.</div>}
         </div>
       </HubSection>
