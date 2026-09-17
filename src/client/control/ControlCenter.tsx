@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { LocalActivityEvent } from '../activity/local-activity';
 import type { LocalPlatformSnapshot } from '../adapters/indexeddb/platform.repository';
 import { runWorkspaceSync } from '../sync/engine';
@@ -6,10 +6,15 @@ import type { ControlAction, ControlTab } from './contracts';
 import { loadControlCenterData, type ControlCenterData } from './data';
 import { controlErrorText } from './presentation';
 import { undoActivityEvent } from './undo';
-import { ActivityView } from './views/ActivityView';
-import { CashView, ExpensesView, IncomeView, ReceiptsView } from './views/FinanceViews';
-import { ReportView } from './views/ReportView';
-import { SessionsView, StudentsView } from './views/TutoringViews';
+
+const ActivityView = lazy(() => import('./views/ActivityView').then((module) => ({ default: module.ActivityView })));
+const ReceiptsView = lazy(() => import('./views/FinanceViews').then((module) => ({ default: module.ReceiptsView })));
+const ExpensesView = lazy(() => import('./views/FinanceViews').then((module) => ({ default: module.ExpensesView })));
+const IncomeView = lazy(() => import('./views/FinanceViews').then((module) => ({ default: module.IncomeView })));
+const CashView = lazy(() => import('./views/FinanceViews').then((module) => ({ default: module.CashView })));
+const StudentsView = lazy(() => import('./views/TutoringViews').then((module) => ({ default: module.StudentsView })));
+const SessionsView = lazy(() => import('./views/TutoringViews').then((module) => ({ default: module.SessionsView })));
+const ReportView = lazy(() => import('./views/ReportView').then((module) => ({ default: module.ReportView })));
 
 const TABS: Array<[ControlTab, string]> = [
   ['activity', 'السجل'],
@@ -116,19 +121,23 @@ export function ControlCenter({
             {message && <div className="control-message good">{message}</div>}
             {error && <div className="control-message bad">{error}</div>}
             {!data && <div className="control-loading">جاري تحميل البيانات…</div>}
-            {data && <ControlContent
-              tab={tab}
-              data={data}
-              workspaceId={workspaceId}
-              currency={snapshot.workspace.currencyLabel}
-              busy={busy}
-              editId={editId}
-              setEditId={setEditId}
-              profileId={profileId}
-              setProfileId={setProfileId}
-              act={act}
-              onUndo={undo}
-            />}
+            {data && (
+              <Suspense fallback={<div className="control-loading">جاري فتح القسم…</div>}>
+                <ControlContent
+                  tab={tab}
+                  data={data}
+                  workspaceId={workspaceId}
+                  currency={snapshot.workspace.currencyLabel}
+                  busy={busy}
+                  editId={editId}
+                  setEditId={setEditId}
+                  profileId={profileId}
+                  setProfileId={setProfileId}
+                  act={act}
+                  onUndo={undo}
+                />
+              </Suspense>
+            )}
           </section>
         </div>
       )}
