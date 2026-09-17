@@ -1,7 +1,7 @@
 import type { LocalPlatformSnapshot, LocalUserRecord, LocalWorkspaceRecord } from '../adapters/indexeddb/platform.repository';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { newSyncOutboxRecord } from '../sync/outbox';
-import type { LocalWorkspaceSetting } from '../simple/data';
+import type { LocalWorkspaceSetting } from './types';
 
 export const PROFILE_SETTING_KEYS = {
   displayName: 'profile.display_name',
