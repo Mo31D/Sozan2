@@ -149,7 +149,7 @@ export function ScheduleScreen({
       {mode === 'week' && <WeekView data={data} onEdit={openEdit} onOpenStudent={onOpenStudent} />}
       {mode === 'month' && <MonthView data={data} cursor={monthCursor} onCursor={onMonthCursor} onOpenDay={onOpenDay} />}
       {mode === 'free' && <FreeTimeView data={data} start={freeStart} end={freeEnd} onStart={setFreeStart} onEnd={setFreeEnd} onUseSlot={(date, startTime) => openAdd({ weekday: weekdayForIso(date), startTime })} />}
-      {mode === 'edit' && <EditScheduleView data={data} busy={busy} editingId={editingId} focusPending={focusPending} onEditing={setEditingId} onSave={onUpdate} />}
+      {mode === 'edit' && <EditScheduleView data={data} busy={busy} editingId={editingId} focusPending={focusPending} onEditing={setEditingId} onSave={onUpdate} onOpenStudent={onOpenStudent} />}
     </section>
   );
 }
