@@ -9,6 +9,7 @@ import './simple/v2/schedule.css';
 import './simple/v2/management.css';
 import './appointments/appointments.css';
 import './control-center.css';
+import './mobile-compact.css';
 
 const root = document.getElementById('root');
 
