@@ -31,5 +31,6 @@ export type Student = {
   guardianPhone: string | null;
   level: string | null;
   notes: string | null;
+  familyId: string | null;
   active: boolean;
 };
