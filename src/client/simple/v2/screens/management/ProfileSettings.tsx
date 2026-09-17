@@ -1,6 +1,6 @@
-import type { LocalPlatformSnapshot } from '../../../adapters/indexeddb/platform.repository';
-import type { SimpleWorkspaceData } from '../../../simple/data';
-import { resolveWorkspacePresentation } from '../../../platform/workspace-preferences';
+import type { LocalPlatformSnapshot } from '../../../../adapters/indexeddb/platform.repository';
+import { resolveWorkspacePresentation } from '../../../../platform/workspace-preferences';
+import type { SimpleWorkspaceData } from '../../../data';
 import { SubHeader } from './ReportsHub';
 
 export function ProfileSettings({
