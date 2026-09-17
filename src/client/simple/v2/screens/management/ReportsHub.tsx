@@ -17,12 +17,14 @@ export function ReportsHub({
   currency,
   initialKind = 'work',
   initialPreset = 'week',
+  onOpenStudent,
   onBack,
 }: {
   data: SimpleWorkspaceData;
   currency: string;
   initialKind?: TutoringReportKind;
   initialPreset?: Exclude<ReportPreset, 'last28'>;
+  onOpenStudent: (studentId: string) => void;
   onBack: () => void;
 }) {
   const [kind, setKind] = useState<TutoringReportKind>(initialKind);
@@ -63,9 +65,9 @@ export function ReportsHub({
 
       {kind === 'work' && <WorkReport report={report} currency={currency} />}
       {kind === 'finance' && <FinanceReport report={report} currency={currency} />}
-      {kind === 'students' && <StudentsReport data={data} range={range} currency={currency} />}
+      {kind === 'students' && <StudentsReport data={data} range={range} currency={currency} onOpenStudent={onOpenStudent} />}
       {kind === 'attendance' && <AttendanceReport report={report} />}
-      {kind === 'packages' && <PackagesReport data={data} currency={currency} />}
+      {kind === 'packages' && <PackagesReport data={data} currency={currency} onOpenStudent={onOpenStudent} />}
 
       <div className="report-insights-list">
         {report.insights.map((insight) => (
@@ -114,7 +116,7 @@ function FinanceReport({ report, currency }: { report: ReturnType<typeof buildWo
   );
 }
 
-function StudentsReport({ data, range, currency }: { data: SimpleWorkspaceData; range: ReportDateRange; currency: string }) {
+function StudentsReport({ data, range, currency, onOpenStudent }: { data: SimpleWorkspaceData; range: ReportDateRange; currency: string; onOpenStudent: (studentId: string) => void }) {
   const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
   const inRange = (value: string) => value.slice(0, 10) >= range.fromDate && value.slice(0, 10) <= range.toDate;
   const rows = data.students.map((student) => {
@@ -135,11 +137,11 @@ function StudentsReport({ data, range, currency }: { data: SimpleWorkspaceData; 
   return (
     <div className="report-row-list">
       {rows.map((row) => (
-        <article key={row.student.id} className="report-person-row">
+        <button type="button" key={row.student.id} className="report-person-row report-person-button" onClick={() => onOpenStudent(row.student.id)}>
           <div className="avatar-circle">{row.student.name.trim().charAt(0)}</div>
           <div><strong>{row.student.name}</strong><small>{row.completed} حصة · {formatDurationArabic(row.minutes)}{row.cancelled ? ` · ${row.cancelled} إلغاء/فوات` : ''}</small></div>
           <div><b>{money(row.received, currency)}</b><small>{row.due ? `مستحق ${money(row.due, currency)}` : 'لا مستحقات'}</small></div>
-        </article>
+        </button>
       ))}
       {!rows.length && <div className="friendly-empty">لا يوجد طلاب لعرضهم.</div>}
     </div>
@@ -166,7 +168,7 @@ function AttendanceReport({ report }: { report: ReturnType<typeof buildWorkspace
   );
 }
 
-function PackagesReport({ data, currency }: { data: SimpleWorkspaceData; currency: string }) {
+function PackagesReport({ data, currency, onOpenStudent }: { data: SimpleWorkspaceData; currency: string; onOpenStudent: (studentId: string) => void }) {
   const rows = data.students.flatMap((student) => {
     const plan = planFor(data, student.id);
     const cycle = activeCycleFor(data, student.id);
@@ -177,11 +179,11 @@ function PackagesReport({ data, currency }: { data: SimpleWorkspaceData; currenc
   return (
     <div className="report-row-list">
       {rows.map((row) => (
-        <article key={row.student.id} className="report-person-row">
+        <button type="button" key={row.student.id} className="report-person-row report-person-button" onClick={() => onOpenStudent(row.student.id)}>
           <div className="avatar-circle">{row.student.name.trim().charAt(0)}</div>
           <div><strong>{row.student.name}</strong><small>{row.completed}/{row.cycle.sessionLimit} تمت · باقي {row.remaining}</small></div>
           <div><b>{money(row.cycle.pricePence, currency)}</b><small>{row.cycle.status === 'due' ? 'جاهزة للتحصيل' : row.cycle.status === 'paid' ? 'مدفوعة' : 'جارية'}</small></div>
-        </article>
+        </button>
       ))}
       {!rows.length && <div className="friendly-empty">لا توجد باقات نشطة.</div>}
     </div>
