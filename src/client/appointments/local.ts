@@ -2,9 +2,9 @@ import type { AppointmentClient, AppointmentItem, AppointmentStatus } from '../.
 import { validateAppointmentDate, validateAppointmentTime } from '../../modules/appointments/domain';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
-import type { LocalExpense, LocalOtherIncome, LocalWorkspaceSetting } from '../simple/data';
+import type { LocalExpense, LocalOtherIncome, LocalReceipt } from '../finance/types';
+import type { LocalWorkspaceSetting } from '../platform/types';
 import { newSyncOutboxRecord } from '../sync/outbox';
-import type { LocalReceipt } from '../tutoring/local-commands';
 
 export type AppointmentWorkspaceData = {
   clients: AppointmentClient[];
@@ -80,6 +80,7 @@ export async function createAppointment(workspaceId: string, input: {
   if (durationMinutes < 5 || durationMinutes > 1440) throw new Error('APPOINTMENT_DURATION_INVALID');
   if (travelMinutes < 0 || travelMinutes > 1440) throw new Error('APPOINTMENT_TRAVEL_INVALID');
   if (pricePence < 0 || !Number.isSafeInteger(pricePence)) throw new Error('AMOUNT_INVALID');
+  if (input.clientId) await requireClient(workspaceId, input.clientId);
   const appointment: AppointmentItem = {
     id: crypto.randomUUID(), workspaceId, clientId: input.clientId || null,
     title: clean(input.title, 'APPOINTMENT_TITLE_REQUIRED'),
@@ -94,6 +95,7 @@ export async function createAppointment(workspaceId: string, input: {
 
 export async function updateAppointment(workspaceId: string, appointmentId: string, input: Partial<Omit<AppointmentItem, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt' | 'deletedAt'>>): Promise<void> {
   const current = await getAppointment(workspaceId, appointmentId);
+  if (input.clientId) await requireClient(workspaceId, input.clientId);
   const next: AppointmentItem = {
     ...current,
     ...input,
@@ -119,12 +121,14 @@ export async function collectAppointmentPayment(input: {
   paymentMethod?: LocalReceipt['paymentMethod']; note?: string | null; appointmentId?: string | null;
 }): Promise<LocalReceipt> {
   if (!Number.isSafeInteger(input.amountPence) || input.amountPence <= 0) throw new Error('COLLECTION_AMOUNT_INVALID');
+  await requireClient(input.workspaceId, input.clientId);
+  if (input.appointmentId) await getAppointment(input.workspaceId, input.appointmentId);
   const receipt: LocalReceipt = {
     id: crypto.randomUUID(), workspaceId: input.workspaceId, payerRefType: 'appointments.client', payerRefId: input.clientId,
     amountPence: input.amountPence, receivedAt: validateAppointmentDate(input.receivedAt), paymentMethod: input.paymentMethod ?? 'cash',
     sourceKind: 'manual', sourceModule: input.appointmentId ? 'appointments' : null,
     sourceEntityType: input.appointmentId ? 'appointment' : null, sourceEntityId: input.appointmentId ?? null,
-    note: input.note ?? null, deletedAt: null, pendingSync: true,
+    note: input.note?.trim() || null, deletedAt: null, pendingSync: true,
   };
   const activity = makeActivityEvent({ workspaceId: input.workspaceId, moduleKey: 'finance', entityType: 'receipt', entityId: receipt.id, action: 'receipt.created', title: 'تم تسجيل تحصيل', after: receipt });
   const db = await openLocalDatabase();
@@ -138,6 +142,13 @@ export async function collectAppointmentPayment(input: {
   tx.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(tx);
   return receipt;
+}
+
+async function requireClient(workspaceId: string, clientId: string): Promise<AppointmentClient> {
+  const db = await openLocalDatabase();
+  const row = await requestResult<AppointmentClient | undefined>(db.transaction(STORES.appointmentsClients, 'readonly').objectStore(STORES.appointmentsClients).get(clientId));
+  if (!row || row.workspaceId !== workspaceId || !row.active || row.deletedAt) throw new Error('CLIENT_NOT_FOUND');
+  return row;
 }
 
 async function getAppointment(workspaceId: string, appointmentId: string): Promise<AppointmentItem> {
