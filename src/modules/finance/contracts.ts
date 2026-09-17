@@ -33,6 +33,12 @@ export interface FinanceGateway {
   recordReceipt(command: RecordReceiptCommand): Promise<void>;
   allocateReceipt(command: AllocateReceiptCommand): Promise<void>;
   getAllocatedTotal(workspaceId: string, target: ExternalReference): Promise<number>;
+  /**
+   * Returns the amount already allocated from one receipt across every target.
+   * This is deliberately part of the port: retry-safety is a finance-domain
+   * invariant and must not depend on a specific database implementation.
+   */
+  getReceiptAllocatedTotal(workspaceId: string, receiptId: string): Promise<number>;
 }
 
 export function assertReceiptCommand(command: RecordReceiptCommand): void {
