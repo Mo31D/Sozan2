@@ -76,6 +76,7 @@ export class D1FinanceGateway implements FinanceGateway {
     if (!Number.isSafeInteger(command.amountPence) || command.amountPence <= 0) {
       throw new Error('ALLOCATION_AMOUNT_INVALID');
     }
+
     const existing = await this.db.prepare(
       `SELECT amount_pence AS amountPence
        FROM finance_receipt_allocations
@@ -91,6 +92,18 @@ export class D1FinanceGateway implements FinanceGateway {
     if (existing) {
       if (existing.amountPence !== command.amountPence) throw new Error('ALLOCATION_CONFLICT');
       return;
+    }
+
+    const receipt = await this.db.prepare(
+      `SELECT amount_pence AS amountPence
+       FROM finance_receipts
+       WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`,
+    ).bind(command.workspaceId, command.receiptId).first<{ amountPence: number }>();
+    if (!receipt) throw new Error('RECEIPT_NOT_FOUND');
+
+    const allocated = await this.getReceiptAllocatedTotal(command.workspaceId, command.receiptId);
+    if (allocated + command.amountPence > receipt.amountPence) {
+      throw new Error('RECEIPT_ALLOCATION_EXCEEDS_AMOUNT');
     }
 
     await this.db.prepare(
@@ -121,5 +134,16 @@ export class D1FinanceGateway implements FinanceGateway {
          AND r.deleted_at IS NULL`,
     ).bind(workspaceId, target.module, target.type, target.id).first<{ allocated: number }>();
     return row?.allocated ?? 0;
+  }
+
+  async getReceiptAllocatedTotal(workspaceId: string, receiptId: string): Promise<number> {
+    const row = await this.db.prepare(
+      `SELECT COALESCE(SUM(a.amount_pence), 0) AS allocated
+       FROM finance_receipt_allocations a
+       JOIN finance_receipts r
+         ON r.workspace_id=a.workspace_id AND r.id=a.receipt_id
+       WHERE a.workspace_id=?1 AND a.receipt_id=?2 AND r.deleted_at IS NULL`,
+    ).bind(workspaceId, receiptId).first<{ allocated: number }>();
+    return Number(row?.allocated ?? 0);
   }
 }
