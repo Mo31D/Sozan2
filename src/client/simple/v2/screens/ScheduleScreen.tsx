@@ -12,24 +12,26 @@ import { WeekView } from './schedule/WeekView';
 export function ScheduleScreen({
   data,
   busy,
+  openPendingOnMount = false,
   onAdd,
   onUpdate,
   onOpenDay,
 }: {
   data: SimpleWorkspaceData;
   busy: boolean;
+  openPendingOnMount?: boolean;
   onAdd: (form: FormData) => Promise<boolean>;
   onUpdate: (sessionId: string, form: FormData) => Promise<boolean>;
   onOpenDay: (date: string) => void;
 }) {
-  const [mode, setMode] = useState<ScheduleMode>('week');
+  const [mode, setMode] = useState<ScheduleMode>(openPendingOnMount ? 'edit' : 'week');
   const [showAdd, setShowAdd] = useState(false);
   const [addDraft, setAddDraft] = useState<AddDraft>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
   const [freeStart, setFreeStart] = useState('09:00');
   const [freeEnd, setFreeEnd] = useState('21:00');
-  const [focusPending, setFocusPending] = useState(false);
+  const [focusPending, setFocusPending] = useState(openPendingOnMount);
 
   const openAdd = (draft: AddDraft = null) => {
     setAddDraft(draft);
