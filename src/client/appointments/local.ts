@@ -16,6 +16,10 @@ export type AppointmentWorkspaceData = {
 };
 
 function now(): string { return new Date().toISOString(); }
+function localToday(): string {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 function clean(value: string, code: string, max = 160): string {
   const result = value.trim();
   if (!result) throw new Error(code);
@@ -112,6 +116,9 @@ export async function updateAppointment(workspaceId: string, appointmentId: stri
 
 export async function setAppointmentStatus(workspaceId: string, appointmentId: string, status: AppointmentStatus): Promise<void> {
   const current = await getAppointment(workspaceId, appointmentId);
+  if (status === 'completed' && current.appointmentDate > localToday()) {
+    throw new Error('FUTURE_APPOINTMENT_COMPLETION_NOT_ALLOWED');
+  }
   const next = { ...current, status, completedAt: status === 'completed' ? (current.completedAt ?? now()) : null, updatedAt: now() };
   await putAppointment('appointment.status', next, current);
 }
@@ -122,7 +129,10 @@ export async function collectAppointmentPayment(input: {
 }): Promise<LocalReceipt> {
   if (!Number.isSafeInteger(input.amountPence) || input.amountPence <= 0) throw new Error('COLLECTION_AMOUNT_INVALID');
   await requireClient(input.workspaceId, input.clientId);
-  if (input.appointmentId) await getAppointment(input.workspaceId, input.appointmentId);
+  if (input.appointmentId) {
+    const appointment = await getAppointment(input.workspaceId, input.appointmentId);
+    if (appointment.clientId !== input.clientId) throw new Error('APPOINTMENT_CLIENT_MISMATCH');
+  }
   const receipt: LocalReceipt = {
     id: crypto.randomUUID(), workspaceId: input.workspaceId, payerRefType: 'appointments.client', payerRefId: input.clientId,
     amountPence: input.amountPence, receivedAt: validateAppointmentDate(input.receivedAt), paymentMethod: input.paymentMethod ?? 'cash',
