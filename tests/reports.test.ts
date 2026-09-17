@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildWorkspaceReport } from '../src/modules/reports/insights';
+import {
+  buildWorkspaceReport,
+  buildWorkspaceReportForRange,
+  reportRangeForPreset,
+} from '../src/modules/reports/insights';
 
 describe('workspace reports', () => {
   it('combines lessons, money, travel and current dues deterministically', () => {
@@ -31,6 +35,50 @@ describe('workspace reports', () => {
     expect(report.effectiveHourlyPence).toBe(30000);
     expect(report.insights.some((item) => item.key === 'due')).toBe(true);
     expect(report.insights.some((item) => item.key === 'pending')).toBe(true);
+  });
+
+  it('resolves week, month and custom report ranges without hidden 28-day assumptions', () => {
+    expect(reportRangeForPreset('week', '2026-09-17')).toMatchObject({
+      fromDate: '2026-09-14',
+      toDate: '2026-09-17',
+    });
+    expect(reportRangeForPreset('month', '2026-09-17')).toMatchObject({
+      fromDate: '2026-09-01',
+      toDate: '2026-09-17',
+    });
+    expect(reportRangeForPreset('custom', '2026-09-17', { fromDate: '2026-08-03', toDate: '2026-08-19' })).toMatchObject({
+      fromDate: '2026-08-03',
+      toDate: '2026-08-19',
+    });
+    expect(reportRangeForPreset('custom', '2026-09-17', { fromDate: '2026-09-18', toDate: '2026-09-17' })).toMatchObject({
+      fromDate: '2026-09-17',
+      toDate: '2026-09-18',
+    });
+  });
+
+  it('builds a range report from only activity inside that period', () => {
+    const data = {
+      sessions: [{ id: 's1', scheduleStatus: 'confirmed' as const, durationMinutes: 60, travelMinutes: 20 }],
+      occurrences: [
+        { recurringSessionId: 's1', sessionDate: '2026-09-15', rescheduledToDate: null, status: 'completed' as const, earnedPence: 3000 },
+        { recurringSessionId: 's1', sessionDate: '2026-09-08', rescheduledToDate: null, status: 'completed' as const, earnedPence: 5000 },
+      ],
+      receipts: [
+        { receivedAt: '2026-09-15', amountPence: 3000 },
+        { receivedAt: '2026-09-08', amountPence: 5000 },
+      ],
+      expenses: [],
+      otherIncome: [],
+      billingCycles: [],
+      allocations: [],
+    };
+    const report = buildWorkspaceReportForRange(data, reportRangeForPreset('week', '2026-09-17'));
+    expect(report.completedLessons).toBe(1);
+    expect(report.receivedPence).toBe(3000);
+    expect(report.earnedPence).toBe(3000);
+    expect(report.teachingMinutes).toBe(60);
+    expect(report.travelMinutes).toBe(20);
+    expect(report.workMinutes).toBe(80);
   });
 
   it('surfaces probable duplicate expenses as an attention insight', () => {

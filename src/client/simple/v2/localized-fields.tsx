@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { minutesToTime, timeToMinutes, todayIso } from './utils';
+import { minutesToTime, timeToMinutes, todayIso } from '../../shared/format';
 
 const MONTHS = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
@@ -26,37 +26,57 @@ function parseDate(value: string) {
 export function ArabicDateField({
   name,
   defaultValue = todayIso(),
+  value,
+  onValueChange,
   ariaLabel = 'التاريخ',
 }: {
-  name: string;
+  name?: string;
   defaultValue?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
   ariaLabel?: string;
 }) {
-  const initial = parseDate(defaultValue) ?? parseDate(todayIso())!;
-  const [year, setYear] = useState(initial.year);
-  const [month, setMonth] = useState(initial.month);
-  const [day, setDay] = useState(initial.day);
+  const initial = parseDate(value ?? defaultValue) ?? parseDate(todayIso())!;
+  const [internalYear, setInternalYear] = useState(initial.year);
+  const [internalMonth, setInternalMonth] = useState(initial.month);
+  const [internalDay, setInternalDay] = useState(initial.day);
+  const controlled = value ? parseDate(value) : null;
+  const year = controlled?.year ?? internalYear;
+  const month = controlled?.month ?? internalMonth;
+  const day = controlled?.day ?? internalDay;
   const daysInMonth = new Date(year, month, 0).getDate();
   const safeDay = Math.min(day, daysInMonth);
-  const value = `${year}-${pad(month)}-${pad(safeDay)}`;
+  const currentValue = `${year}-${pad(month)}-${pad(safeDay)}`;
   const currentYear = new Date().getFullYear();
   const years = useMemo(
     () => Array.from({ length: 16 }, (_, index) => currentYear - 10 + index),
     [currentYear],
   );
 
+  const update = (nextYear: number, nextMonth: number, nextDay: number) => {
+    const maxDay = new Date(nextYear, nextMonth, 0).getDate();
+    const normalizedDay = Math.min(nextDay, maxDay);
+    const next = `${nextYear}-${pad(nextMonth)}-${pad(normalizedDay)}`;
+    if (value === undefined) {
+      setInternalYear(nextYear);
+      setInternalMonth(nextMonth);
+      setInternalDay(normalizedDay);
+    }
+    onValueChange?.(next);
+  };
+
   return (
     <div className="localized-field localized-date-field" role="group" aria-label={ariaLabel}>
-      <input type="hidden" name={name} value={value} />
-      <select aria-label="اليوم" value={safeDay} onChange={(event) => setDay(Number(event.target.value))}>
+      {name && <input type="hidden" name={name} value={currentValue} />}
+      <select aria-label="اليوم" value={safeDay} onChange={(event) => update(year, month, Number(event.target.value))}>
         {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((valueDay) => (
           <option key={valueDay} value={valueDay}>{arabicNumber(valueDay)}</option>
         ))}
       </select>
-      <select aria-label="الشهر" value={month} onChange={(event) => setMonth(Number(event.target.value))}>
+      <select aria-label="الشهر" value={month} onChange={(event) => update(year, Number(event.target.value), safeDay)}>
         {MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
       </select>
-      <select aria-label="السنة" value={year} onChange={(event) => setYear(Number(event.target.value))}>
+      <select aria-label="السنة" value={year} onChange={(event) => update(Number(event.target.value), month, safeDay)}>
         {years.map((valueYear) => <option key={valueYear} value={valueYear}>{arabicNumber(valueYear)}</option>)}
       </select>
     </div>

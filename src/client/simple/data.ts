@@ -1,7 +1,23 @@
 import type { Student } from '../../modules/tutoring/domain/student';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
 import { openLocalDatabase, requestResult, STORES } from '../adapters/indexeddb/database';
-import type { LocalBillingCycle, LocalBillingPlan, LocalReceipt } from '../tutoring/local-commands';
+import type {
+  LocalAllocation,
+  LocalCashCheck,
+  LocalExpense,
+  LocalOtherIncome,
+  LocalReceipt,
+} from '../finance/types';
+import type { LocalWorkspaceSetting } from '../platform/types';
+import type { LocalBillingCycle, LocalBillingPlan } from '../tutoring/local-commands';
+
+export type {
+  LocalAllocation,
+  LocalCashCheck,
+  LocalExpense,
+  LocalOtherIncome,
+} from '../finance/types';
+export type { LocalWorkspaceSetting } from '../platform/types';
 
 export type LocalOccurrence = {
   id: string;
@@ -18,54 +34,6 @@ export type LocalOccurrence = {
   completedAt: string | null;
   note: string | null;
   studentIds?: string[];
-};
-
-export type LocalExpense = {
-  id: string;
-  workspaceId: string;
-  expenseDate: string;
-  scope: 'business' | 'personal';
-  category: string;
-  amountPence: number;
-  note: string | null;
-  deletedAt: string | null;
-};
-
-export type LocalOtherIncome = {
-  id: string;
-  workspaceId: string;
-  incomeDate: string;
-  category: string;
-  amountPence: number;
-  note: string | null;
-  deletedAt: string | null;
-};
-
-export type LocalCashCheck = {
-  id: string;
-  workspaceId: string;
-  checkDate: string;
-  expectedBalancePence: number;
-  actualBalancePence: number;
-  differencePence: number;
-  note: string | null;
-  deletedAt: string | null;
-};
-
-export type LocalAllocation = {
-  id: string;
-  workspaceId: string;
-  receiptId: string;
-  targetModule: string;
-  targetType: string;
-  targetId: string;
-  amountPence: number;
-};
-
-export type LocalWorkspaceSetting = {
-  workspaceId: string;
-  key: string;
-  value: string;
 };
 
 export type SimpleWorkspaceData = {

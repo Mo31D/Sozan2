@@ -13,6 +13,7 @@ export function ScheduleScreen({
   data,
   busy,
   mode,
+  assistantLabel,
   onMode,
   monthCursor,
   onMonthCursor,
@@ -24,6 +25,7 @@ export function ScheduleScreen({
   data: SimpleWorkspaceData;
   busy: boolean;
   mode: ScheduleMode;
+  assistantLabel: string;
   onMode: (mode: ScheduleMode) => void;
   monthCursor: Date;
   onMonthCursor: (date: Date) => void;
@@ -62,7 +64,7 @@ export function ScheduleScreen({
 
   return (
     <section className="simple-screen">
-      <ScreenHeader kicker="مساعد سوزان" title="جدولي" />
+      <ScreenHeader kicker={assistantLabel} title="جدولي" />
       <div className="screen-action-row">
         <button className="primary-small" type="button" onClick={() => showAdd ? setShowAdd(false) : openAdd(null)}>{showAdd ? 'إغلاق' : '＋ طالب / مجموعة'}</button>
         {pendingCount > 0 && (
@@ -107,34 +109,9 @@ export function ScheduleScreen({
       </div>
 
       {mode === 'week' && <WeekView data={data} onEdit={openEdit} />}
-      {mode === 'month' && (
-        <MonthView
-          data={data}
-          cursor={monthCursor}
-          onCursor={onMonthCursor}
-          onOpenDay={onOpenDay}
-        />
-      )}
-      {mode === 'free' && (
-        <FreeTimeView
-          data={data}
-          start={freeStart}
-          end={freeEnd}
-          onStart={setFreeStart}
-          onEnd={setFreeEnd}
-          onUseSlot={(date, startTime) => openAdd({ weekday: weekdayForIso(date), startTime })}
-        />
-      )}
-      {mode === 'edit' && (
-        <EditScheduleView
-          data={data}
-          busy={busy}
-          editingId={editingId}
-          focusPending={focusPending}
-          onEditing={setEditingId}
-          onSave={onUpdate}
-        />
-      )}
+      {mode === 'month' && <MonthView data={data} cursor={monthCursor} onCursor={onMonthCursor} onOpenDay={onOpenDay} />}
+      {mode === 'free' && <FreeTimeView data={data} start={freeStart} end={freeEnd} onStart={setFreeStart} onEnd={setFreeEnd} onUseSlot={(date, startTime) => openAdd({ weekday: weekdayForIso(date), startTime })} />}
+      {mode === 'edit' && <EditScheduleView data={data} busy={busy} editingId={editingId} focusPending={focusPending} onEditing={setEditingId} onSave={onUpdate} />}
     </section>
   );
 }

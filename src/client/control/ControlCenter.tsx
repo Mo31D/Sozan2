@@ -30,19 +30,36 @@ const TABS: Array<[ControlTab, string]> = [
 export function ControlCenter({
   snapshot,
   onChanged,
+  requestedTab = null,
+  externallyOpen,
+  showLauncher = true,
+  onClose,
 }: {
   snapshot: LocalPlatformSnapshot;
   onChanged: () => Promise<void> | void;
+  requestedTab?: ControlTab | null;
+  externallyOpen?: boolean;
+  showLauncher?: boolean;
+  onClose?: () => void;
 }) {
   const workspaceId = snapshot.workspace.id;
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<ControlTab>('activity');
+  const [internalOpen, setInternalOpen] = useState(false);
+  const [tab, setTab] = useState<ControlTab>(requestedTab ?? 'activity');
   const [data, setData] = useState<ControlCenterData | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [editId, setEditId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
+  const open = externallyOpen ?? internalOpen;
+
+  useEffect(() => {
+    if (requestedTab) {
+      setTab(requestedTab);
+      setEditId(null);
+      setProfileId(null);
+    }
+  }, [requestedTab]);
 
   const load = async (syncFirst = false) => {
     if (syncFirst && snapshot.cloudLink && navigator.onLine) {
@@ -60,6 +77,11 @@ export function ControlCenter({
     // Loading is intentionally tied to opening the control center/workspace changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, workspaceId]);
+
+  const close = () => {
+    if (externallyOpen === undefined) setInternalOpen(false);
+    onClose?.();
+  };
 
   const afterWrite = async (text: string) => {
     if (snapshot.cloudLink && navigator.onLine) {
@@ -103,15 +125,17 @@ export function ControlCenter({
 
   return (
     <>
-      <button className="control-launcher" type="button" onClick={() => setOpen(true)} aria-label="الإدارة والسجل">
-        <b>☰</b><span>إدارة</span>
-      </button>
+      {showLauncher && (
+        <button className="control-launcher" type="button" onClick={() => setInternalOpen(true)} aria-label="الإدارة والسجل">
+          <b>☰</b><span>إدارة</span>
+        </button>
+      )}
       {open && (
         <div className="control-overlay" role="dialog" aria-modal="true" aria-label="الإدارة والسجل">
           <section className="control-sheet">
             <header className="control-header">
-              <div><small>كل بياناتك تحت سيطرتك</small><h2>الإدارة والسجل</h2></div>
-              <button type="button" onClick={() => setOpen(false)} aria-label="إغلاق">×</button>
+              <div><small>التفاصيل والتصحيحات المتقدمة</small><h2>الإدارة والسجل</h2></div>
+              <button type="button" onClick={close} aria-label="إغلاق">×</button>
             </header>
             <nav className="control-tabs">
               {TABS.map(([key, label]) => (
