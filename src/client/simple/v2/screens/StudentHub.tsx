@@ -26,6 +26,10 @@ export function StudentHub({
   onBillingSave,
   onCollect,
   onOpenAdvanced,
+  onOpenStudent,
+  onLinkSibling,
+  onUnlinkFamily,
+  onArchive,
 }: {
   snapshot: LocalPlatformSnapshot;
   data: SimpleWorkspaceData;
@@ -37,10 +41,15 @@ export function StudentHub({
   onBillingSave: (studentId: string, form: FormData) => Promise<boolean>;
   onCollect: (studentId: string, form: FormData) => Promise<boolean>;
   onOpenAdvanced: (tab: ControlTab) => void;
+  onOpenStudent: (studentId: string) => void;
+  onLinkSibling: (studentId: string, siblingId: string) => Promise<boolean>;
+  onUnlinkFamily: (studentId: string) => Promise<boolean>;
+  onArchive: (studentId: string) => Promise<boolean>;
 }) {
   const student = data.students.find((row) => row.id === studentId) ?? null;
   const [editingDetails, setEditingDetails] = useState(false);
   const [collecting, setCollecting] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const plan = student ? planFor(data, student.id) : null;
   const cycle = student ? activeCycleFor(data, student.id) : null;
   const [billingMode, setBillingMode] = useState<'per_session' | 'package'>(plan?.billingMode ?? 'per_session');
@@ -71,6 +80,10 @@ export function StudentHub({
   const packageSize = cycle?.sessionLimit ?? plan?.packageSize ?? 8;
   const packagePrice = cycle?.pricePence ?? plan?.packagePricePence ?? 0;
   const openingLocked = Boolean(cycle?.openingProgressLockedAt) || (cycle?.realCompletedCount ?? 0) > 0;
+  const siblings = student.familyId
+    ? data.students.filter((row) => row.id !== student.id && row.familyId === student.familyId)
+    : [];
+  const familyOptions = data.students.filter((row) => row.id !== student.id && !siblings.some((sibling) => sibling.id === row.id));
 
   return (
     <section className="simple-screen student-hub">
@@ -115,6 +128,34 @@ export function StudentHub({
             {student.notes && <p><span>ملاحظات</span><b>{student.notes}</b></p>}
           </div>
         )}
+      </HubSection>
+
+      <HubSection title="الإخوة" action={siblings.length ? `${siblings.length} مرتبط` : 'اختياري'}>
+        <p className="student-hub-note">الرابط هنا للتنقل فقط. كل أخ أو أخت يظل له ملف وحصص وباقة وفلوس مستقلة.</p>
+        {siblings.length > 0 && (
+          <div className="student-family-links">
+            {siblings.map((sibling) => (
+              <button type="button" key={sibling.id} onClick={() => onOpenStudent(sibling.id)}>
+                <span>{sibling.name.trim().charAt(0)}</span><strong>{sibling.name}</strong><b>فتح</b>
+              </button>
+            ))}
+          </div>
+        )}
+        {familyOptions.length > 0 && (
+          <form className="student-family-form" onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const siblingId = String(form.get('siblingId') ?? '');
+            if (siblingId) await onLinkSibling(student.id, siblingId);
+          }}>
+            <select name="siblingId" defaultValue="" required>
+              <option value="" disabled>ربط بأخ / أخت…</option>
+              {familyOptions.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+            </select>
+            <button type="submit" disabled={busy}>ربط</button>
+          </form>
+        )}
+        {student.familyId && <button className="student-hub-text-action" type="button" disabled={busy} onClick={() => void onUnlinkFamily(student.id)}>فصل هذا الطالب عن رابط الإخوة</button>}
       </HubSection>
 
       <HubSection title="الحساب والباقة" action={billingHistoryExists ? 'التاريخ المالي محفوظ' : undefined}>
@@ -205,6 +246,20 @@ export function StudentHub({
             );
           })}
           {!history.length && <div className="friendly-empty">لسه مفيش تاريخ حضور مسجل.</div>}
+        </div>
+      </HubSection>
+
+      <HubSection title="إدارة الملف">
+        <div className="student-hub-archive">
+          <div><strong>إيقاف الطالب</strong><small>يختفي من قائمة الطلاب والمواعيد القادمة، لكن الحضور والمدفوعات والتاريخ يفضلوا محفوظين.</small></div>
+          {!confirmArchive ? (
+            <button type="button" disabled={busy} onClick={() => setConfirmArchive(true)}>إيقاف</button>
+          ) : (
+            <div className="student-hub-confirm-actions">
+              <button type="button" onClick={() => setConfirmArchive(false)}>رجوع</button>
+              <button className="danger" type="button" disabled={busy} onClick={() => void onArchive(student.id)}>تأكيد الإيقاف</button>
+            </div>
+          )}
         </div>
       </HubSection>
     </section>
