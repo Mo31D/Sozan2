@@ -44,6 +44,17 @@ export const appointmentsSyncHandler: ModuleSyncHandler = {
         const client = await db.prepare(`SELECT 1 AS found FROM appointments_clients WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`).bind(workspaceId,row.clientId).first<{found:number}>();
         if (!client) throw new Error('CLIENT_NOT_FOUND');
       }
+      const current = await db.prepare(
+        `SELECT client_id FROM appointments_items WHERE workspace_id=?1 AND id=?2 LIMIT 1`,
+      ).bind(workspaceId, row.id).first<{ client_id: string | null }>();
+      if (current && current.client_id !== row.clientId) {
+        const linkedCollection = await db.prepare(
+          `SELECT 1 AS found FROM finance_receipts
+           WHERE workspace_id=?1 AND source_module='appointments' AND source_entity_type='appointment'
+             AND source_entity_id=?2 AND deleted_at IS NULL LIMIT 1`,
+        ).bind(workspaceId, row.id).first<{ found:number }>();
+        if (linkedCollection) throw new Error('APPOINTMENT_CLIENT_LOCKED_BY_COLLECTION');
+      }
       await db.prepare(`INSERT INTO appointments_items(id,workspace_id,client_id,title,appointment_date,start_time,duration_minutes,travel_minutes,location,price_pence,status,note,completed_at,created_at,updated_at,deleted_at)
         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
         ON CONFLICT(id) DO UPDATE SET client_id=excluded.client_id,title=excluded.title,appointment_date=excluded.appointment_date,start_time=excluded.start_time,duration_minutes=excluded.duration_minutes,travel_minutes=excluded.travel_minutes,location=excluded.location,price_pence=excluded.price_pence,status=excluded.status,note=excluded.note,completed_at=excluded.completed_at,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at
