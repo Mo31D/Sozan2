@@ -1,6 +1,10 @@
+import { useEffect, useState } from 'react';
 import type { SimpleWorkspaceData } from '../../../data';
+import { ArabicTimeField } from '../../localized-fields';
 import {
   compareSessionTime,
+  formatClockTime,
+  formatDurationArabic,
   sessionTypeLabel,
   validClockTime,
   WEEKDAYS,
@@ -10,12 +14,14 @@ export function EditScheduleView({
   data,
   busy,
   editingId,
+  focusPending,
   onEditing,
   onSave,
 }: {
   data: SimpleWorkspaceData;
   busy: boolean;
   editingId: string | null;
+  focusPending: boolean;
   onEditing: (sessionId: string | null) => void;
   onSave: (sessionId: string, form: FormData) => Promise<boolean>;
 }) {
@@ -23,6 +29,12 @@ export function EditScheduleView({
     (a.weekday ?? 99) - (b.weekday ?? 99) || compareSessionTime(a, b),
   );
   const editing = sessions.find((session) => session.id === editingId) ?? null;
+  const pendingSessions = sessions.filter((session) => session.scheduleStatus === 'pending');
+  const [selectedKey, setSelectedKey] = useState<number | 'pending'>(() => focusPending ? 'pending' : new Date().getDay());
+
+  useEffect(() => {
+    if (focusPending) setSelectedKey('pending');
+  }, [focusPending]);
 
   if (editing) {
     return (
@@ -34,9 +46,9 @@ export function EditScheduleView({
         }}>
           <label>حالة الموعد<select name="scheduleStatus" defaultValue={editing.scheduleStatus}><option value="confirmed">موعد محدد</option><option value="pending">لسه غير محدد</option></select></label>
           <label>اليوم<select name="weekday" defaultValue={editing.weekday ?? ''}><option value="">اليوم غير محدد</option>{WEEKDAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}</select></label>
-          <label>الوقت<input name="startTime" type="time" defaultValue={validClockTime(editing.startTime) ? editing.startTime ?? '' : ''} /></label>
+          <label className="edit-time-field">الوقت<ArabicTimeField name="startTime" defaultValue={validClockTime(editing.startTime) ? editing.startTime : '16:00'} ariaLabel="وقت الموعد" /></label>
           <div className="edit-readonly"><span>نوع الحصة</span><strong>{sessionTypeLabel(editing.sessionType)}</strong></div>
-          <div className="edit-readonly"><span>المدة</span><strong>{editing.durationMinutes} دقيقة</strong></div>
+          <div className="edit-readonly"><span>المدة</span><strong>{formatDurationArabic(editing.durationMinutes)}</strong></div>
           <button className="form-submit" type="submit" disabled={busy}>{busy ? 'جاري الحفظ…' : 'حفظ التعديل'}</button>
         </form>
         <p className="edit-hint">التعديل هنا خاص بموعد التكرار: اليوم والساعة وحالة الموعد. بيانات الطالب والحساب تظل في مكانها حتى لا تختلط التعديلات المالية بالجدول.</p>
@@ -44,16 +56,60 @@ export function EditScheduleView({
     );
   }
 
+  const selectedSessions = selectedKey === 'pending'
+    ? pendingSessions
+    : sessions.filter((session) => session.weekday === selectedKey);
+
   return (
-    <div className="edit-session-list">
-      {sessions.map((session) => (
-        <button type="button" key={session.id} onClick={() => onEditing(session.id)}>
-          <span className={`session-color type-${session.sessionType}`} />
-          <span><strong>{session.title}</strong><small>{session.scheduleStatus === 'pending' ? `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · الوقت غير محدد` : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${session.startTime ?? 'غير محدد'}`}</small></span>
-          <b>تعديل</b>
+    <div className="edit-grid-wrap">
+      <div className="edit-week-grid" aria-label="اختاري يومًا لتعديل مواعيده">
+        {WEEKDAYS.map((day, index) => {
+          const count = sessions.filter((session) => session.weekday === index).length;
+          return (
+            <button
+              type="button"
+              key={day}
+              className={`edit-day-cell ${selectedKey === index ? 'selected' : ''}`}
+              onClick={() => setSelectedKey(index)}
+            >
+              <strong>{day.slice(0, 3)}</strong>
+              <small>{count ? `${count} ${count === 1 ? 'موعد' : 'مواعيد'}` : 'فاضي'}</small>
+            </button>
+          );
+        })}
+      </div>
+
+      {pendingSessions.length > 0 && (
+        <button
+          type="button"
+          className={`edit-pending-cell ${selectedKey === 'pending' ? 'selected' : ''}`}
+          onClick={() => setSelectedKey('pending')}
+        >
+          <span><strong>محتاج وقت</strong><small>المواعيد التي تحتاج تحديد أو مراجعة الوقت</small></span>
+          <b>{pendingSessions.length}</b>
         </button>
-      ))}
-      {!sessions.length && <div className="friendly-empty">مفيش مواعيد محفوظة.</div>}
+      )}
+
+      <div className="edit-selection-head">
+        <strong>{selectedKey === 'pending' ? 'مواعيد محتاجة وقت' : WEEKDAYS[selectedKey]}</strong>
+        <span>{selectedSessions.length ? `${selectedSessions.length} ${selectedSessions.length === 1 ? 'موعد' : 'مواعيد'}` : 'لا توجد مواعيد'}</span>
+      </div>
+
+      <div className="edit-session-list">
+        {selectedSessions.map((session) => (
+          <button type="button" key={session.id} onClick={() => onEditing(session.id)}>
+            <span className={`session-color type-${session.sessionType}`} />
+            <span>
+              <strong>{session.title}</strong>
+              <small>{session.scheduleStatus === 'pending'
+                ? `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · الوقت غير محدد`
+                : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${formatClockTime(session.startTime)}`}</small>
+            </span>
+            <b>تعديل</b>
+          </button>
+        ))}
+        {!selectedSessions.length && <div className="friendly-empty">مفيش مواعيد في الجزء ده.</div>}
+      </div>
     </div>
   );
 }
