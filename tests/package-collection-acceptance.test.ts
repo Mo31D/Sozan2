@@ -177,7 +177,7 @@ describe('package + collection acceptance flow', () => {
 
     const afterEight = await billing.recordCompletedOccurrence('workspace-1', 'student-1', 'occurrence-8', '2026-09-25');
     expect(afterEight.currentCycle?.progress).toMatchObject({ completed: 8, remaining: 0, nextPosition: null, due: true });
-    expect(afterEight.currentCycle?.cycle.status).toBe('due');
+    expect(afterEight.currentCycle?.status).toBe('due');
 
     expect(billingRepository.linkedOccurrences).toEqual([
       { occurrenceId: 'occurrence-6', position: 6, earnedPence: 1000 },
