@@ -47,11 +47,11 @@ export function EditScheduleView({
           <label>حالة الموعد<select name="scheduleStatus" defaultValue={editing.scheduleStatus}><option value="confirmed">موعد محدد</option><option value="pending">لسه غير محدد</option></select></label>
           <label>اليوم<select name="weekday" defaultValue={editing.weekday ?? ''}><option value="">اليوم غير محدد</option>{WEEKDAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}</select></label>
           <label className="edit-time-field">الوقت<ArabicTimeField name="startTime" defaultValue={validClockTime(editing.startTime) ? editing.startTime : '16:00'} ariaLabel="وقت الموعد" /></label>
-          <div className="edit-readonly"><span>نوع الحصة</span><strong>{sessionTypeLabel(editing.sessionType)}</strong></div>
+          <label>نوع الحصة<select name="sessionType" defaultValue={editing.sessionType}><option value="private_student_home">خاص عند الطالب</option><option value="private_tutor_home">خاص عند المدرس</option><option value="online">أونلاين</option><option value="center_group">السنتر</option><option value="own_group">مجموعة خاصة</option></select></label>
           <div className="edit-readonly"><span>المدة</span><strong>{formatDurationArabic(editing.durationMinutes)}</strong></div>
           <button className="form-submit" type="submit" disabled={busy}>{busy ? 'جاري الحفظ…' : 'حفظ التعديل'}</button>
         </form>
-        <p className="edit-hint">التعديل هنا خاص بموعد التكرار: اليوم والساعة وحالة الموعد. بيانات الطالب والحساب تظل في مكانها حتى لا تختلط التعديلات المالية بالجدول.</p>
+        <p className="edit-hint">يمكن تعديل نوع الحصة هنا مع اليوم والساعة وحالة الموعد. السعر والحساب وربط الطلاب تظل في «إدارة» حتى لا تختلط التعديلات المالية بالجدول.</p>
       </div>
     );
   }
@@ -104,6 +104,7 @@ export function EditScheduleView({
               <small>{session.scheduleStatus === 'pending'
                 ? `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · الوقت غير محدد`
                 : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${formatClockTime(session.startTime)}`}</small>
+              <small>{sessionTypeLabel(session.sessionType)}</small>
             </span>
             <b>تعديل</b>
           </button>
