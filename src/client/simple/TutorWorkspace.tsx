@@ -200,6 +200,7 @@ export function TutorWorkspace({
               busy={busy}
               assistantLabel={assistantLabel}
               onMode={setMoneyMode}
+              onOpenAdvanced={setAdvancedTab}
               onCollect={(form) => void runAction(async () => {
                 await collectLocalStudentPayment({
                   workspaceId,
