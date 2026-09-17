@@ -30,6 +30,7 @@ export function TodayScreen({
   data,
   date,
   busy,
+  assistantLabel,
   openedFromSchedule,
   onOpenMoney,
   onAttendance,
@@ -40,6 +41,7 @@ export function TodayScreen({
   data: SimpleWorkspaceData;
   date: string;
   busy: boolean;
+  assistantLabel: string;
   openedFromSchedule: boolean;
   onOpenMoney: (mode: 'receipt' | 'expense') => void;
   onAttendance: (action: AttendanceWorkflowAction, success: string) => Promise<boolean>;
@@ -58,7 +60,7 @@ export function TodayScreen({
 
   return (
     <section className="simple-screen">
-      <ScreenHeader kicker={isToday ? 'مساعد سوزان' : 'جدولي'} title={isToday ? 'اليوم' : 'يوم محدد'} />
+      <ScreenHeader kicker={isToday ? assistantLabel : 'جدولي'} title={isToday ? 'اليوم' : 'يوم محدد'} />
 
       {isToday ? (
         <>
