@@ -35,6 +35,7 @@ export function TutorWorkspace({
 }) {
   const workspaceId = snapshot.workspace.id;
   const [page, setPage] = useState<PageKey>('today');
+  const [selectedDay, setSelectedDay] = useState(todayIso());
   const [data, setData] = useState<SimpleWorkspaceData | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
   const [notice, setNotice] = useState('');
@@ -96,7 +97,16 @@ export function TutorWorkspace({
   };
 
   const moveTo = (next: PageKey) => {
+    if (next === 'today') setSelectedDay(todayIso());
     setPage(next);
+    setNotice('');
+    setError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openDay = (date: string) => {
+    setSelectedDay(date);
+    setPage('today');
     setNotice('');
     setError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -117,9 +127,11 @@ export function TutorWorkspace({
           <TodayScreen
             snapshot={snapshot}
             data={data}
+            date={selectedDay}
             busy={busy}
             onOpenMoney={openMoney}
             onAttendance={runAttendance}
+            onBackToToday={() => setSelectedDay(todayIso())}
           />
         )}
 
@@ -159,6 +171,7 @@ export function TutorWorkspace({
           <ScheduleScreen
             data={data}
             busy={busy}
+            onOpenDay={openDay}
             onAdd={async (form) => runAction(async () => {
               const pending = String(form.get('scheduleStatus') ?? 'confirmed') === 'pending';
               const weekdayRaw = String(form.get('weekday') ?? '');
@@ -187,7 +200,7 @@ export function TutorWorkspace({
               await sessionsService.updateSchedule(workspaceId, sessionId, {
                 scheduleStatus: status,
                 weekday: weekdayRaw === '' ? null : Number(weekdayRaw),
-                startTime: timeRaw || null,
+                startTime: status === 'pending' ? null : timeRaw || null,
               });
             }, 'تم تعديل الموعد.')}
           />
