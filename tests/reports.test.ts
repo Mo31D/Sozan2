@@ -50,7 +50,10 @@ describe('workspace reports', () => {
       fromDate: '2026-08-03',
       toDate: '2026-08-19',
     });
-    expect(() => reportRangeForPreset('custom', '2026-09-17', { fromDate: '2026-09-18', toDate: '2026-09-17' })).toThrow('REPORT_RANGE_INVALID');
+    expect(reportRangeForPreset('custom', '2026-09-17', { fromDate: '2026-09-18', toDate: '2026-09-17' })).toMatchObject({
+      fromDate: '2026-09-17',
+      toDate: '2026-09-18',
+    });
   });
 
   it('builds a range report from only activity inside that period', () => {
