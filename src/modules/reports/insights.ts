@@ -28,6 +28,7 @@ export type WorkspaceReport = {
   otherIncomePence: number;
   expensesPence: number;
   netCashPence: number;
+  /** Current outstanding amount, intentionally independent from the report date range. */
   duePence: number;
   earnedPence: number;
   teachingMinutes: number;
@@ -150,7 +151,7 @@ export function currentDuePence(data: ReportInput): number {
   for (const occurrence of data.occurrences.filter((row) => row.status === 'completed' && row.id)) {
     const session = sessionById.get(occurrence.recurringSessionId);
     if (!session) continue;
-    const perSessionStudents = (session.studentIds ?? []).filter((studentId) => (planByStudent.get(studentId) ?? 'per_session') === 'per_session');
+    const perSessionStudents = (session.studentIds ?? []).filter((studentId) => planByStudent.get(studentId) === 'per_session');
     if (!perSessionStudents.length) continue;
 
     let obligation = 0;
@@ -192,7 +193,7 @@ export function buildWorkspaceReportForRange(data: ReportInput, range: ReportDat
   const duplicateExpenseRows = probableDuplicateExpenseIds(expenseDuplicateCandidates(data.expenses)).size;
 
   const insights: ReportInsight[] = [];
-  if (duePence > 0) insights.push({ key: 'due', level: 'attention', title: 'فيه تحصيل محتاج متابعة', detail: `${duePence} قرش ما زالت مستحقة على حصص أو باقات مكتملة.` });
+  if (duePence > 0) insights.push({ key: 'due', level: 'attention', title: 'فيه تحصيل محتاج متابعة', detail: `${duePence} قرش مستحقة حاليًا على حصص أو باقات مكتملة.` });
   if (pendingSchedules > 0) insights.push({ key: 'pending', level: 'attention', title: 'مواعيد لسه غير محددة', detail: `${pendingSchedules} موعد محتاج يوم أو ساعة.` });
   if (duplicateExpenseRows > 0) insights.push({ key: 'duplicate-expenses', level: 'attention', title: 'راجعي المصروفات المتشابهة', detail: `${duplicateExpenseRows} تسجيلات مصروف متشابهة في التاريخ والنوع والتصنيف والمبلغ؛ ممكن يكون بينها تكرار.` });
   if (cancelled.length >= Math.max(3, Math.ceil(completed.length * 0.25))) insights.push({ key: 'cancelled', level: 'attention', title: 'الإلغاءات مرتفعة نسبيًا', detail: `${cancelled.length} حصة ألغيت أو فاتت خلال الفترة.` });
