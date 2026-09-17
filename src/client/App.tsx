@@ -6,7 +6,6 @@ import {
   type LocalPlatformSnapshot,
 } from './adapters/indexeddb/platform.repository';
 import { ExistingAccountLogin } from './cloud/CloudAccess';
-import { ControlCenter } from './control/ControlCenter';
 import { TutorWorkspace } from './simple/TutorWorkspace';
 import { runWorkspaceSync } from './sync/engine';
 
@@ -79,21 +78,17 @@ export function App() {
     setDataRevision((value) => value + 1);
   };
 
+  if (local.snapshot.workspace.templateKey !== 'tutoring') {
+    return <CenteredMessage text="مساحة العمل دي تستخدم نوعًا جديدًا من التنظيم. الواجهة الخاصة بها ما زالت قيد التجهيز على هذا الفرع." />;
+  }
+
   return (
-    <>
-      <TutorWorkspace
-        key={`${local.snapshot.workspace.id}-${dataRevision}`}
-        snapshot={local.snapshot}
-        cloudAvailable={cloudAccountsAvailable(cloud)}
-        onPlatformChanged={reloadLocal}
-      />
-      <ControlCenter
-        snapshot={local.snapshot}
-        onChanged={async () => {
-          setDataRevision((value) => value + 1);
-        }}
-      />
-    </>
+    <TutorWorkspace
+      key={`${local.snapshot.workspace.id}-${dataRevision}`}
+      snapshot={local.snapshot}
+      cloudAvailable={cloudAccountsAvailable(cloud)}
+      onPlatformChanged={reloadLocal}
+    />
   );
 }
 
@@ -127,19 +122,19 @@ function LocalSetup({ cloud, onReady }: { cloud: CloudState; onReady: (snapshot:
   return (
     <main className="setup-simple" dir="rtl">
       <section className="setup-simple-card">
-        <div className="setup-logo">س</div>
-        <h1>مساعد سوزان</h1>
-        <p>ادخلي لحسابك من أي جهاز، أو ابدئي نسخة جديدة على الجهاز ده.</p>
+        <div className="setup-logo">م</div>
+        <h1>مساعدك</h1>
+        <p>نظّم مواعيدك وفلوسك من مكان واحد. سجّل الدخول من جهاز آخر، أو ابدأ مساحة عمل جديدة على الجهاز ده.</p>
 
         <ExistingAccountLogin available={cloudAccountsAvailable(cloud)} onReady={onReady} />
 
         {cloudAccountsAvailable(cloud) && <div className="setup-divider"><span>أو</span></div>}
 
         <form className="setup-simple-form" onSubmit={submit}>
-          <h2>ابدئي نسخة جديدة</h2>
+          <h2>ابدأ مساحة جديدة</h2>
           <label>اسمك<input name="displayName" autoComplete="name" placeholder="مثال: سوزان" required /></label>
           <label>اسم شغلك<input name="workspaceName" placeholder="مثال: دروسي" required /></label>
-          <button type="submit" disabled={busy}>{busy ? 'جاري الإنشاء…' : 'ابدئي'}</button>
+          <button type="submit" disabled={busy}>{busy ? 'جاري الإنشاء…' : 'ابدأ'}</button>
         </form>
 
         {error && <div className="simple-toast bad">{error}</div>}
