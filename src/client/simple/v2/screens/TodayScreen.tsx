@@ -9,9 +9,11 @@ import {
   type SimpleWorkspaceData,
 } from '../../data';
 import { ScreenHeader, SectionTitle } from '../components';
+import { ArabicDateField, ArabicTimeField } from '../localized-fields';
 import {
   dueTotal,
   formatArabicDate,
+  formatClockTime,
   greetingForHour,
   money,
   packageProgress,
@@ -26,19 +28,24 @@ import type { ScheduledEntry } from '../types';
 export function TodayScreen({
   snapshot,
   data,
+  date,
   busy,
   onOpenMoney,
   onAttendance,
+  onBackToToday,
 }: {
   snapshot: LocalPlatformSnapshot;
   data: SimpleWorkspaceData;
+  date: string;
   busy: boolean;
   onOpenMoney: (mode: 'receipt' | 'expense') => void;
   onAttendance: (action: AttendanceWorkflowAction, success: string) => Promise<boolean>;
+  onBackToToday: () => void;
 }) {
-  const today = todayIso();
-  const month = today.slice(0, 7);
-  const entries = scheduleEntriesForDate(data, today);
+  const actualToday = todayIso();
+  const isToday = date === actualToday;
+  const month = date.slice(0, 7);
+  const entries = scheduleEntriesForDate(data, date);
   const monthReceipts = sum(data.receipts.filter((row) => row.receivedAt.startsWith(month)).map((row) => row.amountPence));
   const monthOther = sum(data.otherIncome.filter((row) => row.incomeDate.startsWith(month)).map((row) => row.amountPence));
   const monthExpenses = sum(data.expenses.filter((row) => row.expenseDate.startsWith(month)).map((row) => row.amountPence));
@@ -47,34 +54,44 @@ export function TodayScreen({
 
   return (
     <section className="simple-screen">
-      <ScreenHeader kicker="مساعد سوزان" title="اليوم" />
-      <article className="today-hero">
-        <div className="today-hero-top">
-          <div>
-            <strong>{greetingForHour(new Date().getHours())} يا {snapshot.user.displayName}</strong>
-            <span>{formatArabicDate(today)}</span>
-            <small>المتبقي من اللي قبضتيه هذا الشهر</small>
+      <ScreenHeader kicker={isToday ? 'مساعد سوزان' : 'جدولي'} title={isToday ? 'اليوم' : 'يوم محدد'} />
+
+      {isToday ? (
+        <>
+          <article className="today-hero">
+            <div className="today-hero-top">
+              <div>
+                <strong>{greetingForHour(new Date().getHours())} يا {snapshot.user.displayName}</strong>
+                <span>{formatArabicDate(date)}</span>
+                <small>المتبقي من اللي قبضتيه هذا الشهر</small>
+              </div>
+              <span className="spark">✦</span>
+            </div>
+            <div className="hero-money">{money(net, snapshot.workspace.currencyLabel)}</div>
+            <div className="hero-split">
+              <div><span>قبضتي</span><strong>{money(monthReceipts + monthOther, snapshot.workspace.currencyLabel)}</strong></div>
+              <div><span>صرفتي</span><strong>{money(monthExpenses, snapshot.workspace.currencyLabel)}</strong></div>
+            </div>
+          </article>
+
+          <div className="quick-actions">
+            <button type="button" onClick={() => onOpenMoney('receipt')}><b>＋</b><span><strong>قبضت فلوس</strong><small>من طالب أو ولي أمر</small></span></button>
+            <button type="button" onClick={() => onOpenMoney('expense')}><b>−</b><span><strong>مصروف</strong><small>شخصي أو شغل</small></span></button>
           </div>
-          <span className="spark">✦</span>
-        </div>
-        <div className="hero-money">{money(net, snapshot.workspace.currencyLabel)}</div>
-        <div className="hero-split">
-          <div><span>قبضتي</span><strong>{money(monthReceipts + monthOther, snapshot.workspace.currencyLabel)}</strong></div>
-          <div><span>صرفتي</span><strong>{money(monthExpenses, snapshot.workspace.currencyLabel)}</strong></div>
-        </div>
-      </article>
 
-      <div className="quick-actions">
-        <button type="button" onClick={() => onOpenMoney('receipt')}><b>＋</b><span><strong>قبضت فلوس</strong><small>من طالب أو ولي أمر</small></span></button>
-        <button type="button" onClick={() => onOpenMoney('expense')}><b>−</b><span><strong>مصروف</strong><small>شخصي أو شغل</small></span></button>
-      </div>
+          <article className="due-card">
+            <div><span>جاهز للتحصيل</span><strong>{money(due, snapshot.workspace.currencyLabel)}</strong></div>
+            <span className="due-status">{due > 0 ? 'مراجعة' : 'تمام'}</span>
+          </article>
+        </>
+      ) : (
+        <article className="opened-day-card">
+          <div><small>اليوم المفتوح من التقويم</small><strong>{formatArabicDate(date)}</strong></div>
+          <button type="button" onClick={onBackToToday}>الرجوع لليوم</button>
+        </article>
+      )}
 
-      <article className="due-card">
-        <div><span>جاهز للتحصيل</span><strong>{money(due, snapshot.workspace.currencyLabel)}</strong></div>
-        <span className="due-status">{due > 0 ? 'مراجعة' : 'تمام'}</span>
-      </article>
-
-      <SectionTitle eyebrow="اليوم" title="حصصك" />
+      <SectionTitle eyebrow={isToday ? 'اليوم' : formatArabicDate(date)} title="حصصك" />
       <div className="lesson-list">
         {entries.map((entry) => (
           <AttendanceCard
@@ -86,7 +103,7 @@ export function TodayScreen({
             onAttendance={onAttendance}
           />
         ))}
-        {!entries.length && <div className="friendly-empty">مفيش حصص مؤكدة النهارده.</div>}
+        {!entries.length && <div className="friendly-empty">مفيش حصص مؤكدة في اليوم ده.</div>}
       </div>
     </section>
   );
@@ -135,7 +152,7 @@ function AttendanceCard({
       <div className="lesson-main">
         <div>
           <strong>{session.title}</strong>
-          <small>{entry.startTime ?? 'الوقت غير محدد'} · {sessionTypeLabel(session.sessionType)}</small>
+          <small>{entry.startTime ? formatClockTime(entry.startTime) : 'الوقت غير محدد'} · {sessionTypeLabel(session.sessionType)}</small>
           {plan?.billingMode === 'package' && <small>باقة · {packageProgress(data, primaryStudent?.id ?? '')}</small>}
           {cancelled && <small className="lesson-state-note">ملغاة — محفوظة في السجل ويمكن استرجاعها</small>}
           {missed && <small className="lesson-state-note">فائتة — يمكنك استرجاعها أو نقلها</small>}
@@ -210,8 +227,8 @@ function AttendanceCard({
           }, 'تم نقل الحصة مع الاحتفاظ بتاريخها الأصلي.');
         }}>
           <strong>نقل هذه الحصة فقط</strong>
-          <input name="date" type="date" defaultValue={entry.date} required />
-          <input name="startTime" type="time" defaultValue={entry.startTime ?? ''} />
+          <ArabicDateField name="date" defaultValue={entry.date} ariaLabel="تاريخ الحصة الجديد" />
+          <ArabicTimeField name="startTime" defaultValue={entry.startTime ?? '09:00'} ariaLabel="وقت الحصة الجديد" />
           <input name="note" placeholder="سبب أو ملاحظة اختيارية" />
           <div className="inline-form-actions"><button type="button" onClick={() => setMoving(false)}>إلغاء</button><button type="submit" disabled={busy}>نقل الحصة</button></div>
         </form>
