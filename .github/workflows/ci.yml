@@ -50,6 +50,8 @@ jobs:
               'tutoring_billing_plans',
               'tutoring_billing_cycles',
               'tutoring_billing_cycle_occurrences',
+              'appointments_clients',
+              'appointments_items',
               'finance_receipts',
               'finance_receipt_allocations',
               'finance_expenses',
@@ -84,6 +86,9 @@ jobs:
           db.execute(
               "INSERT INTO core_workspaces(id, name, template_key) VALUES ('ws-ci', 'CI', 'tutoring')"
           )
+          db.execute(
+              "INSERT INTO core_workspaces(id, name, template_key) VALUES ('ws-appointments', 'CI Appointments', 'appointments')"
+          )
 
           # Pending tutoring schedules may be missing day/time.
           db.execute(
@@ -102,7 +107,7 @@ jobs:
           else:
               raise SystemExit('Confirmed tutoring schedule invariant is not enforced')
 
-          # Workspace foreign keys must reject orphan module data.
+          # Workspace foreign keys must reject orphan tutoring module data.
           try:
               db.execute(
                   "INSERT INTO tutoring_students(id, workspace_id, name) "
@@ -111,7 +116,36 @@ jobs:
           except sqlite3.IntegrityError:
               pass
           else:
-              raise SystemExit('Workspace isolation foreign key is not enforced')
+              raise SystemExit('Tutoring workspace isolation foreign key is not enforced')
+
+          # Appointments have their own tables and must preserve workspace/client isolation.
+          db.execute(
+              "INSERT INTO appointments_clients(id, workspace_id, name) "
+              "VALUES ('client-ci', 'ws-appointments', 'Client')"
+          )
+          db.execute(
+              "INSERT INTO appointments_items(id, workspace_id, client_id, title, appointment_date) "
+              "VALUES ('appointment-ci', 'ws-appointments', 'client-ci', 'Service', '2026-09-17')"
+          )
+          try:
+              db.execute(
+                  "INSERT INTO appointments_items(id, workspace_id, client_id, title, appointment_date) "
+                  "VALUES ('appointment-cross-workspace', 'ws-ci', 'client-ci', 'Broken', '2026-09-17')"
+              )
+          except sqlite3.IntegrityError:
+              pass
+          else:
+              raise SystemExit('Appointment client workspace isolation is not enforced')
+
+          try:
+              db.execute(
+                  "INSERT INTO appointments_clients(id, workspace_id, name) "
+                  "VALUES ('client-orphan', 'missing-workspace', 'orphan')"
+              )
+          except sqlite3.IntegrityError:
+              pass
+          else:
+              raise SystemExit('Appointments workspace isolation foreign key is not enforced')
 
           print('Modular D1 schema validated')
           PY
