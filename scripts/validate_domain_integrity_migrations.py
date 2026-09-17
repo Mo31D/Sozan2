@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import sqlite3
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -11,6 +12,55 @@ STUDENT_ID = "074a0fb8-e41b-5805-9a01-8c1a9c2fe1e9"
 
 def apply(db: sqlite3.Connection, name: str) -> None:
     db.executescript((MIGRATIONS / name).read_text(encoding="utf-8"))
+
+
+def validate_d1_migration_source_compatibility() -> None:
+    """Guard source patterns known to break D1 remote migration splitting.
+
+    SQLite accepts more trigger syntax than D1's remote migration statement
+    splitter reliably recognizes. Keep migrations portable by enforcing LF,
+    uppercase trigger BEGIN, and trigger bodies without CASE ... END; blocks.
+    """
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        raw = path.read_bytes()
+        if b"\r\n" in raw:
+            raise SystemExit(f"D1 migration must use LF line endings: {path.name}")
+
+        in_trigger = False
+        saw_begin = False
+        for line_number, line in enumerate(raw.decode("utf-8").splitlines(), start=1):
+            stripped = line.strip()
+            if re.search(r"\bCREATE\s+TRIGGER\b", stripped, re.IGNORECASE):
+                if in_trigger:
+                    raise SystemExit(f"Nested/unclosed trigger near {path.name}:{line_number}")
+                in_trigger = True
+                saw_begin = False
+                continue
+
+            if not in_trigger:
+                continue
+
+            if stripped.lower() == "begin":
+                if stripped != "BEGIN":
+                    raise SystemExit(
+                        f"D1 trigger BEGIN must be uppercase: {path.name}:{line_number}"
+                    )
+                saw_begin = True
+                continue
+
+            if re.search(r"\bCASE\b", stripped, re.IGNORECASE):
+                raise SystemExit(
+                    f"Avoid CASE ... END inside D1 migration triggers: {path.name}:{line_number}"
+                )
+
+            if stripped.upper() == "END;":
+                if not saw_begin:
+                    raise SystemExit(f"Trigger missing BEGIN: {path.name}:{line_number}")
+                in_trigger = False
+                saw_begin = False
+
+        if in_trigger:
+            raise SystemExit(f"Unclosed trigger in D1 migration: {path.name}")
 
 
 def make_pre_repair_database() -> sqlite3.Connection:
@@ -118,6 +168,7 @@ def validate_finance_guard(db: sqlite3.Connection) -> None:
 
 
 def main() -> None:
+    validate_d1_migration_source_compatibility()
     repaired = validate_untouched_synthetic_repair()
     validate_user_owned_billing_survives()
     validate_finance_guard(repaired)
