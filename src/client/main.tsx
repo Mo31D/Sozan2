@@ -8,6 +8,7 @@ import './simple/v2/attendance.css';
 import './simple/v2/schedule.css';
 import './simple/v2/management.css';
 import './simple/v2/money.css';
+import './simple/v2/student-hub.css';
 import './appointments/appointments.css';
 import './control-center.css';
 import './mobile-compact.css';
