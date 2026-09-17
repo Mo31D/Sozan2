@@ -7,6 +7,7 @@ import './simple-v2.css';
 import './simple/v2/attendance.css';
 import './simple/v2/schedule.css';
 import './simple/v2/management.css';
+import './appointments/appointments.css';
 import './control-center.css';
 
 const root = document.getElementById('root');
