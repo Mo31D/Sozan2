@@ -10,6 +10,10 @@ import {
   WEEKDAYS,
 } from '../../utils';
 
+function normalizedLabel(value: string): string {
+  return value.trim().replace(/\s+/gu, ' ').toLocaleLowerCase('ar');
+}
+
 export function EditScheduleView({
   data,
   busy,
@@ -112,12 +116,19 @@ export function EditScheduleView({
           const linkedStudents = session.studentIds
             .map((id) => data.students.find((student) => student.id === id))
             .filter((student): student is NonNullable<typeof student> => Boolean(student));
+          const titleStudent = linkedStudents.length === 1
+            && normalizedLabel(linkedStudents[0].name) === normalizedLabel(session.title)
+            ? linkedStudents[0]
+            : null;
+          const footerStudents = titleStudent ? [] : linkedStudents;
           return (
             <article className="edit-session-card" key={session.id}>
               <div className="edit-session-summary">
                 <span className={`session-color type-${session.sessionType}`} />
                 <div className="edit-session-copy">
-                  <strong>{session.title}</strong>
+                  <strong>{titleStudent
+                    ? <button className="edit-session-student-title" type="button" onClick={() => onOpenStudent(titleStudent.id)}>{session.title}</button>
+                    : session.title}</strong>
                   <small>{session.scheduleStatus === 'pending'
                     ? `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · الوقت غير محدد`
                     : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${formatClockTime(session.startTime)}`}</small>
@@ -125,9 +136,9 @@ export function EditScheduleView({
                 </div>
               </div>
               <div className="edit-session-footer">
-                <div className="student-context-links edit-list-student-links" aria-label="ملفات الطلاب">
-                  {linkedStudents.map((student) => <button type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>{student.name}</button>)}
-                </div>
+                {footerStudents.length > 0
+                  ? <div className="student-context-links edit-list-student-links" aria-label="ملفات الطلاب">{footerStudents.map((student) => <button type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>{student.name}</button>)}</div>
+                  : <span className="edit-session-footer-spacer" />}
                 <button className="edit-session-action" type="button" onClick={() => onEditing(session.id)}>تعديل</button>
               </div>
             </article>
