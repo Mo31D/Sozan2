@@ -6,6 +6,7 @@ import {
 } from '../src/modules/reports/appointments';
 import { reportRangeForPreset } from '../src/modules/reports/insights';
 import {
+  canChangeAppointmentClient,
   canCompleteAppointment,
   validateAppointmentCollectionClient,
   validateAppointmentDate,
@@ -143,5 +144,12 @@ describe('appointments domain and reports', () => {
     expect(() => validateAppointmentCollectionClient('c1', 'c1')).not.toThrow();
     expect(() => validateAppointmentCollectionClient('c1', 'c2')).toThrow('APPOINTMENT_CLIENT_MISMATCH');
     expect(() => validateAppointmentCollectionClient(null, 'c1')).toThrow('APPOINTMENT_CLIENT_MISMATCH');
+  });
+
+  it('locks client reassignment only after an appointment-linked collection exists', () => {
+    expect(canChangeAppointmentClient('c1', 'c2', false)).toBe(true);
+    expect(canChangeAppointmentClient('c1', 'c1', true)).toBe(true);
+    expect(canChangeAppointmentClient('c1', 'c2', true)).toBe(false);
+    expect(canChangeAppointmentClient('c1', null, true)).toBe(false);
   });
 });
