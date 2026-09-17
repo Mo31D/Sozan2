@@ -1,5 +1,10 @@
 import type { AppointmentClient, AppointmentItem, AppointmentStatus } from '../../modules/appointments/domain';
-import { validateAppointmentDate, validateAppointmentTime } from '../../modules/appointments/domain';
+import {
+  canCompleteAppointment,
+  validateAppointmentCollectionClient,
+  validateAppointmentDate,
+  validateAppointmentTime,
+} from '../../modules/appointments/domain';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import type { LocalExpense, LocalOtherIncome, LocalReceipt } from '../finance/types';
@@ -116,7 +121,7 @@ export async function updateAppointment(workspaceId: string, appointmentId: stri
 
 export async function setAppointmentStatus(workspaceId: string, appointmentId: string, status: AppointmentStatus): Promise<void> {
   const current = await getAppointment(workspaceId, appointmentId);
-  if (status === 'completed' && current.appointmentDate > localToday()) {
+  if (status === 'completed' && !canCompleteAppointment(current.appointmentDate, localToday())) {
     throw new Error('FUTURE_APPOINTMENT_COMPLETION_NOT_ALLOWED');
   }
   const next = { ...current, status, completedAt: status === 'completed' ? (current.completedAt ?? now()) : null, updatedAt: now() };
@@ -131,7 +136,7 @@ export async function collectAppointmentPayment(input: {
   await requireClient(input.workspaceId, input.clientId);
   if (input.appointmentId) {
     const appointment = await getAppointment(input.workspaceId, input.appointmentId);
-    if (appointment.clientId !== input.clientId) throw new Error('APPOINTMENT_CLIENT_MISMATCH');
+    validateAppointmentCollectionClient(appointment.clientId, input.clientId);
   }
   const receipt: LocalReceipt = {
     id: crypto.randomUUID(), workspaceId: input.workspaceId, payerRefType: 'appointments.client', payerRefId: input.clientId,
