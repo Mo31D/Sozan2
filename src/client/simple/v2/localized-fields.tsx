@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { minutesToTime, timeToMinutes, todayIso } from './utils';
+import { minutesToTime, timeToMinutes, todayIso } from '../../shared/format';
 
 const MONTHS = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
