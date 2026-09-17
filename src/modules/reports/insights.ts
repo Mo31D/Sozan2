@@ -114,9 +114,10 @@ export function reportRangeForPreset(
   if (preset === 'last28') {
     return { preset, fromDate: addDays(safeToday, -27), toDate: safeToday, label: 'آخر 28 يومًا' };
   }
-  const fromDate = assertIsoDate(custom?.fromDate ?? safeToday);
-  const toDate = assertIsoDate(custom?.toDate ?? safeToday);
-  if (fromDate > toDate) throw new Error('REPORT_RANGE_INVALID');
+  const requestedFrom = assertIsoDate(custom?.fromDate ?? safeToday);
+  const requestedTo = assertIsoDate(custom?.toDate ?? safeToday);
+  const fromDate = requestedFrom <= requestedTo ? requestedFrom : requestedTo;
+  const toDate = requestedFrom <= requestedTo ? requestedTo : requestedFrom;
   return { preset, fromDate, toDate, label: 'فترة مخصصة' };
 }
 
