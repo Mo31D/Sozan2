@@ -13,6 +13,7 @@ type StudentRow = {
   guardian_phone: string | null;
   level: string | null;
   notes: string | null;
+  family_id: string | null;
   active: number;
 };
 
@@ -26,6 +27,7 @@ function mapStudent(row: StudentRow): Student {
     guardianPhone: row.guardian_phone,
     level: row.level,
     notes: row.notes,
+    familyId: row.family_id,
     active: row.active === 1,
   };
 }
@@ -36,10 +38,24 @@ export class D1StudentRepository implements StudentRepository {
   async listActive(workspaceId: string): Promise<Student[]> {
     const result = await this.db
       .prepare(
-        `SELECT id, workspace_id, name, age, guardian_name, guardian_phone, level, notes, active
+        `SELECT id, workspace_id, name, age, guardian_name, guardian_phone, level, notes, family_id, active
          FROM tutoring_students
          WHERE workspace_id = ?1 AND active = 1 AND deleted_at IS NULL
          ORDER BY name COLLATE NOCASE, id`,
+      )
+      .bind(workspaceId)
+      .all<StudentRow>();
+
+    return (result.results ?? []).map(mapStudent);
+  }
+
+  async listAll(workspaceId: string): Promise<Student[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT id, workspace_id, name, age, guardian_name, guardian_phone, level, notes, family_id, active
+         FROM tutoring_students
+         WHERE workspace_id = ?1 AND deleted_at IS NULL
+         ORDER BY active DESC, name COLLATE NOCASE, id`,
       )
       .bind(workspaceId)
       .all<StudentRow>();
@@ -68,7 +84,7 @@ export class D1StudentRepository implements StudentRepository {
 
     const row = await this.db
       .prepare(
-        `SELECT id, workspace_id, name, age, guardian_name, guardian_phone, level, notes, active
+        `SELECT id, workspace_id, name, age, guardian_name, guardian_phone, level, notes, family_id, active
          FROM tutoring_students
          WHERE workspace_id = ?1 AND id = ?2`,
       )
