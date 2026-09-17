@@ -1,7 +1,10 @@
 import type { SimpleWorkspaceData } from '../../../data';
+import { ArabicTimeField } from '../../localized-fields';
 import {
   addDays,
   formatArabicDate,
+  formatClockTime,
+  formatDurationArabic,
   minutesToTime,
   scheduleEntriesForDate,
   timeToMinutes,
@@ -31,8 +34,8 @@ export function FreeTimeView({
   return (
     <div className="free-planner">
       <div className="free-controls">
-        <label>من<input type="time" value={start} onChange={(event) => onStart(event.target.value)} /></label>
-        <label>إلى<input type="time" value={end} onChange={(event) => onEnd(event.target.value)} /></label>
+        <label>من<ArabicTimeField value={start} onValueChange={onStart} ariaLabel="بداية الوقت المتاح" /></label>
+        <label>إلى<ArabicTimeField value={end} onValueChange={onEnd} ariaLabel="نهاية الوقت المتاح" /></label>
       </div>
       <p>الفراغات تراعي مدة الحصة ووقت الانتقال المسجل. الموعد بدون ساعة يظهر كتنبيه لأنه لا يمكن وضعه على خط زمني.</p>
       {!validWindow && <div className="simple-toast bad">اختاري وقت بداية ونهاية صحيح.</div>}
@@ -75,8 +78,13 @@ export function FreeTimeView({
               {usable.length ? usable.map((slot) => {
                 const from = minutesToTime(slot.start);
                 const to = minutesToTime(slot.end);
-                return <button type="button" key={`${date}-${from}`} onClick={() => onUseSlot(date, from)}><strong>{from}–{to}</strong><small>{slot.end - slot.start} دقيقة · اضغطي لإضافة موعد</small></button>;
-              }) : <span className="schedule-empty-row">مفيش فراغ 30 دقيقة أو أكثر</span>}
+                return (
+                  <button type="button" key={`${date}-${from}`} onClick={() => onUseSlot(date, from)}>
+                    <strong>{formatClockTime(from)} – {formatClockTime(to)}</strong>
+                    <small>{formatDurationArabic(slot.end - slot.start)} · اضغطي لإضافة موعد</small>
+                  </button>
+                );
+              }) : <span className="schedule-empty-row">مفيش فراغ نصف ساعة أو أكثر</span>}
             </div>
             {unknown.length > 0 && <div className="free-warning">{unknown.length} حصة وقتها غير محدد؛ راجعيها قبل الاعتماد على الفراغات.</div>}
           </section>
