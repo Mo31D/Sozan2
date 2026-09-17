@@ -31,6 +31,7 @@ export class IndexedDbStudentRepository implements StudentRepository {
       guardianPhone: input.guardianPhone,
       level: input.level,
       notes: input.notes,
+      familyId: null,
       active: true,
     };
     const activity = makeActivityEvent({
