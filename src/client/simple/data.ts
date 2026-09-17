@@ -1,5 +1,6 @@
 import type { Student } from '../../modules/tutoring/domain/student';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
+import type { LocalActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES } from '../adapters/indexeddb/database';
 import type {
   LocalAllocation,
@@ -38,6 +39,7 @@ export type LocalOccurrence = {
 
 export type SimpleWorkspaceData = {
   students: Student[];
+  archivedStudents: Student[];
   sessions: RecurringSession[];
   occurrences: LocalOccurrence[];
   billingPlans: LocalBillingPlan[];
@@ -48,6 +50,7 @@ export type SimpleWorkspaceData = {
   otherIncome: LocalOtherIncome[];
   cashChecks: LocalCashCheck[];
   workspaceSettings: LocalWorkspaceSetting[];
+  activity: LocalActivityEvent[];
   openingBalancePence: number;
 };
 
@@ -55,6 +58,7 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
   const db = await openLocalDatabase();
   const stores = [
     STORES.coreWorkspaceSettings,
+    STORES.coreActivityEvents,
     STORES.tutoringStudents,
     STORES.tutoringSessions,
     STORES.tutoringOccurrences,
@@ -67,8 +71,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     STORES.financeCashChecks,
   ];
   const transaction = db.transaction(stores, 'readonly');
-  const [settings, students, sessions, occurrences, billingPlans, billingCycles, receipts, allocations, expenses, otherIncome, cashChecks] = await Promise.all([
+  const [settings, activity, students, sessions, occurrences, billingPlans, billingCycles, receipts, allocations, expenses, otherIncome, cashChecks] = await Promise.all([
     requestResult<LocalWorkspaceSetting[]>(transaction.objectStore(STORES.coreWorkspaceSettings).getAll()),
+    requestResult<LocalActivityEvent[]>(transaction.objectStore(STORES.coreActivityEvents).getAll()),
     requestResult<Student[]>(transaction.objectStore(STORES.tutoringStudents).getAll()),
     requestResult<RecurringSession[]>(transaction.objectStore(STORES.tutoringSessions).getAll()),
     requestResult<LocalOccurrence[]>(transaction.objectStore(STORES.tutoringOccurrences).getAll()),
@@ -83,11 +88,18 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
 
   const mine = <T extends { workspaceId: string }>(rows: T[]) => rows.filter((row) => row.workspaceId === workspaceId);
   const workspaceSettings = mine(settings);
+  const allStudents = mine(students).map((row) => ({ ...row, familyId: row.familyId ?? null }));
+  const activeStudents = allStudents.filter((row) => row.active);
+  const activeIds = new Set(activeStudents.map((row) => row.id));
+  const activeSessions = mine(sessions).filter((row) => row.active && (
+    row.studentIds.length === 0 || row.studentIds.some((studentId) => activeIds.has(studentId))
+  ));
   const openingRaw = workspaceSettings.find((row) => row.key === 'finance.opening_balance_pence')?.value ?? '0';
   const openingBalancePence = Number.isFinite(Number(openingRaw)) ? Math.round(Number(openingRaw)) : 0;
   return {
-    students: mine(students).filter((row) => row.active),
-    sessions: mine(sessions).filter((row) => row.active),
+    students: activeStudents,
+    archivedStudents: allStudents.filter((row) => !row.active),
+    sessions: activeSessions,
     occurrences: mine(occurrences),
     billingPlans: mine(billingPlans),
     billingCycles: mine(billingCycles),
@@ -97,6 +109,7 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     otherIncome: mine(otherIncome).filter((row) => !row.deletedAt),
     cashChecks: mine(cashChecks).filter((row) => !row.deletedAt),
     workspaceSettings,
+    activity: mine(activity),
     openingBalancePence,
   };
 }
@@ -113,5 +126,5 @@ export function planFor(data: SimpleWorkspaceData, studentId: string): LocalBill
 
 export function studentForSession(data: SimpleWorkspaceData, session: RecurringSession): Student | null {
   const id = session.studentIds[0];
-  return id ? data.students.find((student) => student.id === id) ?? null : null;
+  return id ? [...data.students, ...data.archivedStudents].find((student) => student.id === id) ?? null : null;
 }
