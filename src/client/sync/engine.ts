@@ -30,19 +30,29 @@ type PushResponse = {
 };
 type ModuleSnapshot = { moduleKey: string; data: unknown };
 type SnapshotResponse = { workspaceId: string; generatedAt: string; modules: ModuleSnapshot[] };
-type CoreSnapshot = { activityEvents: Array<Record<string, unknown> & { id: string; workspaceId: string }>; workspaceSettings?: Array<Record<string, unknown> & { workspaceId: string; key: string; value: string }> };
-type SyncRow = Record<string, unknown> & { id: string; workspaceId: string };
-type TutoringSnapshot = {
-  students: SyncRow[];
-  studentBaselines?: SyncRow[];
-  sessions: SyncRow[];
-  occurrences: SyncRow[];
-  billingPlans: SyncRow[];
-  billingCycles: SyncRow[];
-  billingCycleOccurrences?: SyncRow[];
+type WorkspaceRow = Record<string, unknown> & { workspaceId: string };
+type EntitySyncRow = WorkspaceRow & { id: string };
+type CoreSnapshot = {
+  activityEvents: EntitySyncRow[];
+  workspaceSettings?: Array<WorkspaceRow & { key: string; value: string }>;
 };
-type AppointmentsSnapshot = { clients: SyncRow[]; appointments: SyncRow[] };
-type FinanceSnapshot = { receipts: SyncRow[]; allocations: SyncRow[]; expenses: SyncRow[]; otherIncome: SyncRow[]; cashChecks?: SyncRow[] };
+type TutoringSnapshot = {
+  students: EntitySyncRow[];
+  studentBaselines?: EntitySyncRow[];
+  sessions: EntitySyncRow[];
+  occurrences: EntitySyncRow[];
+  billingPlans: EntitySyncRow[];
+  billingCycles: EntitySyncRow[];
+  billingCycleOccurrences?: EntitySyncRow[];
+};
+type AppointmentsSnapshot = { clients: EntitySyncRow[]; appointments: EntitySyncRow[] };
+type FinanceSnapshot = {
+  receipts: EntitySyncRow[];
+  allocations: EntitySyncRow[];
+  expenses: EntitySyncRow[];
+  otherIncome: EntitySyncRow[];
+  cashChecks?: EntitySyncRow[];
+};
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -77,10 +87,10 @@ async function seedInitialLocalState(workspaceId: string): Promise<void> {
     STORES.syncOutbox,
   ], 'readonly');
   const [students, sessions, clients, appointments, existing] = await Promise.all([
-    requestResult<SyncRow[]>(read.objectStore(STORES.tutoringStudents).getAll()),
-    requestResult<SyncRow[]>(read.objectStore(STORES.tutoringSessions).getAll()),
-    requestResult<SyncRow[]>(read.objectStore(STORES.appointmentsClients).getAll()),
-    requestResult<SyncRow[]>(read.objectStore(STORES.appointmentsItems).getAll()),
+    requestResult<EntitySyncRow[]>(read.objectStore(STORES.tutoringStudents).getAll()),
+    requestResult<EntitySyncRow[]>(read.objectStore(STORES.tutoringSessions).getAll()),
+    requestResult<EntitySyncRow[]>(read.objectStore(STORES.appointmentsClients).getAll()),
+    requestResult<EntitySyncRow[]>(read.objectStore(STORES.appointmentsItems).getAll()),
     requestResult<SyncOutboxRecord[]>(read.objectStore(STORES.syncOutbox).getAll()),
   ]);
   const queued = new Set(existing.map((row) => `${row.operation}:${row.entityId}`));
@@ -111,9 +121,9 @@ async function seedInitialLocalState(workspaceId: string): Promise<void> {
 async function replaceWorkspaceRows(
   store: IDBObjectStore,
   workspaceId: string,
-  rows: SyncRow[],
+  rows: WorkspaceRow[],
 ): Promise<void> {
-  const existing = await requestResult<SyncRow[]>(store.getAll());
+  const existing = await requestResult<WorkspaceRow[]>(store.getAll());
   for (const row of existing) {
     if (row.workspaceId !== workspaceId) continue;
     const key = store.keyPath;
