@@ -113,24 +113,24 @@ export function EditScheduleView({
             .map((id) => data.students.find((student) => student.id === id))
             .filter((student): student is NonNullable<typeof student> => Boolean(student));
           return (
-            <div className="edit-session-linked" key={session.id}>
-              <button type="button" onClick={() => onEditing(session.id)}>
+            <article className="edit-session-card" key={session.id}>
+              <div className="edit-session-summary">
                 <span className={`session-color type-${session.sessionType}`} />
-                <span>
+                <div className="edit-session-copy">
                   <strong>{session.title}</strong>
                   <small>{session.scheduleStatus === 'pending'
                     ? `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · الوقت غير محدد`
                     : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${formatClockTime(session.startTime)}`}</small>
                   <small>{sessionTypeLabel(session.sessionType)} · {formatDurationArabic(session.durationMinutes)}{session.travelMinutes ? ` + ${formatDurationArabic(session.travelMinutes)} انتقال` : ''}</small>
-                </span>
-                <b>تعديل</b>
-              </button>
-              {linkedStudents.length > 0 && (
-                <div className="student-context-links edit-list-student-links">
+                </div>
+              </div>
+              <div className="edit-session-footer">
+                <div className="student-context-links edit-list-student-links" aria-label="ملفات الطلاب">
                   {linkedStudents.map((student) => <button type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>{student.name}</button>)}
                 </div>
-              )}
-            </div>
+                <button className="edit-session-action" type="button" onClick={() => onEditing(session.id)}>تعديل</button>
+              </div>
+            </article>
           );
         })}
         {!selectedSessions.length && <div className="friendly-empty">مفيش مواعيد في الجزء ده.</div>}
