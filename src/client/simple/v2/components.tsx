@@ -1,5 +1,5 @@
 import { type FormEvent, type ReactNode } from 'react';
-import { sessionTypeLabel } from './utils';
+import { formatClockTime, sessionTypeLabel } from './utils';
 import type { ScheduledEntry } from './types';
 
 export function QuickForm({
@@ -55,7 +55,7 @@ export function ScheduleRow({ entry, onClick }: { entry: ScheduledEntry; onClick
     <button type="button" className={`schedule-row schedule-row-button status-${entry.status}`} onClick={onClick}>
       <span className={`session-color type-${entry.session.sessionType}`} />
       <span><strong>{entry.session.title}</strong><small>{sessionTypeLabel(entry.session.sessionType)}{state}</small></span>
-      <time>{entry.startTime ?? 'غير محدد'}</time>
+      <time>{entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}</time>
     </button>
   );
 }
