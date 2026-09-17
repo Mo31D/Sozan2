@@ -279,6 +279,8 @@ function appointmentErrorText(cause: unknown): string {
     APPOINTMENT_DURATION_INVALID: 'مدة الموعد غير صحيحة.',
     APPOINTMENT_TRAVEL_INVALID: 'وقت الانتقال غير صحيح.',
     APPOINTMENT_NOT_FOUND: 'الموعد لم يعد موجودًا.',
+    APPOINTMENT_CLIENT_MISMATCH: 'التحصيل المرتبط بالموعد لازم يكون لنفس العميل المسجل على الموعد.',
+    FUTURE_APPOINTMENT_COMPLETION_NOT_ALLOWED: 'لا يمكن تسجيل موعد مستقبلي كمكتمل قبل يومه.',
     EXPENSE_AMOUNT_INVALID: 'اكتب مبلغ المصروف بشكل صحيح.',
     EXPENSE_CATEGORY_REQUIRED: 'اكتب تصنيف المصروف.',
     INCOME_CATEGORY_REQUIRED: 'اكتب مصدر الدخل أو تصنيفه.',
