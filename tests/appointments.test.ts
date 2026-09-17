@@ -5,7 +5,12 @@ import {
   buildAppointmentReport,
 } from '../src/modules/reports/appointments';
 import { reportRangeForPreset } from '../src/modules/reports/insights';
-import { validateAppointmentDate, validateAppointmentTime } from '../src/modules/appointments/domain';
+import {
+  canCompleteAppointment,
+  validateAppointmentCollectionClient,
+  validateAppointmentDate,
+  validateAppointmentTime,
+} from '../src/modules/appointments/domain';
 
 const client = (id: string, name: string) => ({
   id,
@@ -119,11 +124,24 @@ describe('appointments domain and reports', () => {
     expect(report.duePence).toBe(4_000);
   });
 
-  it('validates appointment dates and clock times at the domain boundary', () => {
+  it('validates real calendar dates and clock times at the domain boundary', () => {
     expect(validateAppointmentDate('2026-09-17')).toBe('2026-09-17');
     expect(validateAppointmentTime('23:59')).toBe('23:59');
     expect(validateAppointmentTime(null)).toBeNull();
     expect(() => validateAppointmentDate('17/09/2026')).toThrow('APPOINTMENT_DATE_REQUIRED');
+    expect(() => validateAppointmentDate('2026-02-31')).toThrow('APPOINTMENT_DATE_REQUIRED');
     expect(() => validateAppointmentTime('25:00')).toThrow('APPOINTMENT_TIME_INVALID');
+  });
+
+  it('prevents completing future appointments in the domain guard', () => {
+    expect(canCompleteAppointment('2026-09-17', '2026-09-17')).toBe(true);
+    expect(canCompleteAppointment('2026-09-16', '2026-09-17')).toBe(true);
+    expect(canCompleteAppointment('2026-09-18', '2026-09-17')).toBe(false);
+  });
+
+  it('requires linked appointment collections to stay with the appointment client', () => {
+    expect(() => validateAppointmentCollectionClient('c1', 'c1')).not.toThrow();
+    expect(() => validateAppointmentCollectionClient('c1', 'c2')).toThrow('APPOINTMENT_CLIENT_MISMATCH');
+    expect(() => validateAppointmentCollectionClient(null, 'c1')).toThrow('APPOINTMENT_CLIENT_MISMATCH');
   });
 });
