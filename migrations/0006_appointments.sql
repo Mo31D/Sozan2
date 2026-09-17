@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS appointments_items (
   deleted_at TEXT,
   UNIQUE(workspace_id, id),
   FOREIGN KEY (workspace_id) REFERENCES core_workspaces(id) ON DELETE CASCADE,
-  FOREIGN KEY (workspace_id, client_id) REFERENCES appointments_clients(workspace_id, id) ON DELETE SET NULL
+  FOREIGN KEY (workspace_id, client_id) REFERENCES appointments_clients(workspace_id, id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_appointments_clients_active
