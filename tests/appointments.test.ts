@@ -85,7 +85,7 @@ describe('appointments domain and reports', () => {
     expect(appointmentCurrentDuePence(data)).toBe(7_000);
   });
 
-  it('keeps completed priced work without a client visible as unassigned due', () => {
+  it('keeps completed priced work without a client visible as current unassigned due even outside the report range', () => {
     const data = {
       clients: [],
       appointments: [appointment('a1', null, '2026-09-12', 8_500)],
@@ -95,7 +95,7 @@ describe('appointments domain and reports', () => {
     };
 
     const report = buildAppointmentReport(data, reportRangeForPreset('week', '2026-09-17'));
-    expect(report.earnedPence).toBe(8_500);
+    expect(report.earnedPence).toBe(0);
     expect(report.unassignedDuePence).toBe(8_500);
     expect(report.duePence).toBe(8_500);
   });
