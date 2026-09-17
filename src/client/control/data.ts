@@ -59,7 +59,8 @@ export async function loadControlCenterData(workspaceId: string): Promise<Contro
 }
 
 export function expectedBalance(data: ControlCenterData): number {
-  return sum(data.receipts.filter((row) => !row.deletedAt).map((row) => row.amountPence))
+  return data.simple.openingBalancePence
+    + sum(data.receipts.filter((row) => !row.deletedAt).map((row) => row.amountPence))
     + sum(data.income.filter((row) => !row.deletedAt).map((row) => row.amountPence))
     - sum(data.expenses.filter((row) => !row.deletedAt).map((row) => row.amountPence));
 }

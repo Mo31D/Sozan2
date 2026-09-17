@@ -2,6 +2,8 @@ import type { FormEvent } from 'react';
 import { buildStudentFinancialSummary } from '../../../modules/reports/student-finance';
 import type { Student } from '../../../modules/tutoring/domain/student';
 import type { RecurringSession } from '../../../modules/tutoring/domain/session';
+import { ArabicTimeField } from '../../simple/v2/localized-fields';
+import { formatClockTime } from '../../simple/v2/utils';
 import { archiveLocalSession, updateLocalSessionDetails } from '../../tutoring/session-corrections';
 import { updateLocalStudent } from '../../tutoring/student-corrections';
 import type { ControlCenterData } from '../data';
@@ -95,7 +97,7 @@ export function StudentsView({
         {sessions.map((row) => (
           <div key={row.id}>
             <strong>{row.title}</strong>
-            <small>{row.scheduleStatus === 'pending' ? 'موعد غير محدد' : `${weekdayLabel(row.weekday)} · ${row.startTime ?? 'غير محدد'}`}</small>
+            <small>{row.scheduleStatus === 'pending' ? 'موعد غير محدد' : `${weekdayLabel(row.weekday)} · ${formatClockTime(row.startTime)}`}</small>
           </div>
         ))}
       </div>
@@ -116,7 +118,7 @@ export function SessionsView({ data, editId, setEditId, busy, act, workspaceId }
         {activeSessions.map((row) => (
           <button className="student-control-row" type="button" key={row.id} onClick={() => setEditId(row.id)}>
             <span className="student-avatar-control">{row.title.trim().charAt(0)}</span>
-            <span><strong>{row.title}</strong><small>{row.scheduleStatus === 'pending' ? 'موعد غير محدد' : `${weekdayLabel(row.weekday)} · ${row.startTime ?? 'غير محدد'}`}</small></span>
+            <span><strong>{row.title}</strong><small>{row.scheduleStatus === 'pending' ? 'موعد غير محدد' : `${weekdayLabel(row.weekday)} · ${formatClockTime(row.startTime)}`}</small></span>
             <b>تعديل</b>
           </button>
         ))}
@@ -144,7 +146,7 @@ export function SessionsView({ data, editId, setEditId, busy, act, workspaceId }
         <label>النوع<select name="sessionType" defaultValue={session.sessionType}><option value="private_student_home">خاص عند الطالب</option><option value="private_tutor_home">خاص عند المدرس</option><option value="online">أونلاين</option><option value="center_group">السنتر</option><option value="own_group">مجموعة خاصة</option></select></label>
         <label>حالة الموعد<select name="scheduleStatus" defaultValue={session.scheduleStatus}><option value="confirmed">محدد</option><option value="pending">لسه غير محدد</option></select></label>
         <label>اليوم<select name="weekday" defaultValue={session.weekday ?? ''}><option value="">غير محدد</option>{['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'].map((day, index) => <option key={day} value={index}>{day}</option>)}</select></label>
-        <label>الوقت<input name="startTime" type="time" defaultValue={session.startTime ?? ''} /></label>
+        <label>الوقت<ArabicTimeField name="startTime" defaultValue={session.startTime ?? '16:00'} ariaLabel="وقت الحصة" /></label>
         <label>المدة بالدقائق<input name="duration" type="number" min="15" max="360" defaultValue={session.durationMinutes} /></label>
         <label>وقت الانتقال<input name="travel" type="number" min="0" max="360" defaultValue={session.travelMinutes} /></label>
         <label className="wide">المكان<input name="location" defaultValue={session.location ?? ''} /></label>

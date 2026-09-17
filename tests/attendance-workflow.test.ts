@@ -47,6 +47,7 @@ function dependencies(): AttendanceWorkflowDependencies {
     restore: vi.fn(async () => undefined) as AttendanceWorkflowDependencies['restore'],
     reopen: vi.fn(async () => undefined) as AttendanceWorkflowDependencies['reopen'],
     reschedule: vi.fn(async () => undefined) as AttendanceWorkflowDependencies['reschedule'],
+    today: () => '2026-09-17',
   };
 }
 
@@ -68,6 +69,22 @@ describe('attendance workflow', () => {
     expect(deps.collect).toHaveBeenCalledOnce();
     expect(vi.mocked(deps.complete).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(deps.collect).mock.invocationCallOrder[0]);
+  });
+
+  it('blocks completion and collection for a future lesson before any durable write', async () => {
+    const deps = dependencies();
+    const workflow = createAttendanceWorkflow(deps);
+
+    await expect(workflow(session.workspaceId, {
+      kind: 'complete-and-collect',
+      session,
+      displayedDate: '2026-09-18',
+      studentId: session.studentIds[0],
+      amountPence: 3000,
+    })).rejects.toThrow('FUTURE_ATTENDANCE_NOT_ALLOWED');
+
+    expect(deps.complete).not.toHaveBeenCalled();
+    expect(deps.collect).not.toHaveBeenCalled();
   });
 
   it('does not record money when completion itself fails', async () => {
@@ -107,14 +124,14 @@ describe('attendance workflow', () => {
     const deps = dependencies();
     const workflow = createAttendanceWorkflow(deps);
 
-    await workflow(session.workspaceId, { kind: 'cancel', session, displayedDate: '2026-09-16' });
+    await workflow(session.workspaceId, { kind: 'cancel', session, displayedDate: '2026-09-18' });
     await workflow(session.workspaceId, { kind: 'restore', session, displayedDate: '2026-09-16' });
     await workflow(session.workspaceId, { kind: 'reopen', occurrenceId: 'occurrence-1' });
     await workflow(session.workspaceId, {
       kind: 'reschedule',
       session,
-      displayedDate: '2026-09-16',
-      targetDate: '2026-09-18',
+      displayedDate: '2026-09-18',
+      targetDate: '2026-09-19',
       targetStart: '17:30',
     });
 

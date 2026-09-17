@@ -12,11 +12,14 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
       - run: npm install
+      - name: Audit dependencies
+        run: npm run audit
       - name: Validate modular D1 schema
         run: |
           python3 - <<'PY'
@@ -141,7 +144,7 @@ jobs:
               raise SystemExit('Production HTML has no hashed Vite asset references')
           missing_assets = [path for path in asset_paths if not (dist / path.lstrip('/')).is_file()]
           if missing_assets:
-              raise SystemExit(f'Production HTML references missing assets: {missing_assets}')
+              raise SystemExit(f'Missing production assets: {missing_assets}')
 
           service_worker = (dist / 'sw.js').read_text(encoding='utf-8')
           if "url.pathname.startsWith('/api/')" not in service_worker:

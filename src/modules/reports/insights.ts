@@ -35,7 +35,7 @@ type ReportExpense = {
   deletedAt?: string | null;
 };
 
-type ReportInput = {
+export type ReportInput = {
   sessions: Array<{
     id: string;
     scheduleStatus: 'confirmed' | 'pending';
@@ -63,6 +63,10 @@ type ReportInput = {
   allocations: Array<{ targetId: string; amountPence: number }>;
 };
 
+function localTodayIso(now = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 function addDays(iso: string, days: number): string {
   const date = new Date(`${iso}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
@@ -87,7 +91,7 @@ function expenseDuplicateCandidates(expenses: readonly ReportExpense[]): Expense
   });
 }
 
-function currentDue(data: ReportInput): number {
+export function currentDuePence(data: ReportInput): number {
   let due = data.billingCycles.filter((cycle) => cycle.status === 'due').reduce((total, cycle) => {
     const allocated = sum(data.allocations.filter((row) => row.targetId === cycle.id).map((row) => row.amountPence));
     return total + Math.max(0, cycle.pricePence - allocated);
@@ -114,7 +118,7 @@ function currentDue(data: ReportInput): number {
   return due;
 }
 
-export function buildWorkspaceReport(data: ReportInput, today = new Date().toISOString().slice(0, 10)): WorkspaceReport {
+export function buildWorkspaceReport(data: ReportInput, today = localTodayIso()): WorkspaceReport {
   const from = addDays(today, -27);
   const inRange = (value: string) => value.slice(0, 10) >= from && value.slice(0, 10) <= today;
   const occurrences = data.occurrences.filter((row) => inRange(row.rescheduledToDate ?? row.sessionDate));
@@ -132,7 +136,7 @@ export function buildWorkspaceReport(data: ReportInput, today = new Date().toISO
     teachingMinutes += Math.max(0, Number(session.durationMinutes || 0));
     travelMinutes += Math.max(0, Number(session.travelMinutes || 0));
   }
-  const duePence = currentDue(data);
+  const duePence = currentDuePence(data);
   const netCashPence = receivedPence + otherIncomePence - expensesPence;
   const productivePence = sum(completed.map((row) => row.earnedPence));
   const realMinutes = teachingMinutes + travelMinutes;

@@ -18,8 +18,8 @@ import { MeScreen } from './v2/screens/MeScreen';
 import { MoneyScreen } from './v2/screens/MoneyScreen';
 import { ScheduleScreen } from './v2/screens/ScheduleScreen';
 import { TodayScreen } from './v2/screens/TodayScreen';
-import type { MoneyMode, PageKey } from './v2/types';
-import { messageFor, todayIso, toPence } from './v2/utils';
+import type { MoneyMode, PageKey, ScheduleMode } from './v2/types';
+import { messageFor, startOfMonth, todayIso, toPence } from './v2/utils';
 
 const studentsService = new StudentsService(new IndexedDbStudentRepository(), crypto.randomUUID);
 const sessionsService = new SessionsService(new IndexedDbSessionRepository(), crypto.randomUUID);
@@ -36,6 +36,9 @@ export function TutorWorkspace({
   const workspaceId = snapshot.workspace.id;
   const [page, setPage] = useState<PageKey>('today');
   const [selectedDay, setSelectedDay] = useState(todayIso());
+  const [openedFromSchedule, setOpenedFromSchedule] = useState(false);
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('week');
+  const [scheduleMonthCursor, setScheduleMonthCursor] = useState(() => startOfMonth(new Date()));
   const [openPendingSchedule, setOpenPendingSchedule] = useState(false);
   const [data, setData] = useState<SimpleWorkspaceData | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
@@ -92,13 +95,19 @@ export function TutorWorkspace({
   };
 
   const openMoney = (mode: Exclude<MoneyMode, 'none'>) => {
+    setOpenedFromSchedule(false);
     setMoneyMode(mode);
     setPage('money');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const moveTo = (next: PageKey) => {
-    if (next === 'today') setSelectedDay(todayIso());
+    if (next === 'today') {
+      setSelectedDay(todayIso());
+      setOpenedFromSchedule(false);
+    } else if (next !== 'schedule') {
+      setOpenedFromSchedule(false);
+    }
     if (next === 'schedule') setOpenPendingSchedule(false);
     setPage(next);
     setNotice('');
@@ -108,7 +117,15 @@ export function TutorWorkspace({
 
   const openDay = (date: string) => {
     setSelectedDay(date);
+    setOpenedFromSchedule(true);
     setPage('today');
+    setNotice('');
+    setError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const backToSchedule = () => {
+    setPage('schedule');
     setNotice('');
     setError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -116,6 +133,8 @@ export function TutorWorkspace({
 
   const openPendingScheduleEdits = () => {
     setOpenPendingSchedule(true);
+    setScheduleMode('edit');
+    setOpenedFromSchedule(false);
     setPage('schedule');
     setNotice('');
     setError('');
@@ -139,9 +158,14 @@ export function TutorWorkspace({
             data={data}
             date={selectedDay}
             busy={busy}
+            openedFromSchedule={openedFromSchedule}
             onOpenMoney={openMoney}
             onAttendance={runAttendance}
-            onBackToToday={() => setSelectedDay(todayIso())}
+            onBackToToday={() => {
+              setSelectedDay(todayIso());
+              setOpenedFromSchedule(false);
+            }}
+            onBackToSchedule={backToSchedule}
           />
         )}
 
@@ -181,6 +205,10 @@ export function TutorWorkspace({
           <ScheduleScreen
             data={data}
             busy={busy}
+            mode={scheduleMode}
+            onMode={setScheduleMode}
+            monthCursor={scheduleMonthCursor}
+            onMonthCursor={setScheduleMonthCursor}
             openPendingOnMount={openPendingSchedule}
             onOpenDay={openDay}
             onAdd={async (form) => runAction(async () => {
@@ -211,7 +239,7 @@ export function TutorWorkspace({
               await sessionsService.updateSchedule(workspaceId, sessionId, {
                 scheduleStatus: status,
                 weekday: weekdayRaw === '' ? null : Number(weekdayRaw),
-                startTime: status === 'pending' ? null : timeRaw || null,
+                startTime: timeRaw || null,
               });
             }, 'تم تعديل الموعد.')}
           />
@@ -256,9 +284,9 @@ export function TutorWorkspace({
       </div>
 
       <nav className="simple-bottom-nav" aria-label="التنقل الرئيسي">
-        <NavButton active={page === 'today'} label="اليوم" icon="⌂" onClick={() => moveTo('today')} />
+        <NavButton active={page === 'today' && !openedFromSchedule} label="اليوم" icon="⌂" onClick={() => moveTo('today')} />
         <NavButton active={page === 'money'} label="فلوسي" icon="▣" onClick={() => moveTo('money')} />
-        <NavButton active={page === 'schedule'} label="جدولي" icon="▦" onClick={() => moveTo('schedule')} />
+        <NavButton active={page === 'schedule' || (page === 'today' && openedFromSchedule)} label="جدولي" icon="▦" onClick={() => moveTo('schedule')} />
         <NavButton active={page === 'me'} label="أنا" icon="○" onClick={() => moveTo('me')} />
       </nav>
     </main>

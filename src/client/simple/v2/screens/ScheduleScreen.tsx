@@ -3,7 +3,7 @@ import type { SimpleWorkspaceData } from '../../data';
 import { QuickForm, ScheduleTab, ScreenHeader } from '../components';
 import { ArabicTimeField } from '../localized-fields';
 import type { AddDraft, ScheduleMode } from '../types';
-import { startOfMonth, todayIso, weekdayForIso, WEEKDAYS } from '../utils';
+import { todayIso, weekdayForIso, WEEKDAYS } from '../utils';
 import { EditScheduleView } from './schedule/EditScheduleView';
 import { FreeTimeView } from './schedule/FreeTimeView';
 import { MonthView } from './schedule/MonthView';
@@ -12,6 +12,10 @@ import { WeekView } from './schedule/WeekView';
 export function ScheduleScreen({
   data,
   busy,
+  mode,
+  onMode,
+  monthCursor,
+  onMonthCursor,
   openPendingOnMount = false,
   onAdd,
   onUpdate,
@@ -19,16 +23,18 @@ export function ScheduleScreen({
 }: {
   data: SimpleWorkspaceData;
   busy: boolean;
+  mode: ScheduleMode;
+  onMode: (mode: ScheduleMode) => void;
+  monthCursor: Date;
+  onMonthCursor: (date: Date) => void;
   openPendingOnMount?: boolean;
   onAdd: (form: FormData) => Promise<boolean>;
   onUpdate: (sessionId: string, form: FormData) => Promise<boolean>;
   onOpenDay: (date: string) => void;
 }) {
-  const [mode, setMode] = useState<ScheduleMode>(openPendingOnMount ? 'edit' : 'week');
   const [showAdd, setShowAdd] = useState(false);
   const [addDraft, setAddDraft] = useState<AddDraft>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
   const [freeStart, setFreeStart] = useState('09:00');
   const [freeEnd, setFreeEnd] = useState('21:00');
   const [focusPending, setFocusPending] = useState(openPendingOnMount);
@@ -42,13 +48,13 @@ export function ScheduleScreen({
   const openEdit = (sessionId: string) => {
     setEditingId(sessionId);
     setFocusPending(false);
-    setMode('edit');
+    onMode('edit');
   };
 
   const openPending = () => {
     setEditingId(null);
     setFocusPending(true);
-    setMode('edit');
+    onMode('edit');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -94,10 +100,10 @@ export function ScheduleScreen({
       )}
 
       <div className="schedule-tabs" role="tablist" aria-label="عرض الجدول">
-        <ScheduleTab active={mode === 'week'} label="أسبوع" onClick={() => { setMode('week'); setFocusPending(false); }} />
-        <ScheduleTab active={mode === 'month'} label="شهر" onClick={() => { setMode('month'); setFocusPending(false); }} />
-        <ScheduleTab active={mode === 'free'} label="أوقات فاضية" onClick={() => { setMode('free'); setFocusPending(false); }} />
-        <ScheduleTab active={mode === 'edit'} label="تعديل" onClick={() => { setMode('edit'); setFocusPending(false); }} />
+        <ScheduleTab active={mode === 'week'} label="أسبوع" onClick={() => { onMode('week'); setFocusPending(false); }} />
+        <ScheduleTab active={mode === 'month'} label="شهر" onClick={() => { onMode('month'); setFocusPending(false); }} />
+        <ScheduleTab active={mode === 'free'} label="أوقات فاضية" onClick={() => { onMode('free'); setFocusPending(false); }} />
+        <ScheduleTab active={mode === 'edit'} label="تعديل" onClick={() => { onMode('edit'); setFocusPending(false); }} />
       </div>
 
       {mode === 'week' && <WeekView data={data} onEdit={openEdit} />}
@@ -105,7 +111,7 @@ export function ScheduleScreen({
         <MonthView
           data={data}
           cursor={monthCursor}
-          onCursor={setMonthCursor}
+          onCursor={onMonthCursor}
           onOpenDay={onOpenDay}
         />
       )}

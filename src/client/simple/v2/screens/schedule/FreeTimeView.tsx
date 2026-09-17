@@ -30,6 +30,7 @@ export function FreeTimeView({
   const endMinute = timeToMinutes(end);
   const validWindow = startMinute !== null && endMinute !== null && startMinute < endMinute;
   const today = todayIso();
+  const pendingCount = data.sessions.filter((session) => session.scheduleStatus === 'pending').length;
 
   return (
     <div className="free-planner">
@@ -37,7 +38,12 @@ export function FreeTimeView({
         <label>من<ArabicTimeField value={start} onValueChange={onStart} ariaLabel="بداية الوقت المتاح" /></label>
         <label>إلى<ArabicTimeField value={end} onValueChange={onEnd} ariaLabel="نهاية الوقت المتاح" /></label>
       </div>
-      <p>الفراغات تراعي مدة الحصة ووقت الانتقال المسجل. الموعد بدون ساعة يظهر كتنبيه لأنه لا يمكن وضعه على خط زمني.</p>
+      <p>الفراغات تراعي مدة الحصة ووقت الانتقال المسجل. المواعيد المعلقة لا تمنع وقتًا في الجدول حتى يتم تأكيدها.</p>
+      {pendingCount > 0 && (
+        <div className="free-warning free-global-warning">
+          عندك {pendingCount} {pendingCount === 1 ? 'موعد لسه محتاج وقت' : 'مواعيد لسه محتاجة وقت'}؛ الفراغات المعروضة محسوبة بدونها.
+        </div>
+      )}
       {!validWindow && <div className="simple-toast bad">اختاري وقت بداية ونهاية صحيح.</div>}
       {validWindow && Array.from({ length: 7 }, (_, index) => addDays(today, index)).map((date, index) => {
         const entries = scheduleEntriesForDate(data, date).filter((entry) => entry.status !== 'cancelled');
@@ -86,7 +92,7 @@ export function FreeTimeView({
                 );
               }) : <span className="schedule-empty-row">مفيش فراغ نصف ساعة أو أكثر</span>}
             </div>
-            {unknown.length > 0 && <div className="free-warning">{unknown.length} حصة وقتها غير محدد؛ راجعيها قبل الاعتماد على الفراغات.</div>}
+            {unknown.length > 0 && <div className="free-warning">{unknown.length} حصة مؤكدة وقتها غير محدد؛ راجعيها قبل الاعتماد على الفراغات.</div>}
           </section>
         );
       })}

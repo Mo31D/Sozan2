@@ -39,15 +39,15 @@ function normalize(input: SessionDetailsCorrection): SessionDetailsCorrection {
   if (input.defaultPricePence < 0 || !Number.isSafeInteger(input.defaultPricePence)) throw new Error('AMOUNT_INVALID');
   if (input.expectedStudentCount < 1 || input.expectedStudentCount > 100) throw new Error('SESSION_STUDENT_COUNT_INVALID');
   if (input.centerCutBps < 0 || input.centerCutBps > 10_000) throw new Error('SESSION_CENTER_CUT_INVALID');
+  if (input.weekday !== null && (!Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6)) throw new Error('SCHEDULE_DAY_REQUIRED');
+  if (input.startTime !== null && !CLOCK.test(input.startTime)) throw new Error('SCHEDULE_TIME_REQUIRED');
   if (input.scheduleStatus === 'confirmed') {
-    if (input.weekday === null || input.weekday < 0 || input.weekday > 6) throw new Error('SCHEDULE_DAY_REQUIRED');
-    if (!input.startTime || !CLOCK.test(input.startTime)) throw new Error('SCHEDULE_TIME_REQUIRED');
+    if (input.weekday === null) throw new Error('SCHEDULE_DAY_REQUIRED');
+    if (!input.startTime) throw new Error('SCHEDULE_TIME_REQUIRED');
   }
   return {
     ...input,
     title,
-    weekday: input.scheduleStatus === 'pending' ? null : input.weekday,
-    startTime: input.scheduleStatus === 'pending' ? null : input.startTime,
     location: input.location?.trim() || null,
     studentIds: [...new Set(input.studentIds)],
   };

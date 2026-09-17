@@ -1,4 +1,5 @@
 import type { RecurringSession } from '../../../modules/tutoring/domain/session';
+import { currentDuePence } from '../../../modules/reports/insights';
 import {
   activeCycleFor,
   planFor,
@@ -10,40 +11,45 @@ export const WEEKDAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'ا
 
 export function scheduleEntriesForDate(data: SimpleWorkspaceData, date: string): ScheduledEntry[] {
   const weekday = weekdayForIso(date);
-  const byId = new Map<string, ScheduledEntry>();
+  const entries: ScheduledEntry[] = [];
 
   for (const session of data.sessions) {
     if (session.scheduleStatus !== 'confirmed' || session.weekday !== weekday) continue;
     const occurrence = data.occurrences.find((row) => row.recurringSessionId === session.id && row.sessionDate === date) ?? null;
     if (occurrence?.rescheduledToDate && occurrence.rescheduledToDate !== date) continue;
-    byId.set(session.id, {
+    entries.push({
       session,
       occurrence,
       date,
-      startTime: validClockTime(occurrence?.scheduledStart)
-        ? occurrence?.scheduledStart ?? null
-        : validClockTime(session.startTime) ? session.startTime : null,
+      startTime: validClockTime(occurrence?.rescheduledToStart)
+        ? occurrence?.rescheduledToStart ?? null
+        : validClockTime(occurrence?.scheduledStart)
+          ? occurrence?.scheduledStart ?? null
+          : validClockTime(session.startTime) ? session.startTime : null,
       status: occurrence?.status ?? 'scheduled',
     });
   }
 
-  for (const occurrence of data.occurrences.filter((row) => row.rescheduledToDate === date)) {
+  for (const occurrence of data.occurrences.filter((row) => row.rescheduledToDate === date && row.sessionDate !== date)) {
     const session = data.sessions.find((row) => row.id === occurrence.recurringSessionId);
     if (!session) continue;
-    byId.set(session.id, {
+    entries.push({
       session,
       occurrence,
       date,
       startTime: validClockTime(occurrence.rescheduledToStart)
         ? occurrence.rescheduledToStart
-        : validClockTime(session.startTime) ? session.startTime : null,
+        : validClockTime(occurrence.scheduledStart)
+          ? occurrence.scheduledStart
+          : validClockTime(session.startTime) ? session.startTime : null,
       status: occurrence.status,
     });
   }
 
-  return [...byId.values()].sort((a, b) =>
+  return entries.sort((a, b) =>
     (a.startTime ?? '99:99').localeCompare(b.startTime ?? '99:99')
-    || a.session.title.localeCompare(b.session.title, 'ar'),
+    || a.session.title.localeCompare(b.session.title, 'ar')
+    || (a.occurrence?.id ?? '').localeCompare(b.occurrence?.id ?? ''),
   );
 }
 
@@ -69,12 +75,7 @@ export function recentMoneyRows(data: SimpleWorkspaceData, currencyLabel: string
 }
 
 export function dueTotal(data: SimpleWorkspaceData): number {
-  return data.billingCycles.filter((cycle) => cycle.status === 'due').reduce((total, cycle) => {
-    const allocated = data.allocations
-      .filter((row) => row.targetId === cycle.id)
-      .reduce((value, row) => value + row.amountPence, 0);
-    return total + Math.max(0, cycle.pricePence - allocated);
-  }, 0);
+  return currentDuePence(data);
 }
 
 export function packageProgress(data: SimpleWorkspaceData, studentId: string): string {
@@ -220,6 +221,7 @@ export function messageFor(cause: unknown): string {
     COMPLETED_REQUIRES_CORRECTION_FLOW: 'الحصة مكتملة؛ استخدمي إعادة الفتح قبل تعديلها.',
     CORRECTION_REQUIRES_SYNC: 'يلزم مزامنة الحساب مرة واحدة قبل تصحيح هذه الحصة القديمة.',
     ATTENDANCE_COMPLETED_COLLECTION_FAILED: 'الحصة اتسجلت كمكتملة، لكن التحصيل لم يُسجل. سجلي التحصيل مرة أخرى من نفس الحصة أو من «فلوسي».',
+    FUTURE_ATTENDANCE_NOT_ALLOWED: 'لا يمكن تسجيل حصة مستقبلية كحصة تمت. يمكنك نقلها أو إلغاؤها الآن، ثم تسجيل الحضور في يومها.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
 }

@@ -30,17 +30,21 @@ export function TodayScreen({
   data,
   date,
   busy,
+  openedFromSchedule,
   onOpenMoney,
   onAttendance,
   onBackToToday,
+  onBackToSchedule,
 }: {
   snapshot: LocalPlatformSnapshot;
   data: SimpleWorkspaceData;
   date: string;
   busy: boolean;
+  openedFromSchedule: boolean;
   onOpenMoney: (mode: 'receipt' | 'expense') => void;
   onAttendance: (action: AttendanceWorkflowAction, success: string) => Promise<boolean>;
   onBackToToday: () => void;
+  onBackToSchedule: () => void;
 }) {
   const actualToday = todayIso();
   const isToday = date === actualToday;
@@ -87,7 +91,9 @@ export function TodayScreen({
       ) : (
         <article className="opened-day-card">
           <div><small>اليوم المفتوح من التقويم</small><strong>{formatArabicDate(date)}</strong></div>
-          <button type="button" onClick={onBackToToday}>الرجوع لليوم</button>
+          <button type="button" onClick={openedFromSchedule ? onBackToSchedule : onBackToToday}>
+            {openedFromSchedule ? 'الرجوع للشهر' : 'الرجوع لليوم'}
+          </button>
         </article>
       )}
 
@@ -95,7 +101,7 @@ export function TodayScreen({
       <div className="lesson-list">
         {entries.map((entry) => (
           <AttendanceCard
-            key={`${entry.session.id}-${entry.date}`}
+            key={entry.occurrence?.id ?? `${entry.session.id}-${entry.date}-recurring`}
             entry={entry}
             data={data}
             busy={busy}
@@ -130,6 +136,7 @@ function AttendanceCard({
   const done = occurrence?.status === 'completed';
   const cancelled = occurrence?.status === 'cancelled';
   const missed = occurrence?.status === 'missed';
+  const future = entry.date > todayIso();
   const statusClass = done ? 'done' : cancelled ? 'cancelled' : missed ? 'missed' : '';
   const linkedStudents = session.studentIds
     .map((id) => data.students.find((student) => student.id === id))
@@ -154,6 +161,7 @@ function AttendanceCard({
           <strong>{session.title}</strong>
           <small>{entry.startTime ? formatClockTime(entry.startTime) : 'الوقت غير محدد'} · {sessionTypeLabel(session.sessionType)}</small>
           {plan?.billingMode === 'package' && <small>باقة · {packageProgress(data, primaryStudent?.id ?? '')}</small>}
+          {future && !done && <small className="lesson-state-note">حصة مستقبلية — يمكن نقلها أو إلغاؤها، والحضور يتسجل في يومها.</small>}
           {cancelled && <small className="lesson-state-note">ملغاة — محفوظة في السجل ويمكن استرجاعها</small>}
           {missed && <small className="lesson-state-note">فائتة — يمكنك استرجاعها أو نقلها</small>}
         </div>
@@ -163,8 +171,8 @@ function AttendanceCard({
       {!done && !cancelled && !missed && (
         <>
           <div className="lesson-actions">
-            <button className="lesson-done-button" type="button" disabled={busy} onClick={() => void perform({ kind: 'complete', session, displayedDate: entry.date, occurrenceId: occurrence?.id }, 'تم تسجيل الحصة.')}>تمت</button>
-            <button className="lesson-pay-button" type="button" disabled={busy || !paymentStudents.length} onClick={() => setCollecting((value) => !value)}>تمت + قبض</button>
+            <button className="lesson-done-button" type="button" disabled={busy || future} onClick={() => void perform({ kind: 'complete', session, displayedDate: entry.date, occurrenceId: occurrence?.id }, 'تم تسجيل الحصة.')}>تمت</button>
+            <button className="lesson-pay-button" type="button" disabled={busy || future || !paymentStudents.length} onClick={() => setCollecting((value) => !value)}>تمت + قبض</button>
           </div>
           <div className="lesson-secondary-actions">
             <button type="button" disabled={busy} onClick={() => void perform({ kind: 'cancel', session, displayedDate: entry.date, occurrenceId: occurrence?.id }, 'تم إلغاء الحصة ويمكن استرجاعها من السجل.')}>إلغاء</button>
