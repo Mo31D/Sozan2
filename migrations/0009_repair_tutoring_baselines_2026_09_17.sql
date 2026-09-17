@@ -54,24 +54,24 @@ DELETE FROM tutoring_billing_cycles
 WHERE workspace_id='fb71d118-de05-4fe0-9001-c7a764adc0ff'
   AND price_pence=0
   AND id IN (
-    '6ad6bcba-50ad-5c6e-8fb1-0343f894b4ff',
-    '5d2aea81-bc66-56cc-b5d4-7ae9861b7229',
-    'f99819dc-fb0a-5de6-a288-83a5a4a24401',
-    '79d2bc49-fbce-567b-a37c-a9ccc8e09dff',
-    'aee4e914-f43f-5fdd-8591-1841a9960ff9',
-    '70dc1a42-d319-546f-945e-62dd13a0ac01',
-    '3600ae3b-caee-5bbd-8e2e-1235f3691794',
-    '99d71a3c-49c6-56b4-ba23-4011ad63fa71',
-    'd014eca8-9b31-5ec3-bc43-3f691e3015e8',
-    'a765624d-b0a9-58b5-987a-7b55123f254a',
-    '0356a055-52ad-5176-bba7-47046ca404b4',
-    'c3ecad76-f6f5-53a0-917c-b5d148f1a00a',
-    'af10ecff-487c-5bf5-b69c-605754cae69a',
-    '96c1f8df-a8ae-5ce7-80a0-9bdb64c9a12c',
-    'dd945541-3329-50e6-88b4-1d78c4461715',
-    '59186dda-7fbe-5597-b198-9369e6eab705',
-    '5757d6d3-5203-5955-934f-9f686a662f0e',
-    '91737e14-8dc1-5a64-b4af-8a168f921959'
+    '65214699-176c-5878-8a33-6692f12add1c',
+    'fe23671f-3d54-569e-9627-860724542bc0',
+    '55c8dafb-025b-58e6-a03a-43f6339acc1f',
+    '0d457290-762e-53e3-9c25-a021b1315f0f',
+    '18e9cf43-159d-5c4c-a90b-53bd7cc43747',
+    'fa0fcdbc-6bd1-5367-9bc9-efeb5c6b04ed',
+    'd30252b3-fe9a-5249-a2b6-12ccf3a90c73',
+    '154b3d53-5123-544f-866c-369092436f52',
+    'e8a393cf-f053-54dd-8f01-31ed4ab6a166',
+    '7e9a54f6-99f4-5b33-8fb9-a235d8c6c748',
+    '3b046818-04b7-59cd-a47f-6dad2ab76a17',
+    '81725382-c404-527c-aac8-658661099ffe',
+    'b24f147f-f098-5689-9b39-6678951c98ec',
+    '4fdc984d-451d-5522-bd55-3821a42787fa',
+    '42744e58-6a37-5f3a-997b-0553520c73c2',
+    'd2a11da3-13fa-504c-9f29-e22895291139',
+    'd9a3fdb3-123c-559c-978d-603653f0738b',
+    '38957905-6834-5957-b608-3f3b19fb3a2c'
   )
   AND NOT EXISTS (
     SELECT 1
