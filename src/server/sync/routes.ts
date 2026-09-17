@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { D1StudentRepository } from '../adapters/d1/tutoring-students.repository';
 import { accessError, requireWorkspaceAccess } from '../auth/guard';
 import type { Env } from '../env';
 import { requireDatabase } from '../env';
@@ -17,6 +18,10 @@ const mutationSchema = z.object({
   entityType: z.string().min(1).max(100), entityId: z.string().uuid(), payload: z.unknown(), createdAt: z.string().min(10).max(40),
 });
 const pushSchema = z.object({ mutations: z.array(mutationSchema).max(100) });
+const studentStateSchema = z.object({
+  active: z.boolean().optional(),
+  familyId: z.string().uuid().nullable().optional(),
+}).refine((value) => value.active !== undefined || value.familyId !== undefined, { message: 'STUDENT_STATE_EMPTY' });
 const sessionDetailsSchema = z.object({
   title: z.string().trim().min(1).max(120),
   sessionType: z.enum(['private_student_home', 'private_tutor_home', 'online', 'center_group', 'own_group']),
@@ -39,13 +44,50 @@ async function currentSessionFinanceShape(db: D1Database, workspaceId: string, s
   return { session, studentIds:(students.results??[]).map((row)=>row.student_id) };
 }
 
+async function applyStudentStateMutation(db: D1Database, workspaceId: string, mutation: SyncMutation): Promise<void> {
+  const parsed = studentStateSchema.parse(mutation.payload);
+  const current = await db.prepare(
+    `SELECT active,family_id FROM tutoring_students WHERE workspace_id=?1 AND id=?2 LIMIT 1`,
+  ).bind(workspaceId, mutation.entityId).first<{ active:number; family_id:string|null }>();
+  if (!current) throw new Error('STUDENT_NOT_FOUND');
+  const nextActive = parsed.active === undefined ? current.active : parsed.active ? 1 : 0;
+  const nextFamily = parsed.familyId === undefined ? current.family_id : parsed.familyId;
+  await db.prepare(
+    `UPDATE tutoring_students SET active=?1,family_id=?2,deleted_at=CASE WHEN ?1=1 THEN NULL ELSE deleted_at END,updated_at=CURRENT_TIMESTAMP WHERE workspace_id=?3 AND id=?4`,
+  ).bind(nextActive, nextFamily, workspaceId, mutation.entityId).run();
+
+  if (parsed.active !== false) return;
+  const linked = await db.prepare(
+    `SELECT recurring_session_id FROM tutoring_session_students WHERE workspace_id=?1 AND student_id=?2`,
+  ).bind(workspaceId, mutation.entityId).all<{ recurring_session_id:string }>();
+  await db.prepare(
+    `DELETE FROM tutoring_session_students WHERE workspace_id=?1 AND student_id=?2`,
+  ).bind(workspaceId, mutation.entityId).run();
+  for (const row of linked.results ?? []) {
+    const count = await db.prepare(
+      `SELECT COUNT(*) AS count FROM tutoring_session_students WHERE workspace_id=?1 AND recurring_session_id=?2`,
+    ).bind(workspaceId, row.recurring_session_id).first<{ count:number }>();
+    const remaining = Number(count?.count ?? 0);
+    if (remaining === 0) {
+      await db.prepare(
+        `UPDATE tutoring_recurring_sessions SET active=0,deleted_at=COALESCE(deleted_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE workspace_id=?1 AND id=?2`,
+      ).bind(workspaceId, row.recurring_session_id).run();
+    } else {
+      await db.prepare(
+        `UPDATE tutoring_recurring_sessions SET expected_student_count=CASE WHEN expected_student_count>?1 THEN ?1 ELSE expected_student_count END,updated_at=CURRENT_TIMESTAMP WHERE workspace_id=?2 AND id=?3`,
+      ).bind(remaining, workspaceId, row.recurring_session_id).run();
+    }
+  }
+}
+
 async function applyTutoringHardeningMutation(db:D1Database,workspaceId:string,mutation:SyncMutation):Promise<boolean>{
   if(mutation.moduleKey!=='tutoring')return false;
+  if(mutation.operation==='student.state.update'){await applyStudentStateMutation(db,workspaceId,mutation);return true;}
   if(mutation.operation==='session.details.update'){
     const parsed=sessionDetailsSchema.parse(mutation.payload);const current=await currentSessionFinanceShape(db,workspaceId,mutation.entityId);
     const hasHistory=Boolean(await db.prepare(`SELECT 1 AS found FROM tutoring_occurrences WHERE workspace_id=?1 AND recurring_session_id=?2 AND status IN ('completed','cancelled','missed') LIMIT 1`).bind(workspaceId,mutation.entityId).first<{found:number}>());
     if(hasHistory){const nextStudents=[...parsed.studentIds].sort();const currentStudents=[...current.studentIds].sort();const financeChanged=parsed.priceBasis!==current.session.price_basis||parsed.defaultPricePence!==current.session.default_price_pence||parsed.expectedStudentCount!==current.session.expected_student_count||parsed.centerCutBps!==current.session.center_cut_bps||JSON.stringify(nextStudents)!==JSON.stringify(currentStudents);if(financeChanged)throw new Error('SESSION_FINANCE_LOCKED_BY_HISTORY');}
-    for(const studentId of parsed.studentIds){const exists=await db.prepare(`SELECT 1 AS found FROM tutoring_students WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`).bind(workspaceId,studentId).first<{found:number}>();if(!exists)throw new Error('STUDENT_NOT_FOUND');}
+    for(const studentId of parsed.studentIds){const exists=await db.prepare(`SELECT 1 AS found FROM tutoring_students WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL AND active=1`).bind(workspaceId,studentId).first<{found:number}>();if(!exists)throw new Error('STUDENT_NOT_FOUND');}
     const result=await db.prepare(`UPDATE tutoring_recurring_sessions SET title=?1,session_type=?2,schedule_status=?3,weekday=?4,start_time=?5,duration_minutes=?6,travel_minutes=?7,location=?8,price_basis=?9,default_price_pence=?10,expected_student_count=?11,center_cut_bps=?12,updated_at=CURRENT_TIMESTAMP WHERE workspace_id=?13 AND id=?14 AND active=1 AND deleted_at IS NULL`).bind(parsed.title,parsed.sessionType,parsed.scheduleStatus,parsed.weekday,parsed.startTime,parsed.durationMinutes,parsed.travelMinutes,parsed.location,parsed.priceBasis,parsed.defaultPricePence,parsed.expectedStudentCount,parsed.centerCutBps,workspaceId,mutation.entityId).run();
     if((result.meta?.changes??0)===0)throw new Error('SESSION_NOT_FOUND');
     await db.prepare(`DELETE FROM tutoring_session_students WHERE workspace_id=?1 AND recurring_session_id=?2`).bind(workspaceId,mutation.entityId).run();
@@ -69,4 +111,4 @@ function routeError(error:unknown):{status:400|401|403|503;error:string}{const a
 
 export const syncRoutes=new Hono<{Bindings:Env}>();
 syncRoutes.post('/:workspaceId/push',async(c)=>{try{const workspaceId=c.req.param('workspaceId');await requireWorkspaceAccess(c,workspaceId,true);const parsed=pushSchema.parse(await c.req.json());const db=requireDatabase(c.env);const results:MutationResult[]=[];for(const mutation of parsed.mutations)results.push(await applyMutation(db,workspaceId,mutation));return c.json({results,serverTime:new Date().toISOString()});}catch(error){const response=routeError(error);return c.json({error:response.error},response.status);}});
-syncRoutes.get('/:workspaceId/snapshot',async(c)=>{try{const workspaceId=c.req.param('workspaceId');await requireWorkspaceAccess(c,workspaceId);const db=requireDatabase(c.env);const modules=await Promise.all(handlers.map((handler)=>handler.snapshot(db,workspaceId)));return c.json({workspaceId,generatedAt:new Date().toISOString(),modules});}catch(error){const response=routeError(error);return c.json({error:response.error},response.status);}});
+syncRoutes.get('/:workspaceId/snapshot',async(c)=>{try{const workspaceId=c.req.param('workspaceId');await requireWorkspaceAccess(c,workspaceId);const db=requireDatabase(c.env);const modules=await Promise.all(handlers.map((handler)=>handler.snapshot(db,workspaceId)));const tutoring=modules.find((module)=>module.moduleKey==='tutoring');if(tutoring&&tutoring.data&&typeof tutoring.data==='object'){(tutoring.data as {students:unknown[]}).students=await new D1StudentRepository(db).listAll(workspaceId);}return c.json({workspaceId,generatedAt:new Date().toISOString(),modules});}catch(error){const response=routeError(error);return c.json({error:response.error},response.status);}});
