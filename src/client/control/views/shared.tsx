@@ -21,7 +21,6 @@ export function EditableMoneyCard({
   amount,
   currency,
   deleted,
-  warningBadge,
   editing,
   busy,
   onEdit,
@@ -34,7 +33,6 @@ export function EditableMoneyCard({
   amount: number;
   currency?: string;
   deleted: boolean;
-  warningBadge?: string | null;
   editing: boolean;
   busy: boolean;
   onEdit: () => void;
@@ -46,11 +44,7 @@ export function EditableMoneyCard({
     <article className={`control-card ${deleted ? 'deleted' : ''}`}>
       <div className="control-card-head">
         <div><strong>{title}</strong><small>{subtitle}</small></div>
-        <div className="money-stack">
-          <b>{money(amount, currency)}</b>
-          {warningBadge && !deleted && <span className="duplicate-badge">{warningBadge}</span>}
-          {deleted && <span className="deleted-badge">محذوف</span>}
-        </div>
+        <div className="money-stack"><b>{money(amount, currency)}</b>{deleted && <span className="deleted-badge">محذوف</span>}</div>
       </div>
       {!deleted ? (
         <div className="row-actions">
