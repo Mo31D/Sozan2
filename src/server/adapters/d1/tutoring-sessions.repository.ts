@@ -1,4 +1,7 @@
-import type { RecurringSession } from '../../../modules/tutoring/domain/session';
+import type {
+  RecurringSession,
+  UpdateRecurringSessionDetailsInput,
+} from '../../../modules/tutoring/domain/session';
 import type {
   NewRecurringSession,
   SessionRepository,
@@ -76,6 +79,17 @@ export class D1SessionRepository implements SessionRepository {
     return rowsToSessions(result.results ?? []);
   }
 
+  async getById(workspaceId: string, sessionId: string): Promise<RecurringSession> {
+    const result = await this.db.prepare(
+      `${SELECT_SESSIONS}
+       WHERE s.workspace_id = ?1 AND s.id = ?2
+       ORDER BY p.student_id`,
+    ).bind(workspaceId, sessionId).all<SessionRow>();
+    const session = rowsToSessions(result.results ?? [])[0];
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+    return session;
+  }
+
   async create(input: NewRecurringSession): Promise<RecurringSession> {
     const statements: D1PreparedStatement[] = [
       this.db.prepare(
@@ -136,14 +150,86 @@ export class D1SessionRepository implements SessionRepository {
     return this.getById(input.workspaceId, input.sessionId);
   }
 
-  private async getById(workspaceId: string, sessionId: string): Promise<RecurringSession> {
+  async updateDetails(input: {
+    workspaceId: string;
+    sessionId: string;
+    details: UpdateRecurringSessionDetailsInput;
+  }): Promise<RecurringSession> {
+    const d = input.details;
+    const statements: D1PreparedStatement[] = [
+      this.db.prepare(
+        `UPDATE tutoring_recurring_sessions
+         SET title=?3, session_type=?4, schedule_status=?5, weekday=?6, start_time=?7,
+             duration_minutes=?8, travel_minutes=?9, location=?10, price_basis=?11,
+             default_price_pence=?12, expected_student_count=?13, center_cut_bps=?14,
+             updated_at=CURRENT_TIMESTAMP
+         WHERE workspace_id=?1 AND id=?2 AND active=1 AND deleted_at IS NULL`,
+      ).bind(
+        input.workspaceId,
+        input.sessionId,
+        d.title,
+        d.sessionType,
+        d.scheduleStatus,
+        d.weekday,
+        d.startTime,
+        d.durationMinutes,
+        d.travelMinutes,
+        d.location,
+        d.priceBasis,
+        d.defaultPricePence,
+        d.expectedStudentCount,
+        d.centerCutBps,
+      ),
+      this.db.prepare(
+        `DELETE FROM tutoring_session_students
+         WHERE workspace_id=?1 AND recurring_session_id=?2`,
+      ).bind(input.workspaceId, input.sessionId),
+    ];
+    for (const studentId of d.studentIds) {
+      statements.push(
+        this.db.prepare(
+          `INSERT INTO tutoring_session_students(workspace_id, recurring_session_id, student_id)
+           VALUES(?1, ?2, ?3)`,
+        ).bind(input.workspaceId, input.sessionId, studentId),
+      );
+    }
+    const results = await this.db.batch(statements);
+    if ((results[0]?.meta.changes ?? 0) === 0) throw new Error('SESSION_NOT_FOUND');
+    return this.getById(input.workspaceId, input.sessionId);
+  }
+
+  async hasHistory(workspaceId: string, sessionId: string): Promise<boolean> {
+    const row = await this.db.prepare(
+      `SELECT 1 AS found
+       FROM tutoring_occurrences
+       WHERE workspace_id=?1 AND recurring_session_id=?2
+         AND status IN ('completed','cancelled','missed')
+       LIMIT 1`,
+    ).bind(workspaceId, sessionId).first<{ found: number }>();
+    return Boolean(row);
+  }
+
+  async archive(workspaceId: string, sessionId: string): Promise<void> {
     const result = await this.db.prepare(
-      `${SELECT_SESSIONS}
-       WHERE s.workspace_id = ?1 AND s.id = ?2 AND s.deleted_at IS NULL
-       ORDER BY p.student_id`,
-    ).bind(workspaceId, sessionId).all<SessionRow>();
-    const session = rowsToSessions(result.results ?? [])[0];
-    if (!session) throw new Error('SESSION_NOT_FOUND');
-    return session;
+      `UPDATE tutoring_recurring_sessions
+       SET active=0, deleted_at=COALESCE(deleted_at,CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP
+       WHERE workspace_id=?1 AND id=?2 AND active=1`,
+    ).bind(workspaceId, sessionId).run();
+    if ((result.meta.changes ?? 0) === 0) {
+      const current = await this.getById(workspaceId, sessionId);
+      if (current.active) throw new Error('SESSION_NOT_FOUND');
+    }
+  }
+
+  async restore(workspaceId: string, sessionId: string): Promise<void> {
+    const result = await this.db.prepare(
+      `UPDATE tutoring_recurring_sessions
+       SET active=1, deleted_at=NULL, updated_at=CURRENT_TIMESTAMP
+       WHERE workspace_id=?1 AND id=?2 AND active=0`,
+    ).bind(workspaceId, sessionId).run();
+    if ((result.meta.changes ?? 0) === 0) {
+      const current = await this.getById(workspaceId, sessionId);
+      if (!current.active) throw new Error('SESSION_NOT_FOUND');
+    }
   }
 }
