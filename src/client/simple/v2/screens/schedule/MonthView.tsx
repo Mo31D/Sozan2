@@ -1,8 +1,6 @@
 import type { SimpleWorkspaceData } from '../../../data';
-import { ScheduleRow } from '../../components';
 import {
   addDays,
-  formatArabicDate,
   localDate,
   scheduleEntriesForDate,
   startOfMonth,
@@ -10,20 +8,20 @@ import {
   WEEKDAYS,
 } from '../../utils';
 
+function arabicDay(value: number): string {
+  return value.toLocaleString('ar-EG-u-nu-arab', { useGrouping: false });
+}
+
 export function MonthView({
   data,
   cursor,
-  selectedDay,
-  onSelectedDay,
   onCursor,
-  onEdit,
+  onOpenDay,
 }: {
   data: SimpleWorkspaceData;
   cursor: Date;
-  selectedDay: string;
-  onSelectedDay: (date: string) => void;
   onCursor: (date: Date) => void;
-  onEdit: (sessionId: string) => void;
+  onOpenDay: (date: string) => void;
 }) {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -31,18 +29,14 @@ export function MonthView({
   const gridStartDate = new Date(year, month, 1 - first.getDay());
   const gridStart = localDate(gridStartDate);
   const today = todayIso();
-  const selectedInGrid = selectedDay >= gridStart && selectedDay <= addDays(gridStart, 41)
-    ? selectedDay
-    : localDate(first);
-  const detailRows = scheduleEntriesForDate(data, selectedInGrid);
 
   return (
     <div className="month-wrap">
       <div className="month-head">
-        <strong>{new Intl.DateTimeFormat('ar-EG', { month: 'long', year: 'numeric' }).format(first)}</strong>
+        <strong>{new Intl.DateTimeFormat('ar-EG-u-nu-arab', { month: 'long', year: 'numeric' }).format(first)}</strong>
         <div>
           <button type="button" aria-label="الشهر السابق" onClick={() => onCursor(new Date(year, month - 1, 1))}>‹</button>
-          <button type="button" onClick={() => { onCursor(startOfMonth(new Date())); onSelectedDay(today); }}>الحالي</button>
+          <button type="button" onClick={() => onCursor(startOfMonth(new Date()))}>الحالي</button>
           <button type="button" aria-label="الشهر التالي" onClick={() => onCursor(new Date(year, month + 1, 1))}>›</button>
         </div>
       </div>
@@ -56,21 +50,17 @@ export function MonthView({
             <button
               type="button"
               key={date}
-              className={`month-cell ${dateObject.getMonth() !== month ? 'outside' : ''} ${date === today ? 'today' : ''} ${date === selectedInGrid ? 'selected' : ''}`}
-              onClick={() => onSelectedDay(date)}
+              aria-label={`فتح يوم ${new Intl.DateTimeFormat('ar-EG-u-nu-arab', { weekday: 'long', day: 'numeric', month: 'long' }).format(dateObject)}`}
+              className={`month-cell ${dateObject.getMonth() !== month ? 'outside' : ''} ${date === today ? 'today selected' : ''}`}
+              onClick={() => onOpenDay(date)}
             >
-              <b>{dateObject.getDate()}</b>
-              {count > 0 && <small>{count} {count === 1 ? 'حصة' : 'حصص'}</small>}
+              <b>{arabicDay(dateObject.getDate())}</b>
+              {count > 0 && <small>{arabicDay(count)} {count === 1 ? 'حصة' : 'حصص'}</small>}
             </button>
           );
         })}
       </div>
-      <div className="month-detail">
-        <strong className="month-detail-title">{formatArabicDate(selectedInGrid)}</strong>
-        {detailRows.length
-          ? detailRows.map((entry) => <ScheduleRow key={`${entry.session.id}-${selectedInGrid}`} entry={entry} onClick={() => onEdit(entry.session.id)} />)
-          : <div className="friendly-empty">مفيش حصص في اليوم ده.</div>}
-      </div>
+      <p className="month-open-hint">اضغطي على أي يوم لفتح صفحة اليوم وحصصه.</p>
     </div>
   );
 }
