@@ -5,6 +5,7 @@ import {
   loadLocalPlatform,
   type LocalPlatformSnapshot,
 } from './adapters/indexeddb/platform.repository';
+import { AppointmentsWorkspace } from './appointments/AppointmentsWorkspace';
 import { ExistingAccountLogin } from './cloud/CloudAccess';
 import { TutorWorkspace } from './simple/TutorWorkspace';
 import { runWorkspaceSync } from './sync/engine';
@@ -78,18 +79,20 @@ export function App() {
     setDataRevision((value) => value + 1);
   };
 
-  if (local.snapshot.workspace.templateKey !== 'tutoring') {
-    return <CenteredMessage text="مساحة العمل دي تستخدم نوعًا جديدًا من التنظيم. الواجهة الخاصة بها ما زالت قيد التجهيز على هذا الفرع." />;
-  }
+  const common = {
+    key: `${local.snapshot.workspace.id}-${dataRevision}`,
+    snapshot: local.snapshot,
+    cloudAvailable: cloudAccountsAvailable(cloud),
+    onPlatformChanged: reloadLocal,
+  };
 
-  return (
-    <TutorWorkspace
-      key={`${local.snapshot.workspace.id}-${dataRevision}`}
-      snapshot={local.snapshot}
-      cloudAvailable={cloudAccountsAvailable(cloud)}
-      onPlatformChanged={reloadLocal}
-    />
-  );
+  if (local.snapshot.workspace.templateKey === 'appointments') {
+    return <AppointmentsWorkspace {...common} />;
+  }
+  if (local.snapshot.workspace.templateKey === 'tutoring') {
+    return <TutorWorkspace {...common} />;
+  }
+  return <CenteredMessage text="نوع مساحة العمل دي غير مدعوم في الواجهة الحالية." bad />;
 }
 
 function cloudAccountsAvailable(cloud: CloudState): boolean {
@@ -109,7 +112,7 @@ function LocalSetup({ cloud, onReady }: { cloud: CloudState; onReady: (snapshot:
       const snapshot = await bootstrapLocalPlatform({
         displayName: String(form.get('displayName') ?? ''),
         workspaceName: String(form.get('workspaceName') ?? ''),
-        templateKey: 'tutoring',
+        templateKey: String(form.get('templateKey') ?? 'tutoring'),
       });
       onReady(snapshot);
     } catch (cause) {
@@ -124,16 +127,26 @@ function LocalSetup({ cloud, onReady }: { cloud: CloudState; onReady: (snapshot:
       <section className="setup-simple-card">
         <div className="setup-logo">م</div>
         <h1>مساعدك</h1>
-        <p>نظّم مواعيدك وفلوسك من مكان واحد. سجّل الدخول من جهاز آخر، أو ابدأ مساحة عمل جديدة على الجهاز ده.</p>
+        <p>نظّم شغلك ومواعيدك وفلوسك من مكان واحد. ادخل لحسابك من جهاز آخر، أو ابدأ مساحة جديدة على الجهاز ده.</p>
 
         <ExistingAccountLogin available={cloudAccountsAvailable(cloud)} onReady={onReady} />
-
         {cloudAccountsAvailable(cloud) && <div className="setup-divider"><span>أو</span></div>}
 
         <form className="setup-simple-form" onSubmit={submit}>
           <h2>ابدأ مساحة جديدة</h2>
+          <fieldset className="setup-template-picker">
+            <legend>هتستخدم البرنامج في إيه؟</legend>
+            <label className="setup-template-option">
+              <input type="radio" name="templateKey" value="tutoring" defaultChecked />
+              <b>◫</b><strong>تدريس وحصص</strong><small>طلاب، حصص متكررة، باقات، حضور وتحصيل.</small>
+            </label>
+            <label className="setup-template-option">
+              <input type="radio" name="templateKey" value="appointments" />
+              <b>▦</b><strong>مواعيد وخدمات</strong><small>عملاء، مواعيد منفردة، أسعار، تحصيل وتقارير.</small>
+            </label>
+          </fieldset>
           <label>اسمك<input name="displayName" autoComplete="name" placeholder="مثال: سوزان" required /></label>
-          <label>اسم شغلك<input name="workspaceName" placeholder="مثال: دروسي" required /></label>
+          <label>اسم شغلك<input name="workspaceName" placeholder="مثال: دروسي أو صالوني" required /></label>
           <button type="submit" disabled={busy}>{busy ? 'جاري الإنشاء…' : 'ابدأ'}</button>
         </form>
 
