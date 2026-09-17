@@ -16,6 +16,7 @@ export function MeScreen({
   onPlatformChanged,
   onStudentAdd,
   onPackage,
+  onOpenPendingSchedule,
 }: {
   snapshot: LocalPlatformSnapshot;
   data: SimpleWorkspaceData;
@@ -27,6 +28,7 @@ export function MeScreen({
   onPlatformChanged: () => Promise<void>;
   onStudentAdd: (form: FormData) => void;
   onPackage: (studentId: string, form: FormData) => void;
+  onOpenPendingSchedule: () => void;
 }) {
   const pendingTimes = data.sessions.filter((row) => row.scheduleStatus === 'pending').length;
   const due = dueTotal(data);
@@ -36,18 +38,27 @@ export function MeScreen({
     - sum(data.expenses.filter((row) => row.expenseDate.startsWith(month)).map((row) => row.amountPence));
   const notes = [
     pendingSync > 0 ? `${pendingSync} تغيير مستني المزامنة` : null,
-    pendingTimes > 0 ? `${pendingTimes} مواعيد محتاجة تحديد وقت` : null,
     due > 0 ? `فيه ${money(due, snapshot.workspace.currencyLabel)} جاهزة للتحصيل` : null,
   ].filter(Boolean) as string[];
+  const hasNotes = pendingTimes > 0 || notes.length > 0;
 
   return (
     <section className="simple-screen">
       <ScreenHeader kicker="مساعد سوزان" title="أنا" />
       <article className="attention-card">
         <span>ملاحظات ذكية</span><h2>إيه اللي محتاج انتباهك؟</h2>
-        {notes.length
-          ? notes.map((note) => <p key={note}>{note}</p>)
-          : <div className="stable-box"><strong>الصورة مستقرة</strong><small>مفيش حاجة ملحّة محتاجة مراجعة دلوقتي.</small></div>}
+        {hasNotes ? (
+          <>
+            {pendingTimes > 0 && (
+              <button className="attention-link" type="button" onClick={onOpenPendingSchedule}>
+                <span>{pendingTimes} مواعيد محتاجة تحديد وقت</span><b>افتحي التعديل ←</b>
+              </button>
+            )}
+            {notes.map((note) => <p key={note}>{note}</p>)}
+          </>
+        ) : (
+          <div className="stable-box"><strong>الصورة مستقرة</strong><small>مفيش حاجة ملحّة محتاجة مراجعة دلوقتي.</small></div>
+        )}
       </article>
       <article className="cash-card"><span>الصورة المسجلة</span><h2>الموجود في الحسابات</h2><strong>{money(balance, snapshot.workspace.currencyLabel)}</strong><small>المقبوض والدخل الآخر ناقص المصروفات المسجلة خلال الشهر.</small></article>
 

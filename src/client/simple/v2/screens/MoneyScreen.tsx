@@ -1,6 +1,7 @@
 import type { LocalPlatformSnapshot } from '../../../adapters/indexeddb/platform.repository';
 import { activeCycleFor, planFor, type SimpleWorkspaceData } from '../../data';
 import { Metric, QuickForm, ScreenHeader, SectionTitle } from '../components';
+import { ArabicDateField } from '../localized-fields';
 import type { MoneyMode } from '../types';
 import {
   dueTotal,
@@ -51,7 +52,7 @@ export function MoneyScreen({
         <QuickForm title="سجلّي التحصيل" onSubmit={onCollect} busy={busy}>
           <select name="studentId" required defaultValue=""><option value="" disabled>اختاري الطالب</option>{data.students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}</select>
           <input name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="المبلغ" required />
-          <input name="receivedAt" type="date" defaultValue={todayIso()} required />
+          <ArabicDateField name="receivedAt" defaultValue={todayIso()} ariaLabel="تاريخ التحصيل" />
           <select name="paymentMethod" defaultValue="cash"><option value="cash">كاش</option><option value="bank">بنك</option><option value="wallet">محفظة</option><option value="other">أخرى</option></select>
           <input name="note" placeholder="ملاحظة اختيارية" />
         </QuickForm>
@@ -60,7 +61,7 @@ export function MoneyScreen({
       {mode === 'expense' && (
         <QuickForm title="سجلّي المصروف" onSubmit={onExpense} busy={busy}>
           <input name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="المبلغ" required />
-          <input name="expenseDate" type="date" defaultValue={todayIso()} required />
+          <ArabicDateField name="expenseDate" defaultValue={todayIso()} ariaLabel="تاريخ المصروف" />
           <select name="scope" defaultValue="personal"><option value="personal">شخصي</option><option value="business">شغل</option></select>
           <input name="category" placeholder="التصنيف: بيت، مواصلات، أدوات…" required />
           <input name="note" placeholder="ملاحظة اختيارية" />

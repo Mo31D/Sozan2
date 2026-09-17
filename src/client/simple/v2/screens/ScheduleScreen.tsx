@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { SimpleWorkspaceData } from '../../data';
 import { QuickForm, ScheduleTab, ScreenHeader } from '../components';
+import { ArabicTimeField } from '../localized-fields';
 import type { AddDraft, ScheduleMode } from '../types';
 import { startOfMonth, todayIso, weekdayForIso, WEEKDAYS } from '../utils';
 import { EditScheduleView } from './schedule/EditScheduleView';
@@ -11,22 +12,26 @@ import { WeekView } from './schedule/WeekView';
 export function ScheduleScreen({
   data,
   busy,
+  openPendingOnMount = false,
   onAdd,
   onUpdate,
+  onOpenDay,
 }: {
   data: SimpleWorkspaceData;
   busy: boolean;
+  openPendingOnMount?: boolean;
   onAdd: (form: FormData) => Promise<boolean>;
   onUpdate: (sessionId: string, form: FormData) => Promise<boolean>;
+  onOpenDay: (date: string) => void;
 }) {
-  const [mode, setMode] = useState<ScheduleMode>('week');
+  const [mode, setMode] = useState<ScheduleMode>(openPendingOnMount ? 'edit' : 'week');
   const [showAdd, setShowAdd] = useState(false);
   const [addDraft, setAddDraft] = useState<AddDraft>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
-  const [selectedDay, setSelectedDay] = useState(todayIso());
   const [freeStart, setFreeStart] = useState('09:00');
   const [freeEnd, setFreeEnd] = useState('21:00');
+  const [focusPending, setFocusPending] = useState(openPendingOnMount);
 
   const openAdd = (draft: AddDraft = null) => {
     setAddDraft(draft);
@@ -36,7 +41,15 @@ export function ScheduleScreen({
 
   const openEdit = (sessionId: string) => {
     setEditingId(sessionId);
+    setFocusPending(false);
     setMode('edit');
+  };
+
+  const openPending = () => {
+    setEditingId(null);
+    setFocusPending(true);
+    setMode('edit');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const pendingCount = data.sessions.filter((session) => session.scheduleStatus === 'pending').length;
@@ -46,7 +59,11 @@ export function ScheduleScreen({
       <ScreenHeader kicker="مساعد سوزان" title="جدولي" />
       <div className="screen-action-row">
         <button className="primary-small" type="button" onClick={() => showAdd ? setShowAdd(false) : openAdd(null)}>{showAdd ? 'إغلاق' : '＋ طالب / مجموعة'}</button>
-        {pendingCount > 0 && <span className="schedule-attention">{pendingCount} موعد محتاج وقت</span>}
+        {pendingCount > 0 && (
+          <button className="schedule-attention" type="button" onClick={openPending}>
+            {pendingCount} موعد محتاج وقت
+          </button>
+        )}
       </div>
 
       {showAdd && (
@@ -65,7 +82,7 @@ export function ScheduleScreen({
           </fieldset>
           <select name="scheduleStatus" defaultValue="confirmed"><option value="confirmed">الموعد محدد</option><option value="pending">الوقت لسه غير محدد</option></select>
           <select name="weekday" defaultValue={addDraft?.weekday ?? weekdayForIso(todayIso())}>{WEEKDAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}</select>
-          <input name="startTime" type="time" defaultValue={addDraft?.startTime ?? '16:00'} />
+          <ArabicTimeField name="startTime" defaultValue={addDraft?.startTime ?? '16:00'} ariaLabel="وقت الموعد" />
           <input name="durationMinutes" type="number" min="15" max="360" defaultValue="60" placeholder="مدة الحصة بالدقائق" />
           <input name="travelMinutes" type="number" min="0" max="360" defaultValue="0" placeholder="وقت الانتقال بالدقائق" />
           <select name="priceBasis" defaultValue="total_session"><option value="total_session">السعر للحصة بالكامل</option><option value="per_student">السعر لكل طالب</option></select>
@@ -77,10 +94,10 @@ export function ScheduleScreen({
       )}
 
       <div className="schedule-tabs" role="tablist" aria-label="عرض الجدول">
-        <ScheduleTab active={mode === 'week'} label="أسبوع" onClick={() => setMode('week')} />
-        <ScheduleTab active={mode === 'month'} label="شهر" onClick={() => setMode('month')} />
-        <ScheduleTab active={mode === 'free'} label="أوقات فاضية" onClick={() => setMode('free')} />
-        <ScheduleTab active={mode === 'edit'} label="تعديل" onClick={() => setMode('edit')} />
+        <ScheduleTab active={mode === 'week'} label="أسبوع" onClick={() => { setMode('week'); setFocusPending(false); }} />
+        <ScheduleTab active={mode === 'month'} label="شهر" onClick={() => { setMode('month'); setFocusPending(false); }} />
+        <ScheduleTab active={mode === 'free'} label="أوقات فاضية" onClick={() => { setMode('free'); setFocusPending(false); }} />
+        <ScheduleTab active={mode === 'edit'} label="تعديل" onClick={() => { setMode('edit'); setFocusPending(false); }} />
       </div>
 
       {mode === 'week' && <WeekView data={data} onEdit={openEdit} />}
@@ -88,10 +105,8 @@ export function ScheduleScreen({
         <MonthView
           data={data}
           cursor={monthCursor}
-          selectedDay={selectedDay}
-          onSelectedDay={setSelectedDay}
           onCursor={setMonthCursor}
-          onEdit={openEdit}
+          onOpenDay={onOpenDay}
         />
       )}
       {mode === 'free' && (
@@ -109,6 +124,7 @@ export function ScheduleScreen({
           data={data}
           busy={busy}
           editingId={editingId}
+          focusPending={focusPending}
           onEditing={setEditingId}
           onSave={onUpdate}
         />

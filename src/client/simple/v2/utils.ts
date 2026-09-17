@@ -149,15 +149,51 @@ export function minutesToTime(value: number): string {
   return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 }
 
+function arabicNumber(value: number, minimumIntegerDigits = 1): string {
+  return value.toLocaleString('ar-EG-u-nu-arab', {
+    useGrouping: false,
+    minimumIntegerDigits,
+  });
+}
+
+export function formatClockTime(value: string | null | undefined): string {
+  const total = timeToMinutes(value);
+  if (total === null) return 'غير محدد';
+  const hour24 = Math.floor(total / 60) % 24;
+  const minute = total % 60;
+  const hour12 = hour24 % 12 || 12;
+  const period = hour24 < 12 ? 'صباحًا' : 'مساءً';
+  return minute === 0
+    ? `${arabicNumber(hour12)} ${period}`
+    : `${arabicNumber(hour12)}:${arabicNumber(minute, 2)} ${period}`;
+}
+
+export function formatDurationArabic(totalMinutes: number): string {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+  if (hours === 0) return `${arabicNumber(minutes)} دقيقة`;
+
+  const hourText = hours === 1
+    ? 'ساعة'
+    : hours === 2
+      ? 'ساعتين'
+      : hours >= 3 && hours <= 10
+        ? `${arabicNumber(hours)} ساعات`
+        : `${arabicNumber(hours)} ساعة`;
+
+  return minutes === 0 ? hourText : `${hourText} و${arabicNumber(minutes)} دقيقة`;
+}
+
 export function formatArabicDate(iso: string): string {
-  return new Intl.DateTimeFormat('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })
+  return new Intl.DateTimeFormat('ar-EG-u-nu-arab', { weekday: 'long', day: 'numeric', month: 'long' })
     .format(new Date(`${iso}T12:00:00`));
 }
 
 export function formatShortDate(value: string): string {
   const iso = value.slice(0, 10);
   try {
-    return new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'short' })
+    return new Intl.DateTimeFormat('ar-EG-u-nu-arab', { day: 'numeric', month: 'short' })
       .format(new Date(`${iso}T12:00:00`));
   } catch {
     return iso;
