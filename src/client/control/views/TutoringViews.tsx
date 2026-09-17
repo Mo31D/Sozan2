@@ -1,9 +1,10 @@
 import type { FormEvent } from 'react';
+import { buildStudentFinancialSummary } from '../../../modules/reports/student-finance';
 import type { Student } from '../../../modules/tutoring/domain/student';
 import type { RecurringSession } from '../../../modules/tutoring/domain/session';
 import { archiveLocalSession, updateLocalSessionDetails } from '../../tutoring/session-corrections';
 import { updateLocalStudent } from '../../tutoring/student-corrections';
-import { sum, type ControlCenterData } from '../data';
+import type { ControlCenterData } from '../data';
 import { formatShortDate, money, toPenceZero, weekdayLabel } from '../presentation';
 import { Empty, type CommonListProps } from './shared';
 
@@ -44,6 +45,7 @@ export function StudentsView({
     .filter((row) => row.studentId === student.id && row.status !== 'cancelled')
     .sort((a, b) => b.sequenceNo - a.sequenceNo);
   const cycle = cycles[0];
+  const financial = buildStudentFinancialSummary(data.simple, student.id);
 
   return (
     <div className="student-profile-control">
@@ -54,7 +56,14 @@ export function StudentsView({
       </div>
       <div className="profile-metrics">
         <div><span>الباقة</span><strong>{cycle ? `${cycle.openingCompletedCount + cycle.realCompletedCount}/${cycle.sessionLimit}` : 'بالحصة'}</strong></div>
-        <div><span>المدفوع</span><strong>{money(sum(receipts.map((row) => row.amountPence)), currency)}</strong></div>
+        <div><span>مطلوب تحصيله الآن</span><strong>{money(financial.duePence, currency)}</strong></div>
+        <div><span>رصيد مقدم</span><strong>{money(financial.creditPence, currency)}</strong></div>
+        <div><span>قبضتي منه</span><strong>{money(financial.receivedPence, currency)}</strong></div>
+        <div>
+          <span>آخر تحصيل</span>
+          <strong>{financial.lastPayment ? money(financial.lastPayment.amountPence, currency) : '—'}</strong>
+          {financial.lastPayment && <small>{formatShortDate(financial.lastPayment.receivedAt)}</small>}
+        </div>
         <div><span>المواعيد</span><strong>{sessions.length}</strong></div>
       </div>
       {editId === student.id ? (
