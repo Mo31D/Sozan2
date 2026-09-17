@@ -18,8 +18,8 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install
-      - name: Inspect dependency audit
-        run: npm audit --json || true
+      - name: Audit dependencies
+        run: npm run audit
       - name: Validate modular D1 schema
         run: |
           python3 - <<'PY'
