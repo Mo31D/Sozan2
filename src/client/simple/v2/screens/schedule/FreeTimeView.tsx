@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { SimpleWorkspaceData } from '../../../data';
 import { ArabicTimeField } from '../../localized-fields';
 import {
@@ -10,6 +11,11 @@ import {
   timeToMinutes,
   todayIso,
 } from '../../utils';
+import {
+  FREE_TIME_REQUIREMENTS,
+  freeSlotFits,
+  type FreeTimeRequirementId,
+} from './free-time';
 
 export function FreeTimeView({
   data,
@@ -31,21 +37,31 @@ export function FreeTimeView({
   const validWindow = startMinute !== null && endMinute !== null && startMinute < endMinute;
   const today = todayIso();
   const pendingCount = data.sessions.filter((session) => session.scheduleStatus === 'pending').length;
+  const [requirementId, setRequirementId] = useState<FreeTimeRequirementId>('standard');
+  const requirement = FREE_TIME_REQUIREMENTS.find((option) => option.id === requirementId) ?? FREE_TIME_REQUIREMENTS[0];
 
   return (
     <div className="free-planner">
-      <section className="free-window-card" aria-label="الفترة اليومية التي أبحث داخلها">
+      <section className="free-window-card" aria-label="إعداد البحث عن وقت فاضي">
         <div className="free-window-head">
-          <strong>الفترة اليومية</strong>
-          <span>اختاري بداية ونهاية اليوم اللي تحبي تشوفي الفراغات داخله.</span>
+          <strong>أدور على وقت فاضي</strong>
+          <span>حددي ساعات اليوم والمدة التي لازم يكون الفراغ قادر يستوعبها.</span>
         </div>
         <div className="free-controls">
           <label className="free-control-row"><span>من</span><ArabicTimeField value={start} onValueChange={onStart} ariaLabel="بداية الوقت المتاح" /></label>
           <label className="free-control-row"><span>إلى</span><ArabicTimeField value={end} onValueChange={onEnd} ariaLabel="نهاية الوقت المتاح" /></label>
         </div>
+        <label className="free-requirement">
+          <span>وقت يكفي لـ</span>
+          <select value={requirementId} onChange={(event) => setRequirementId(event.currentTarget.value as FreeTimeRequirementId)}>
+            {FREE_TIME_REQUIREMENTS.map((option) => (
+              <option value={option.id} key={option.id}>{option.label} · {formatDurationArabic(option.minutes)}</option>
+            ))}
+          </select>
+        </label>
       </section>
 
-      <p className="free-explainer">الفراغات تراعي مدة الحصة ووقت الانتقال المسجل. المواعيد المعلقة لا تمنع وقتًا في الجدول حتى يتم تأكيدها.</p>
+      <p className="free-explainer">نعرض فقط الفراغات التي تكفي {formatDurationArabic(requirement.minutes)} أو أكثر. الحساب يراعي مدة الحصص ووقت الانتقال المسجل، والمواعيد المعلقة لا تحجز وقتًا حتى تتحدد.</p>
       {pendingCount > 0 && (
         <div className="free-warning free-global-warning">
           عندك {pendingCount} {pendingCount === 1 ? 'موعد لسه محتاج وقت' : 'مواعيد لسه محتاجة وقت'}؛ الفراغات المعروضة محسوبة بدونها.
@@ -85,13 +101,13 @@ export function FreeTimeView({
               if (cursor >= endMinute) break;
             }
             if (cursor < endMinute) slots.push({ start: cursor, end: endMinute });
-            const usable = slots.filter((slot) => slot.end - slot.start >= 30);
+            const usable = slots.filter((slot) => freeSlotFits(slot.start, slot.end, requirement.minutes));
 
             return (
               <section className={`day-block free-day-card ${index === 0 ? 'today-day' : ''}`} key={date}>
                 <div className="day-heading free-day-heading">
                   <strong>{formatArabicDate(date)}</strong>
-                  <span>{usable.length ? `${usable.length} ${usable.length === 1 ? 'فترة متاحة' : 'فترات متاحة'}` : 'اليوم ممتلئ'}</span>
+                  <span>{usable.length ? `${usable.length} ${usable.length === 1 ? 'فترة مناسبة' : 'فترات مناسبة'}` : 'مفيش وقت كافي'}</span>
                 </div>
                 <div className="free-slots">
                   {usable.length ? usable.map((slot) => {
@@ -103,7 +119,7 @@ export function FreeTimeView({
                         <span className="free-slot-meta"><small>{formatDurationArabic(slot.end - slot.start)}</small><em>إضافة موعد</em></span>
                       </button>
                     );
-                  }) : <span className="schedule-empty-row">مفيش فراغ نصف ساعة أو أكثر</span>}
+                  }) : <span className="schedule-empty-row">مفيش فراغ يكفي {formatDurationArabic(requirement.minutes)}</span>}
                 </div>
                 {unknown.length > 0 && <div className="free-warning">{unknown.length} حصة مؤكدة وقتها غير محدد؛ راجعيها قبل الاعتماد على الفراغات.</div>}
               </section>
