@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'sozan2-local';
-const DATABASE_VERSION = 7;
+const DATABASE_VERSION = 8;
 
 export const STORES = {
   coreUsers: 'core_users',
@@ -13,6 +13,7 @@ export const STORES = {
   coreActivityEvents: 'core_activity_events',
   syncOutbox: 'sync_outbox',
   tutoringStudents: 'tutoring_students',
+  tutoringStudentBaselines: 'tutoring_student_baselines',
   tutoringSessions: 'tutoring_sessions',
   tutoringOccurrences: 'tutoring_occurrences',
   tutoringBillingPlans: 'tutoring_billing_plans',
@@ -88,6 +89,7 @@ export function openLocalDatabase(): Promise<IDBDatabase> {
 
       for (const storeName of [
         STORES.tutoringStudents,
+        STORES.tutoringStudentBaselines,
         STORES.tutoringSessions,
         STORES.tutoringOccurrences,
         STORES.tutoringBillingPlans,
