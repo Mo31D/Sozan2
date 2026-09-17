@@ -63,3 +63,11 @@ export function validateAppointmentCollectionClient(appointmentClientId: string 
     throw new Error('APPOINTMENT_CLIENT_MISMATCH');
   }
 }
+
+export function canChangeAppointmentClient(
+  currentClientId: string | null,
+  nextClientId: string | null,
+  hasLinkedCollection: boolean,
+): boolean {
+  return currentClientId === nextClientId || !hasLinkedCollection;
+}
