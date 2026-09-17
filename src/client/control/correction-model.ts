@@ -1,3 +1,4 @@
+import { probableDuplicateExpenseIds } from '../../modules/finance/duplicate-detection';
 import type { LocalExpense } from '../simple/data';
 import type { LocalReceipt } from '../tutoring/local-commands';
 
@@ -19,21 +20,7 @@ export function duplicateReceiptIds(receipts: readonly LocalReceipt[]): Set<stri
 }
 
 export function duplicateExpenseIds(expenses: readonly LocalExpense[]): Set<string> {
-  const groups = new Map<string, LocalExpense[]>();
-  for (const expense of expenses) {
-    if (expense.deletedAt) continue;
-    const category = expense.category.trim().toLowerCase();
-    const key = [expense.expenseDate.slice(0, 10), expense.scope, category, expense.amountPence].join('|');
-    const current = groups.get(key) ?? [];
-    current.push(expense);
-    groups.set(key, current);
-  }
-  const duplicates = new Set<string>();
-  for (const rows of groups.values()) {
-    if (rows.length < 2) continue;
-    for (const row of rows) duplicates.add(row.id);
-  }
-  return duplicates;
+  return probableDuplicateExpenseIds(expenses);
 }
 
 export function activeReceiptTotal(receipts: readonly LocalReceipt[]): number {
