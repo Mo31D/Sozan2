@@ -33,6 +33,7 @@ export function TodayScreen({
   assistantLabel,
   openedFromSchedule,
   onOpenMoney,
+  onOpenStudent,
   onAttendance,
   onBackToToday,
   onBackToSchedule,
@@ -44,6 +45,7 @@ export function TodayScreen({
   assistantLabel: string;
   openedFromSchedule: boolean;
   onOpenMoney: (mode: 'receipt' | 'expense') => void;
+  onOpenStudent: (studentId: string) => void;
   onAttendance: (action: AttendanceWorkflowAction, success: string) => Promise<boolean>;
   onBackToToday: () => void;
   onBackToSchedule: () => void;
@@ -108,6 +110,7 @@ export function TodayScreen({
             data={data}
             busy={busy}
             currency={snapshot.workspace.currencyLabel}
+            onOpenStudent={onOpenStudent}
             onAttendance={onAttendance}
           />
         ))}
@@ -122,12 +125,14 @@ function AttendanceCard({
   data,
   busy,
   currency,
+  onOpenStudent,
   onAttendance,
 }: {
   entry: ScheduledEntry;
   data: SimpleWorkspaceData;
   busy: boolean;
   currency: string;
+  onOpenStudent: (studentId: string) => void;
   onAttendance: (action: AttendanceWorkflowAction, success: string) => Promise<boolean>;
 }) {
   const [collecting, setCollecting] = useState(false);
@@ -162,6 +167,11 @@ function AttendanceCard({
         <div>
           <strong>{session.title}</strong>
           <small>{entry.startTime ? formatClockTime(entry.startTime) : 'الوقت غير محدد'} · {sessionTypeLabel(session.sessionType)}</small>
+          {linkedStudents.length > 0 && (
+            <div className="student-context-links" aria-label="الطلاب المرتبطون بالحصة">
+              {linkedStudents.map((student) => <button type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>{student.name}</button>)}
+            </div>
+          )}
           {plan?.billingMode === 'package' && <small>باقة · {packageProgress(data, primaryStudent?.id ?? '')}</small>}
           {future && !done && <small className="lesson-state-note">حصة مستقبلية — يمكن نقلها أو إلغاؤها، والحضور يتسجل في يومها.</small>}
           {cancelled && <small className="lesson-state-note">ملغاة — محفوظة في السجل ويمكن استرجاعها</small>}
