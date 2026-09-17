@@ -1,3 +1,4 @@
+import type { LocalExpense } from '../simple/data';
 import type { LocalReceipt } from '../tutoring/local-commands';
 
 export function duplicateReceiptIds(receipts: readonly LocalReceipt[]): Set<string> {
@@ -7,6 +8,24 @@ export function duplicateReceiptIds(receipts: readonly LocalReceipt[]): Set<stri
     const key = [receipt.payerRefType, receipt.payerRefId, receipt.amountPence, receipt.receivedAt.slice(0, 10)].join('|');
     const current = groups.get(key) ?? [];
     current.push(receipt);
+    groups.set(key, current);
+  }
+  const duplicates = new Set<string>();
+  for (const rows of groups.values()) {
+    if (rows.length < 2) continue;
+    for (const row of rows) duplicates.add(row.id);
+  }
+  return duplicates;
+}
+
+export function duplicateExpenseIds(expenses: readonly LocalExpense[]): Set<string> {
+  const groups = new Map<string, LocalExpense[]>();
+  for (const expense of expenses) {
+    if (expense.deletedAt) continue;
+    const category = expense.category.trim().toLowerCase();
+    const key = [expense.expenseDate.slice(0, 10), expense.scope, category, expense.amountPence].join('|');
+    const current = groups.get(key) ?? [];
+    current.push(expense);
     groups.set(key, current);
   }
   const duplicates = new Set<string>();
