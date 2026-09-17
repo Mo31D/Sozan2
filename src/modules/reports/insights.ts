@@ -10,6 +10,15 @@ export type ReportInsight = {
   detail: string;
 };
 
+export type ReportPreset = 'week' | 'month' | 'last28' | 'custom';
+
+export type ReportDateRange = {
+  preset: ReportPreset;
+  fromDate: string;
+  toDate: string;
+  label: string;
+};
+
 export type WorkspaceReport = {
   fromDate: string;
   toDate: string;
@@ -20,8 +29,10 @@ export type WorkspaceReport = {
   expensesPence: number;
   netCashPence: number;
   duePence: number;
+  earnedPence: number;
   teachingMinutes: number;
   travelMinutes: number;
+  workMinutes: number;
   effectiveHourlyPence: number;
   insights: ReportInsight[];
 };
@@ -63,7 +74,7 @@ export type ReportInput = {
   allocations: Array<{ targetId: string; amountPence: number }>;
 };
 
-function localTodayIso(now = new Date()): string {
+export function localTodayIso(now = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
@@ -71,6 +82,42 @@ function addDays(iso: string, days: number): string {
   const date = new Date(`${iso}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function firstDayOfMonth(iso: string): string {
+  return `${iso.slice(0, 7)}-01`;
+}
+
+function firstDayOfWeek(iso: string): string {
+  const date = new Date(`${iso}T12:00:00Z`);
+  const mondayOffset = (date.getUTCDay() + 6) % 7;
+  return addDays(iso, -mondayOffset);
+}
+
+function assertIsoDate(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) throw new Error('REPORT_DATE_INVALID');
+  return value;
+}
+
+export function reportRangeForPreset(
+  preset: ReportPreset,
+  today = localTodayIso(),
+  custom?: { fromDate: string; toDate: string },
+): ReportDateRange {
+  const safeToday = assertIsoDate(today);
+  if (preset === 'week') {
+    return { preset, fromDate: firstDayOfWeek(safeToday), toDate: safeToday, label: 'هذا الأسبوع' };
+  }
+  if (preset === 'month') {
+    return { preset, fromDate: firstDayOfMonth(safeToday), toDate: safeToday, label: 'هذا الشهر' };
+  }
+  if (preset === 'last28') {
+    return { preset, fromDate: addDays(safeToday, -27), toDate: safeToday, label: 'آخر 28 يومًا' };
+  }
+  const fromDate = assertIsoDate(custom?.fromDate ?? safeToday);
+  const toDate = assertIsoDate(custom?.toDate ?? safeToday);
+  if (fromDate > toDate) throw new Error('REPORT_RANGE_INVALID');
+  return { preset, fromDate, toDate, label: 'فترة مخصصة' };
 }
 
 function sum(values: number[]): number {
@@ -118,14 +165,13 @@ export function currentDuePence(data: ReportInput): number {
   return due;
 }
 
-export function buildWorkspaceReport(data: ReportInput, today = localTodayIso()): WorkspaceReport {
-  const from = addDays(today, -27);
-  const inRange = (value: string) => value.slice(0, 10) >= from && value.slice(0, 10) <= today;
+export function buildWorkspaceReportForRange(data: ReportInput, range: ReportDateRange): WorkspaceReport {
+  const inRange = (value: string) => value.slice(0, 10) >= range.fromDate && value.slice(0, 10) <= range.toDate;
   const occurrences = data.occurrences.filter((row) => inRange(row.rescheduledToDate ?? row.sessionDate));
   const completed = occurrences.filter((row) => row.status === 'completed');
   const cancelled = occurrences.filter((row) => row.status === 'cancelled' || row.status === 'missed');
   const receivedPence = sum(data.receipts.filter((row) => inRange(row.receivedAt)).map((row) => row.amountPence));
-  const expensesPence = sum(data.expenses.filter((row) => inRange(row.expenseDate)).map((row) => row.amountPence));
+  const expensesPence = sum(data.expenses.filter((row) => !row.deletedAt && inRange(row.expenseDate)).map((row) => row.amountPence));
   const otherIncomePence = sum(data.otherIncome.filter((row) => inRange(row.incomeDate)).map((row) => row.amountPence));
   const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
   let teachingMinutes = 0;
@@ -138,9 +184,9 @@ export function buildWorkspaceReport(data: ReportInput, today = localTodayIso())
   }
   const duePence = currentDuePence(data);
   const netCashPence = receivedPence + otherIncomePence - expensesPence;
-  const productivePence = sum(completed.map((row) => row.earnedPence));
-  const realMinutes = teachingMinutes + travelMinutes;
-  const effectiveHourlyPence = realMinutes > 0 ? Math.round((productivePence * 60) / realMinutes) : 0;
+  const earnedPence = sum(completed.map((row) => row.earnedPence));
+  const workMinutes = teachingMinutes + travelMinutes;
+  const effectiveHourlyPence = workMinutes > 0 ? Math.round((earnedPence * 60) / workMinutes) : 0;
   const pendingSchedules = data.sessions.filter((row) => row.scheduleStatus === 'pending').length;
   const duplicateExpenseRows = probableDuplicateExpenseIds(expenseDuplicateCandidates(data.expenses)).size;
 
@@ -148,14 +194,14 @@ export function buildWorkspaceReport(data: ReportInput, today = localTodayIso())
   if (duePence > 0) insights.push({ key: 'due', level: 'attention', title: 'فيه تحصيل محتاج متابعة', detail: `${duePence} قرش ما زالت مستحقة على حصص أو باقات مكتملة.` });
   if (pendingSchedules > 0) insights.push({ key: 'pending', level: 'attention', title: 'مواعيد لسه غير محددة', detail: `${pendingSchedules} موعد محتاج يوم أو ساعة.` });
   if (duplicateExpenseRows > 0) insights.push({ key: 'duplicate-expenses', level: 'attention', title: 'راجعي المصروفات المتشابهة', detail: `${duplicateExpenseRows} تسجيلات مصروف متشابهة في التاريخ والنوع والتصنيف والمبلغ؛ ممكن يكون بينها تكرار.` });
-  if (cancelled.length >= Math.max(3, Math.ceil(completed.length * 0.25))) insights.push({ key: 'cancelled', level: 'attention', title: 'الإلغاءات مرتفعة نسبيًا', detail: `${cancelled.length} حصة ألغيت أو فاتت خلال آخر 28 يومًا.` });
+  if (cancelled.length >= Math.max(3, Math.ceil(completed.length * 0.25))) insights.push({ key: 'cancelled', level: 'attention', title: 'الإلغاءات مرتفعة نسبيًا', detail: `${cancelled.length} حصة ألغيت أو فاتت خلال الفترة.` });
   if (travelMinutes > teachingMinutes && completed.length > 0) insights.push({ key: 'travel', level: 'attention', title: 'وقت الانتقال كبير', detail: 'وقت الانتقال خلال الفترة أكبر من وقت التدريس؛ راجعي تجميع المواعيد القريبة.' });
   if (completed.length > 0 && duePence === 0 && pendingSchedules === 0 && duplicateExpenseRows === 0) insights.push({ key: 'stable', level: 'good', title: 'الصورة مستقرة', detail: 'لا توجد مستحقات مكتملة غير مسددة ولا مواعيد معلقة حاليًا.' });
   if (!insights.length) insights.push({ key: 'start', level: 'info', title: 'التقرير جاهز', detail: 'كلما زادت الحصص والتحصيلات سيصبح التحليل أكثر فائدة.' });
 
   return {
-    fromDate: from,
-    toDate: today,
+    fromDate: range.fromDate,
+    toDate: range.toDate,
     completedLessons: completed.length,
     cancelledLessons: cancelled.length,
     receivedPence,
@@ -163,9 +209,15 @@ export function buildWorkspaceReport(data: ReportInput, today = localTodayIso())
     expensesPence,
     netCashPence,
     duePence,
+    earnedPence,
     teachingMinutes,
     travelMinutes,
+    workMinutes,
     effectiveHourlyPence,
     insights,
   };
+}
+
+export function buildWorkspaceReport(data: ReportInput, today = localTodayIso()): WorkspaceReport {
+  return buildWorkspaceReportForRange(data, reportRangeForPreset('last28', today));
 }
