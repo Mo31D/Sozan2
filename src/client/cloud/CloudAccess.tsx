@@ -7,6 +7,7 @@ import {
 import {
   hydrateLocalPlatformFromCloud,
   linkLocalPlatformToCloud,
+  loadLocalPlatform,
   type LocalPlatformSnapshot,
 } from '../adapters/indexeddb/platform.repository';
 import { runWorkspaceSync, type SyncRunResult } from '../sync/engine';
@@ -38,8 +39,7 @@ export function ExistingAccountLogin({
       const bootstrap = await getWorkspaceBootstrap(workspace.id);
       let snapshot = await hydrateLocalPlatformFromCloud(account, bootstrap);
       await runWorkspaceSync(workspace.id);
-      const refreshed = await import('../adapters/indexeddb/platform.repository')
-        .then((module) => module.loadLocalPlatform());
+      const refreshed = await loadLocalPlatform();
       if (refreshed) snapshot = refreshed;
       onReady(snapshot);
     } catch (cause) {
