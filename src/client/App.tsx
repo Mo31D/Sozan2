@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { getHealth, type HealthResponse } from './api';
 import {
   bootstrapLocalPlatform,
@@ -8,7 +8,6 @@ import {
 import { AppointmentsWorkspace } from './appointments/AppointmentsWorkspace';
 import { ExistingAccountLogin } from './cloud/CloudAccess';
 import { TutorWorkspace } from './simple/TutorWorkspace';
-import { runWorkspaceSync } from './sync/engine';
 
 type CloudState =
   | { status: 'checking' }
@@ -24,7 +23,6 @@ export function App() {
   const [local, setLocal] = useState<LocalState>({ status: 'loading' });
   const [cloud, setCloud] = useState<CloudState>({ status: 'checking' });
   const [dataRevision, setDataRevision] = useState(0);
-  const syncingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -40,31 +38,6 @@ export function App() {
 
     return () => { active = false; };
   }, []);
-
-  useEffect(() => {
-    const snapshot = local.status === 'ready' ? local.snapshot : null;
-    if (!snapshot?.cloudLink || cloud.status !== 'ready') return;
-    let active = true;
-    const sync = async () => {
-      if (!navigator.onLine || syncingRef.current) return;
-      syncingRef.current = true;
-      try {
-        await runWorkspaceSync(snapshot.workspace.id);
-        if (active) setDataRevision((value) => value + 1);
-      } catch {
-        // Local data remains the source of truth and pending writes stay queued.
-      } finally {
-        syncingRef.current = false;
-      }
-    };
-    void sync();
-    const online = () => { void sync(); };
-    window.addEventListener('online', online);
-    return () => {
-      active = false;
-      window.removeEventListener('online', online);
-    };
-  }, [cloud.status, local]);
 
   if (local.status === 'loading') return <CenteredMessage text="جاري فتح بياناتك…" />;
   if (local.status === 'error') return <CenteredMessage text={`تعذر تشغيل البرنامج: ${local.message}`} bad />;
