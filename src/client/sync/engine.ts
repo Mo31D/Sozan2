@@ -31,9 +31,18 @@ type PushResponse = {
 type ModuleSnapshot = { moduleKey: string; data: unknown };
 type SnapshotResponse = { workspaceId: string; generatedAt: string; modules: ModuleSnapshot[] };
 type CoreSnapshot = { activityEvents: Array<Record<string, unknown> & { id: string; workspaceId: string }>; workspaceSettings?: Array<Record<string, unknown> & { workspaceId: string; key: string; value: string }> };
-type TutoringSnapshot = { students: Array<Record<string, unknown> & { id: string; workspaceId: string }>; sessions: Array<Record<string, unknown> & { id: string; workspaceId: string }>; occurrences: Array<Record<string, unknown> & { id: string; workspaceId: string }>; billingPlans: Array<Record<string, unknown> & { id: string; workspaceId: string }>; billingCycles: Array<Record<string, unknown> & { id: string; workspaceId: string }>; billingCycleOccurrences?: Array<Record<string, unknown> & { id: string; workspaceId: string }> };
-type AppointmentsSnapshot = { clients: Array<Record<string, unknown> & { id: string; workspaceId: string }>; appointments: Array<Record<string, unknown> & { id: string; workspaceId: string }> };
-type FinanceSnapshot = { receipts: Array<Record<string, unknown> & { id: string; workspaceId: string }>; allocations: Array<Record<string, unknown> & { id: string; workspaceId: string }>; expenses: Array<Record<string, unknown> & { id: string; workspaceId: string }>; otherIncome: Array<Record<string, unknown> & { id: string; workspaceId: string }>; cashChecks?: Array<Record<string, unknown> & { id: string; workspaceId: string }> };
+type SyncRow = Record<string, unknown> & { id: string; workspaceId: string };
+type TutoringSnapshot = {
+  students: SyncRow[];
+  studentBaselines?: SyncRow[];
+  sessions: SyncRow[];
+  occurrences: SyncRow[];
+  billingPlans: SyncRow[];
+  billingCycles: SyncRow[];
+  billingCycleOccurrences?: SyncRow[];
+};
+type AppointmentsSnapshot = { clients: SyncRow[]; appointments: SyncRow[] };
+type FinanceSnapshot = { receipts: SyncRow[]; allocations: SyncRow[]; expenses: SyncRow[]; otherIncome: SyncRow[]; cashChecks?: SyncRow[] };
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -68,10 +77,10 @@ async function seedInitialLocalState(workspaceId: string): Promise<void> {
     STORES.syncOutbox,
   ], 'readonly');
   const [students, sessions, clients, appointments, existing] = await Promise.all([
-    requestResult<Array<Record<string, unknown> & { id: string; workspaceId: string }>>(read.objectStore(STORES.tutoringStudents).getAll()),
-    requestResult<Array<Record<string, unknown> & { id: string; workspaceId: string }>>(read.objectStore(STORES.tutoringSessions).getAll()),
-    requestResult<Array<Record<string, unknown> & { id: string; workspaceId: string }>>(read.objectStore(STORES.appointmentsClients).getAll()),
-    requestResult<Array<Record<string, unknown> & { id: string; workspaceId: string }>>(read.objectStore(STORES.appointmentsItems).getAll()),
+    requestResult<SyncRow[]>(read.objectStore(STORES.tutoringStudents).getAll()),
+    requestResult<SyncRow[]>(read.objectStore(STORES.tutoringSessions).getAll()),
+    requestResult<SyncRow[]>(read.objectStore(STORES.appointmentsClients).getAll()),
+    requestResult<SyncRow[]>(read.objectStore(STORES.appointmentsItems).getAll()),
     requestResult<SyncOutboxRecord[]>(read.objectStore(STORES.syncOutbox).getAll()),
   ]);
   const queued = new Set(existing.map((row) => `${row.operation}:${row.entityId}`));
@@ -102,9 +111,9 @@ async function seedInitialLocalState(workspaceId: string): Promise<void> {
 async function replaceWorkspaceRows(
   store: IDBObjectStore,
   workspaceId: string,
-  rows: Array<Record<string, unknown> & { workspaceId: string }>,
+  rows: SyncRow[],
 ): Promise<void> {
-  const existing = await requestResult<Array<Record<string, unknown> & { workspaceId: string }>>(store.getAll());
+  const existing = await requestResult<SyncRow[]>(store.getAll());
   for (const row of existing) {
     if (row.workspaceId !== workspaceId) continue;
     const key = store.keyPath;
@@ -123,6 +132,7 @@ async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
     STORES.coreActivityEvents,
     STORES.coreWorkspaceSettings,
     STORES.tutoringStudents,
+    STORES.tutoringStudentBaselines,
     STORES.tutoringSessions,
     STORES.tutoringOccurrences,
     STORES.tutoringBillingPlans,
@@ -144,6 +154,7 @@ async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
   }
   if (tutoring) {
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringStudents), snapshot.workspaceId, tutoring.students);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringStudentBaselines), snapshot.workspaceId, tutoring.studentBaselines ?? []);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringSessions), snapshot.workspaceId, tutoring.sessions);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringOccurrences), snapshot.workspaceId, tutoring.occurrences);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingPlans), snapshot.workspaceId, tutoring.billingPlans);
