@@ -126,6 +126,12 @@ class AcceptanceFinanceGateway implements FinanceGateway {
       .reduce((sum, item) => sum + item.amountPence, 0);
   }
 
+  async getReceiptAllocatedTotal(_workspaceId: string, receiptId: string): Promise<number> {
+    return this.allocations
+      .filter((item) => item.receiptId === receiptId)
+      .reduce((sum, item) => sum + item.amountPence, 0);
+  }
+
   clearAllocations(): void {
     this.allocations = [];
   }

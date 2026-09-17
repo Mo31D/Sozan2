@@ -83,7 +83,7 @@ export function buildStudentFinancialSummary(
     duePence += Math.max(0, cycle.pricePence - allocatedToTarget(data, 'package_cycle', cycle.id));
   }
 
-  const billingMode = data.billingPlans.find((row) => row.studentId === studentId)?.billingMode ?? 'per_session';
+  const billingMode = data.billingPlans.find((row) => row.studentId === studentId)?.billingMode ?? null;
   if (billingMode === 'per_session') {
     const sessions = new Map(data.sessions.map((session) => [session.id, session]));
     for (const occurrence of data.occurrences) {

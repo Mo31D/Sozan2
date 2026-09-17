@@ -1,4 +1,5 @@
 import type { Student } from '../../modules/tutoring/domain/student';
+import type { StudentBaseline } from '../../modules/tutoring/domain/student-baseline';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
 import { openLocalDatabase, requestResult, STORES } from '../adapters/indexeddb/database';
 import type {
@@ -38,6 +39,7 @@ export type LocalOccurrence = {
 
 export type SimpleWorkspaceData = {
   students: Student[];
+  studentBaselines: StudentBaseline[];
   sessions: RecurringSession[];
   occurrences: LocalOccurrence[];
   billingPlans: LocalBillingPlan[];
@@ -56,6 +58,7 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
   const stores = [
     STORES.coreWorkspaceSettings,
     STORES.tutoringStudents,
+    STORES.tutoringStudentBaselines,
     STORES.tutoringSessions,
     STORES.tutoringOccurrences,
     STORES.tutoringBillingPlans,
@@ -67,9 +70,23 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     STORES.financeCashChecks,
   ];
   const transaction = db.transaction(stores, 'readonly');
-  const [settings, students, sessions, occurrences, billingPlans, billingCycles, receipts, allocations, expenses, otherIncome, cashChecks] = await Promise.all([
+  const [
+    settings,
+    students,
+    studentBaselines,
+    sessions,
+    occurrences,
+    billingPlans,
+    billingCycles,
+    receipts,
+    allocations,
+    expenses,
+    otherIncome,
+    cashChecks,
+  ] = await Promise.all([
     requestResult<LocalWorkspaceSetting[]>(transaction.objectStore(STORES.coreWorkspaceSettings).getAll()),
     requestResult<Student[]>(transaction.objectStore(STORES.tutoringStudents).getAll()),
+    requestResult<StudentBaseline[]>(transaction.objectStore(STORES.tutoringStudentBaselines).getAll()),
     requestResult<RecurringSession[]>(transaction.objectStore(STORES.tutoringSessions).getAll()),
     requestResult<LocalOccurrence[]>(transaction.objectStore(STORES.tutoringOccurrences).getAll()),
     requestResult<LocalBillingPlan[]>(transaction.objectStore(STORES.tutoringBillingPlans).getAll()),
@@ -87,6 +104,7 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
   const openingBalancePence = Number.isFinite(Number(openingRaw)) ? Math.round(Number(openingRaw)) : 0;
   return {
     students: mine(students).filter((row) => row.active),
+    studentBaselines: mine(studentBaselines),
     sessions: mine(sessions).filter((row) => row.active),
     occurrences: mine(occurrences),
     billingPlans: mine(billingPlans),
@@ -109,6 +127,10 @@ export function activeCycleFor(data: SimpleWorkspaceData, studentId: string): Lo
 
 export function planFor(data: SimpleWorkspaceData, studentId: string): LocalBillingPlan | null {
   return data.billingPlans.find((row) => row.studentId === studentId) ?? null;
+}
+
+export function baselineFor(data: SimpleWorkspaceData, studentId: string): StudentBaseline | null {
+  return data.studentBaselines.find((row) => row.studentId === studentId) ?? null;
 }
 
 export function studentForSession(data: SimpleWorkspaceData, session: RecurringSession): Student | null {

@@ -1,5 +1,6 @@
 import { datesForWeekday, rescheduleOccurrenceSchema, completeOccurrenceSchema, type TutoringOccurrence } from '../domain/occurrence';
 import { canGenerateOccurrences } from '../domain/schedule';
+import { completedSessionFinancials } from '../domain/session-finance';
 import type { OccurrenceRepository } from '../ports/occurrence-repository';
 import type { SessionRepository } from '../ports/session-repository';
 import type { BillingService } from './billing.service';
@@ -47,12 +48,10 @@ export class OccurrencesService {
     const session = sessions.find((item) => item.id === occurrence.recurringSessionId);
     if (!session) throw new Error('SESSION_NOT_FOUND');
 
-    const chargeableCount = Math.max(session.studentIds.length, session.expectedStudentCount, 1);
-    const grossPence = session.priceBasis === 'per_student'
-      ? session.defaultPricePence * chargeableCount
-      : session.defaultPricePence;
-    const centerCutPence = Math.floor((grossPence * session.centerCutBps) / 10_000);
-    const earnedPence = grossPence - centerCutPence;
+    const { grossPence, centerCutPence, earnedPence } = completedSessionFinancials(
+      session,
+      session.studentIds.length,
+    );
     const completedAt = parsed.completedAt ?? new Date().toISOString();
 
     await this.occurrences.complete(workspaceId, occurrenceId, {

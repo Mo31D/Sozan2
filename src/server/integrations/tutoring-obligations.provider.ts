@@ -36,12 +36,12 @@ export class TutoringObligationProvider implements ObligationProvider {
          ON s.workspace_id = o.workspace_id AND s.id = o.recurring_session_id
        JOIN tutoring_session_students ss
          ON ss.workspace_id = o.workspace_id AND ss.recurring_session_id = o.recurring_session_id
-       LEFT JOIN tutoring_billing_plans bp
+       JOIN tutoring_billing_plans bp
          ON bp.workspace_id = ss.workspace_id AND bp.student_id = ss.student_id
        WHERE o.workspace_id = ?1
          AND ss.student_id = ?2
          AND o.status = 'completed'
-         AND COALESCE(bp.billing_mode, 'per_session') = 'per_session'
+         AND bp.billing_mode = 'per_session'
          AND (s.price_basis = 'per_student' OR s.expected_student_count = 1)
        ORDER BY o.session_date, o.id`,
     ).bind(workspaceId, payer.id).all<{

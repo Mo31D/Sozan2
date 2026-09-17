@@ -25,6 +25,12 @@ export interface ModuleSyncHandler {
   snapshot(db: D1Database, workspaceId: string): Promise<ModuleSnapshot>;
 }
 
+/** Cross-module side effects live behind hooks, not inside the sync transport. */
+export interface SyncPostApplyHook {
+  supports(mutation: SyncMutation): boolean;
+  afterApply(db: D1Database, workspaceId: string, mutation: SyncMutation): Promise<void>;
+}
+
 export function getSyncHandler(
   handlers: readonly ModuleSyncHandler[],
   moduleKey: string,

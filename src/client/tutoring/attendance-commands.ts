@@ -1,5 +1,6 @@
 import { packageUnitShare } from '../../modules/tutoring/domain/billing';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
+import { completedSessionFinancials } from '../../modules/tutoring/domain/session-finance';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { rebalanceStudentLocally } from '../finance/local-rebalance';
@@ -61,12 +62,10 @@ export async function completeLocalSession(
 
   const originalSessionDate = existing?.sessionDate ?? displayedDate;
   const effectiveDate = existing?.rescheduledToDate ?? displayedDate;
-  const chargeableCount = Math.max(session.studentIds.length, session.expectedStudentCount, 1);
-  const grossPence = session.priceBasis === 'per_student'
-    ? session.defaultPricePence * chargeableCount
-    : session.defaultPricePence;
-  const centerCutPence = Math.floor((grossPence * session.centerCutBps) / 10_000);
-  const earnedPence = Math.max(0, grossPence - centerCutPence);
+  const { grossPence, centerCutPence, earnedPence } = completedSessionFinancials(
+    session,
+    session.studentIds.length,
+  );
   const completedAt = new Date().toISOString();
   const occurrenceId = existing?.id ?? crypto.randomUUID();
   const fallbackStart = session.startTime && CLOCK_TIME.test(session.startTime) ? session.startTime : null;
