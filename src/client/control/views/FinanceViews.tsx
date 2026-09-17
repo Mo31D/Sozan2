@@ -18,6 +18,7 @@ import {
   updateLocalOtherIncome,
 } from '../../finance/extended-commands';
 import type { LocalCashCheck, LocalExpense, LocalOtherIncome } from '../../simple/data';
+import { ArabicDateField } from '../../simple/v2/localized-fields';
 import type { LocalReceipt } from '../../tutoring/local-commands';
 import { duplicateReceiptIds } from '../correction-model';
 import { expectedBalance, type ControlCenterData } from '../data';
@@ -79,7 +80,7 @@ export function ReceiptsView({ data, editId, setEditId, busy, currency, act, wor
               }}>
                 <label>الطالب<select name="studentId" defaultValue={row.payerRefId}>{data.simple.students.map((studentRow) => <option key={studentRow.id} value={studentRow.id}>{studentRow.name}</option>)}</select></label>
                 <label>المبلغ<input name="amount" type="number" min="0.01" step="0.01" defaultValue={row.amountPence / 100} required /></label>
-                <label>التاريخ<input name="date" type="date" defaultValue={row.receivedAt.slice(0, 10)} required /></label>
+                <label>التاريخ<ArabicDateField name="date" defaultValue={row.receivedAt.slice(0, 10)} ariaLabel="تاريخ التحصيل" /></label>
                 <label>طريقة الدفع<select name="method" defaultValue={row.paymentMethod}><option value="cash">كاش</option><option value="bank">بنك</option><option value="wallet">محفظة</option><option value="other">أخرى</option></select></label>
                 <label className="wide">ملاحظة<input name="note" defaultValue={row.note ?? ''} /></label>
                 <button className="save-action wide" type="submit" disabled={busy}>حفظ التعديل</button>
@@ -125,7 +126,7 @@ export function ExpensesView({ rows, editId, setEditId, busy, currency, act, wor
               }, 'تم تعديل المصروف.');
             }}>
               <label>المبلغ<input name="amount" type="number" min="0.01" step="0.01" defaultValue={row.amountPence / 100} required /></label>
-              <label>التاريخ<input name="date" type="date" defaultValue={row.expenseDate.slice(0, 10)} required /></label>
+              <label>التاريخ<ArabicDateField name="date" defaultValue={row.expenseDate.slice(0, 10)} ariaLabel="تاريخ المصروف" /></label>
               <label>النوع<select name="scope" defaultValue={row.scope}><option value="personal">شخصي</option><option value="business">شغل</option></select></label>
               <label>التصنيف<input name="category" defaultValue={row.category} required /></label>
               <label className="wide">ملاحظة<input name="note" defaultValue={row.note ?? ''} /></label>
@@ -160,7 +161,7 @@ export function IncomeView({ rows, editId, setEditId, busy, currency, act, works
           }, 'تم تسجيل الدخل الآخر.');
         }}>
           <label>المبلغ<input name="amount" type="number" min="0.01" step="0.01" required /></label>
-          <label>التاريخ<input name="date" type="date" defaultValue={todayIso()} required /></label>
+          <label>التاريخ<ArabicDateField name="date" defaultValue={todayIso()} ariaLabel="تاريخ الدخل الآخر" /></label>
           <label className="wide">المصدر<input name="category" placeholder="مثال: كورس، مواد، مكافأة" required /></label>
           <label className="wide">ملاحظة<input name="note" /></label>
           <button className="save-action wide" type="submit" disabled={busy}>حفظ</button>
@@ -194,7 +195,7 @@ export function IncomeView({ rows, editId, setEditId, busy, currency, act, works
               }, 'تم تعديل الدخل الآخر.');
             }}>
               <label>المبلغ<input name="amount" type="number" min="0.01" step="0.01" defaultValue={row.amountPence / 100} required /></label>
-              <label>التاريخ<input name="date" type="date" defaultValue={row.incomeDate.slice(0, 10)} required /></label>
+              <label>التاريخ<ArabicDateField name="date" defaultValue={row.incomeDate.slice(0, 10)} ariaLabel="تاريخ الدخل الآخر" /></label>
               <label className="wide">المصدر<input name="category" defaultValue={row.category} required /></label>
               <label className="wide">ملاحظة<input name="note" defaultValue={row.note ?? ''} /></label>
               <button className="save-action wide" type="submit" disabled={busy}>حفظ التعديل</button>
@@ -213,7 +214,7 @@ export function CashView({ data, editId, setEditId, busy, currency, act, workspa
   return (
     <div className="control-list">
       <article className="control-card cash-summary">
-        <small>المفروض يكون موجود حسب كل البيانات المسجلة</small>
+        <small>المفروض يكون موجود حسب الرصيد الافتتاحي وكل البيانات المسجلة</small>
         <strong>{money(expected, currency)}</strong>
         <button className="control-primary" type="button" onClick={() => setAdding((value) => !value)}>مطابقة جديدة</button>
       </article>
@@ -233,7 +234,7 @@ export function CashView({ data, editId, setEditId, busy, currency, act, workspa
           }, 'تم حفظ مطابقة الرصيد.');
         }}>
           <label>الموجود فعليًا<input name="actual" type="number" step="0.01" required /></label>
-          <label>التاريخ<input name="date" type="date" defaultValue={todayIso()} required /></label>
+          <label>التاريخ<ArabicDateField name="date" defaultValue={todayIso()} ariaLabel="تاريخ مطابقة الرصيد" /></label>
           <label className="wide">ملاحظة<input name="note" /></label>
           <button className="save-action wide" type="submit" disabled={busy}>حفظ المطابقة</button>
         </form>
@@ -278,7 +279,7 @@ function CashCheckCard({ row, editId, setEditId, busy, currency, act, workspaceI
           }, 'تم تعديل المطابقة.');
         }}>
           <label>الموجود فعليًا<input name="actual" type="number" step="0.01" defaultValue={row.actualBalancePence / 100} required /></label>
-          <label>التاريخ<input name="date" type="date" defaultValue={row.checkDate.slice(0, 10)} required /></label>
+          <label>التاريخ<ArabicDateField name="date" defaultValue={row.checkDate.slice(0, 10)} ariaLabel="تاريخ مطابقة الرصيد" /></label>
           <label className="wide">ملاحظة<input name="note" defaultValue={row.note ?? ''} /></label>
           <button className="save-action wide" type="submit">حفظ التعديل</button>
         </form>
