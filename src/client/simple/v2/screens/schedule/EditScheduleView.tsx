@@ -17,6 +17,7 @@ export function EditScheduleView({
   focusPending,
   onEditing,
   onSave,
+  onOpenStudent,
 }: {
   data: SimpleWorkspaceData;
   busy: boolean;
@@ -24,6 +25,7 @@ export function EditScheduleView({
   focusPending: boolean;
   onEditing: (sessionId: string | null) => void;
   onSave: (sessionId: string, form: FormData) => Promise<boolean>;
+  onOpenStudent: (studentId: string) => void;
 }) {
   const sessions = [...data.sessions].sort((a, b) =>
     (a.weekday ?? 99) - (b.weekday ?? 99) || compareSessionTime(a, b),
@@ -37,9 +39,17 @@ export function EditScheduleView({
   }, [focusPending]);
 
   if (editing) {
+    const linkedStudents = editing.studentIds
+      .map((id) => data.students.find((student) => student.id === id))
+      .filter((student): student is NonNullable<typeof student> => Boolean(student));
     return (
       <div className="edit-schedule-card">
         <div className="edit-title-row"><div><small>تعديل الموعد</small><h2>{editing.title}</h2></div><button type="button" onClick={() => onEditing(null)}>رجوع</button></div>
+        {linkedStudents.length > 0 && (
+          <div className="student-context-links edit-student-links" aria-label="ملفات الطلاب المرتبطين">
+            {linkedStudents.map((student) => <button type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>{student.name}</button>)}
+          </div>
+        )}
         <form onSubmit={async (event) => {
           event.preventDefault();
           if (await onSave(editing.id, new FormData(event.currentTarget))) onEditing(null);
@@ -53,7 +63,7 @@ export function EditScheduleView({
           <div className="edit-readonly edit-duration-preview"><span>الإجمالي المحجوز الآن</span><strong>{formatDurationArabic(editing.durationMinutes + editing.travelMinutes)}</strong></div>
           <button className="form-submit" type="submit" disabled={busy}>{busy ? 'جاري الحفظ…' : 'حفظ التعديل'}</button>
         </form>
-        <p className="edit-hint">يمكن تعديل نوع الحصة واليوم والساعة والمدة ووقت الانتقال من هنا. السعر والحساب وربط الطلاب يظلوا في «إدارة» حتى لا تختلط التعديلات المالية بالجدول.</p>
+        <p className="edit-hint">يمكن تعديل نوع الحصة واليوم والساعة والمدة ووقت الانتقال من هنا. السعر والحساب وربط الطلاب يظلوا في ملف الطالب أو «إدارة» حتى لا تختلط التعديلات المالية بالجدول.</p>
       </div>
     );
   }
@@ -98,19 +108,31 @@ export function EditScheduleView({
       </div>
 
       <div className="edit-session-list">
-        {selectedSessions.map((session) => (
-          <button type="button" key={session.id} onClick={() => onEditing(session.id)}>
-            <span className={`session-color type-${session.sessionType}`} />
-            <span>
-              <strong>{session.title}</strong>
-              <small>{session.scheduleStatus === 'pending'
-                ? `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · الوقت غير محدد`
-                : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${formatClockTime(session.startTime)}`}</small>
-              <small>{sessionTypeLabel(session.sessionType)} · {formatDurationArabic(session.durationMinutes)}{session.travelMinutes ? ` + ${formatDurationArabic(session.travelMinutes)} انتقال` : ''}</small>
-            </span>
-            <b>تعديل</b>
-          </button>
-        ))}
+        {selectedSessions.map((session) => {
+          const linkedStudents = session.studentIds
+            .map((id) => data.students.find((student) => student.id === id))
+            .filter((student): student is NonNullable<typeof student> => Boolean(student));
+          return (
+            <div className="edit-session-linked" key={session.id}>
+              <button type="button" onClick={() => onEditing(session.id)}>
+                <span className={`session-color type-${session.sessionType}`} />
+                <span>
+                  <strong>{session.title}</strong>
+                  <small>{session.scheduleStatus === 'pending'
+                    ? `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · الوقت غير محدد`
+                    : `${session.weekday === null ? 'اليوم غير محدد' : WEEKDAYS[session.weekday]} · ${formatClockTime(session.startTime)}`}</small>
+                  <small>{sessionTypeLabel(session.sessionType)} · {formatDurationArabic(session.durationMinutes)}{session.travelMinutes ? ` + ${formatDurationArabic(session.travelMinutes)} انتقال` : ''}</small>
+                </span>
+                <b>تعديل</b>
+              </button>
+              {linkedStudents.length > 0 && (
+                <div className="student-context-links edit-list-student-links">
+                  {linkedStudents.map((student) => <button type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>{student.name}</button>)}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {!selectedSessions.length && <div className="friendly-empty">مفيش مواعيد في الجزء ده.</div>}
       </div>
     </div>
