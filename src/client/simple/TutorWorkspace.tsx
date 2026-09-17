@@ -16,11 +16,13 @@ import {
 } from '../tutoring/attendance-workflow';
 import { collectLocalStudentPayment, configureLocalStudentBilling } from '../tutoring/local-commands';
 import { updateLocalSessionDetails } from '../tutoring/session-corrections';
+import { updateLocalStudent } from '../tutoring/student-corrections';
 import { loadSimpleWorkspaceData, type SimpleWorkspaceData } from './data';
 import { NavButton } from './v2/components';
 import { ManagementScreen } from './v2/screens/ManagementScreen';
 import { MoneyScreen } from './v2/screens/MoneyScreen';
 import { ScheduleScreen } from './v2/screens/ScheduleScreen';
+import { StudentHub } from './v2/screens/StudentHub';
 import { TodayScreen } from './v2/screens/TodayScreen';
 import type { MoneyMode, PageKey, ScheduleMode } from './v2/types';
 import { messageFor, startOfMonth, todayIso, toPence } from './v2/utils';
@@ -52,6 +54,7 @@ export function TutorWorkspace({
   const [moneyMode, setMoneyMode] = useState<MoneyMode>('none');
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [advancedTab, setAdvancedTab] = useState<ControlTab | null>(null);
+  const [studentHubId, setStudentHubId] = useState<string | null>(null);
 
   const refresh = async () => {
     const [nextData, nextPending] = await Promise.all([
@@ -97,7 +100,15 @@ export function TutorWorkspace({
     }
   };
 
+  const openStudent = (studentId: string) => {
+    setStudentHubId(studentId);
+    setNotice('');
+    setError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const openMoney = (mode: Exclude<MoneyMode, 'none'>) => {
+    setStudentHubId(null);
     setOpenedFromSchedule(false);
     setMoneyMode(mode);
     setPage('money');
@@ -105,6 +116,7 @@ export function TutorWorkspace({
   };
 
   const moveTo = (next: PageKey) => {
+    setStudentHubId(null);
     if (next === 'today') {
       setSelectedDay(todayIso());
       setOpenedFromSchedule(false);
@@ -119,6 +131,7 @@ export function TutorWorkspace({
   };
 
   const openDay = (date: string) => {
+    setStudentHubId(null);
     setSelectedDay(date);
     setOpenedFromSchedule(true);
     setPage('today');
@@ -128,6 +141,7 @@ export function TutorWorkspace({
   };
 
   const backToSchedule = () => {
+    setStudentHubId(null);
     setPage('schedule');
     setNotice('');
     setError('');
@@ -135,6 +149,7 @@ export function TutorWorkspace({
   };
 
   const openPendingScheduleEdits = () => {
+    setStudentHubId(null);
     setOpenPendingSchedule(true);
     setScheduleMode('edit');
     setOpenedFromSchedule(false);
@@ -167,6 +182,70 @@ export function TutorWorkspace({
     await refresh();
   };
 
+  const saveStudent = (studentId: string, form: FormData) => runAction(async () => {
+    await updateLocalStudent(workspaceId, studentId, {
+      name: String(form.get('name') ?? ''),
+      age: form.get('age') ? Number(form.get('age')) : null,
+      guardianName: String(form.get('guardianName') ?? ''),
+      guardianPhone: String(form.get('guardianPhone') ?? ''),
+      level: String(form.get('level') ?? ''),
+      notes: String(form.get('notes') ?? ''),
+    });
+  }, 'تم تعديل بيانات الطالب.');
+
+  const saveStudentSession = (sessionId: string, form: FormData) => runAction(async () => {
+    const current = data.sessions.find((session) => session.id === sessionId);
+    if (!current) throw new Error('SESSION_NOT_FOUND');
+    const status = String(form.get('scheduleStatus') ?? current.scheduleStatus) as 'confirmed' | 'pending';
+    const weekdayRaw = String(form.get('weekday') ?? '');
+    const timeRaw = String(form.get('startTime') ?? '');
+    await updateLocalSessionDetails(workspaceId, sessionId, {
+      title: current.title,
+      sessionType: String(form.get('sessionType') ?? current.sessionType) as typeof current.sessionType,
+      scheduleStatus: status,
+      weekday: weekdayRaw === '' ? null : Number(weekdayRaw),
+      startTime: timeRaw || null,
+      durationMinutes: Number(form.get('durationMinutes') ?? current.durationMinutes),
+      travelMinutes: Number(form.get('travelMinutes') ?? current.travelMinutes),
+      location: String(form.get('location') ?? current.location ?? '') || null,
+      priceBasis: current.priceBasis,
+      defaultPricePence: current.defaultPricePence,
+      expectedStudentCount: current.expectedStudentCount,
+      centerCutBps: current.centerCutBps,
+      studentIds: current.studentIds,
+    });
+  }, 'تم تعديل موعد الطالب.');
+
+  const saveStudentBilling = (studentId: string, form: FormData) => runAction(async () => {
+    const billingMode = String(form.get('billingMode') ?? 'per_session') as 'per_session' | 'package';
+    if (billingMode === 'per_session') {
+      await configureLocalStudentBilling(workspaceId, studentId, {
+        billingMode: 'per_session',
+        effectiveFrom: String(form.get('effectiveFrom') ?? todayIso()),
+      });
+      return;
+    }
+    await configureLocalStudentBilling(workspaceId, studentId, {
+      billingMode: 'package',
+      packageSize: Number(form.get('packageSize') ?? 8),
+      packagePricePence: toPence(form.get('packagePrice'), true),
+      openingCompletedCount: Number(form.get('openingCompletedCount') ?? 0),
+      effectiveFrom: String(form.get('effectiveFrom') ?? todayIso()),
+      cycleAnchorDate: null,
+    });
+  }, 'تم حفظ نظام حساب الطالب.');
+
+  const collectForStudent = (studentId: string, form: FormData) => runAction(async () => {
+    await collectLocalStudentPayment({
+      workspaceId,
+      studentId,
+      amountPence: toPence(form.get('amount')),
+      receivedAt: String(form.get('receivedAt') ?? todayIso()),
+      paymentMethod: String(form.get('paymentMethod') ?? 'cash') as 'cash' | 'bank' | 'wallet' | 'other',
+      note: String(form.get('note') ?? ''),
+    });
+  }, 'تم تسجيل التحصيل.');
+
   return (
     <>
       <main className="simple-app" dir="rtl">
@@ -174,158 +253,159 @@ export function TutorWorkspace({
           {notice && <div className="simple-toast good">{notice}</div>}
           {error && <div className="simple-toast bad">{error}</div>}
 
-          {page === 'today' && (
-            <TodayScreen
+          {studentHubId ? (
+            <StudentHub
+              key={studentHubId}
               snapshot={presentedSnapshot}
               data={data}
-              date={selectedDay}
+              studentId={studentHubId}
               busy={busy}
-              assistantLabel={assistantLabel}
-              openedFromSchedule={openedFromSchedule}
-              onOpenMoney={openMoney}
-              onAttendance={runAttendance}
-              onBackToToday={() => {
-                setSelectedDay(todayIso());
-                setOpenedFromSchedule(false);
-              }}
-              onBackToSchedule={backToSchedule}
-            />
-          )}
-
-          {page === 'money' && (
-            <MoneyScreen
-              snapshot={presentedSnapshot}
-              data={data}
-              mode={moneyMode}
-              busy={busy}
-              assistantLabel={assistantLabel}
-              onMode={setMoneyMode}
+              onBack={() => { setStudentHubId(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              onStudentSave={saveStudent}
+              onSessionSave={saveStudentSession}
+              onBillingSave={saveStudentBilling}
+              onCollect={collectForStudent}
               onOpenAdvanced={setAdvancedTab}
-              onCollect={(form) => void runAction(async () => {
-                await collectLocalStudentPayment({
-                  workspaceId,
-                  studentId: String(form.get('studentId') ?? ''),
-                  amountPence: toPence(form.get('amount')),
-                  receivedAt: String(form.get('receivedAt') ?? todayIso()),
-                  paymentMethod: String(form.get('paymentMethod') ?? 'cash') as 'cash' | 'bank' | 'wallet' | 'other',
-                  note: String(form.get('note') ?? ''),
-                });
-                setMoneyMode('none');
-              }, 'تم تسجيل التحصيل.')}
-              onExpense={(form) => void runAction(async () => {
-                await addLocalExpense({
-                  workspaceId,
-                  expenseDate: String(form.get('expenseDate') ?? todayIso()),
-                  scope: String(form.get('scope') ?? 'personal') as 'business' | 'personal',
-                  category: String(form.get('category') ?? 'أخرى'),
-                  amountPence: toPence(form.get('amount')),
-                  note: String(form.get('note') ?? ''),
-                });
-                setMoneyMode('none');
-              }, 'تم تسجيل المصروف.')}
             />
-          )}
+          ) : (
+            <>
+              {page === 'today' && (
+                <TodayScreen
+                  snapshot={presentedSnapshot}
+                  data={data}
+                  date={selectedDay}
+                  busy={busy}
+                  assistantLabel={assistantLabel}
+                  openedFromSchedule={openedFromSchedule}
+                  onOpenMoney={openMoney}
+                  onOpenStudent={openStudent}
+                  onAttendance={runAttendance}
+                  onBackToToday={() => {
+                    setSelectedDay(todayIso());
+                    setOpenedFromSchedule(false);
+                  }}
+                  onBackToSchedule={backToSchedule}
+                />
+              )}
 
-          {page === 'schedule' && (
-            <ScheduleScreen
-              data={data}
-              busy={busy}
-              mode={scheduleMode}
-              assistantLabel={assistantLabel}
-              onMode={setScheduleMode}
-              monthCursor={scheduleMonthCursor}
-              onMonthCursor={setScheduleMonthCursor}
-              openPendingOnMount={openPendingSchedule}
-              onOpenDay={openDay}
-              onAdd={async (form) => runAction(async () => {
-                const pending = String(form.get('scheduleStatus') ?? 'confirmed') === 'pending';
-                const weekdayRaw = String(form.get('weekday') ?? '');
-                const studentIds = form.getAll('studentIds').map(String);
-                const expectedCount = Math.max(1, Number(form.get('expectedStudentCount') ?? (studentIds.length || 1)));
-                await sessionsService.create(workspaceId, {
-                  title: String(form.get('title') ?? ''),
-                  sessionType: String(form.get('sessionType') ?? 'private_student_home'),
-                  scheduleStatus: pending ? 'pending' : 'confirmed',
-                  weekday: weekdayRaw === '' ? null : Number(weekdayRaw),
-                  startTime: pending ? null : String(form.get('startTime') ?? ''),
-                  durationMinutes: Number(form.get('durationMinutes') ?? 90),
-                  travelMinutes: Number(form.get('travelMinutes') ?? 30),
-                  location: String(form.get('location') ?? ''),
-                  priceBasis: String(form.get('priceBasis') ?? 'total_session') as 'total_session' | 'per_student',
-                  defaultPricePence: toPence(form.get('price'), true),
-                  expectedStudentCount: expectedCount,
-                  centerCutBps: Math.round(Number(form.get('centerCut') ?? 0) * 100),
-                  studentIds,
-                });
-              }, 'تم حفظ الموعد.')}
-              onUpdate={async (sessionId, form) => runAction(async () => {
-                const current = data.sessions.find((session) => session.id === sessionId);
-                if (!current) throw new Error('SESSION_NOT_FOUND');
-                const status = String(form.get('scheduleStatus') ?? current.scheduleStatus) as 'confirmed' | 'pending';
-                const weekdayRaw = String(form.get('weekday') ?? '');
-                const timeRaw = String(form.get('startTime') ?? '');
-                await updateLocalSessionDetails(workspaceId, sessionId, {
-                  title: current.title,
-                  sessionType: String(form.get('sessionType') ?? current.sessionType) as typeof current.sessionType,
-                  scheduleStatus: status,
-                  weekday: weekdayRaw === '' ? null : Number(weekdayRaw),
-                  startTime: timeRaw || null,
-                  durationMinutes: Number(form.get('durationMinutes') ?? current.durationMinutes),
-                  travelMinutes: Number(form.get('travelMinutes') ?? current.travelMinutes),
-                  location: current.location,
-                  priceBasis: current.priceBasis,
-                  defaultPricePence: current.defaultPricePence,
-                  expectedStudentCount: current.expectedStudentCount,
-                  centerCutBps: current.centerCutBps,
-                  studentIds: current.studentIds,
-                });
-              }, 'تم تعديل الموعد.')}
-            />
-          )}
+              {page === 'money' && (
+                <MoneyScreen
+                  snapshot={presentedSnapshot}
+                  data={data}
+                  mode={moneyMode}
+                  busy={busy}
+                  assistantLabel={assistantLabel}
+                  onMode={setMoneyMode}
+                  onOpenStudent={openStudent}
+                  onOpenAdvanced={setAdvancedTab}
+                  onCollect={(form) => void runAction(async () => {
+                    await collectLocalStudentPayment({
+                      workspaceId,
+                      studentId: String(form.get('studentId') ?? ''),
+                      amountPence: toPence(form.get('amount')),
+                      receivedAt: String(form.get('receivedAt') ?? todayIso()),
+                      paymentMethod: String(form.get('paymentMethod') ?? 'cash') as 'cash' | 'bank' | 'wallet' | 'other',
+                      note: String(form.get('note') ?? ''),
+                    });
+                    setMoneyMode('none');
+                  }, 'تم تسجيل التحصيل.')}
+                  onExpense={(form) => void runAction(async () => {
+                    await addLocalExpense({
+                      workspaceId,
+                      expenseDate: String(form.get('expenseDate') ?? todayIso()),
+                      scope: String(form.get('scope') ?? 'personal') as 'business' | 'personal',
+                      category: String(form.get('category') ?? 'أخرى'),
+                      amountPence: toPence(form.get('amount')),
+                      note: String(form.get('note') ?? ''),
+                    });
+                    setMoneyMode('none');
+                  }, 'تم تسجيل المصروف.')}
+                />
+              )}
 
-          {page === 'manage' && (
-            <ManagementScreen
-              snapshot={presentedSnapshot}
-              data={data}
-              cloudAvailable={cloudAvailable}
-              pendingSync={pendingSync}
-              busy={busy}
-              showAddStudent={showAddStudent}
-              onToggleAddStudent={() => setShowAddStudent((value) => !value)}
-              onOpenPendingSchedule={openPendingScheduleEdits}
-              onOpenAdvanced={setAdvancedTab}
-              onPlatformChanged={platformChanged}
-              onPresentationSave={async (form) => {
-                const ok = await runAction(() => updateWorkspacePresentation(snapshot, {
-                  displayName: String(form.get('displayName') ?? ''),
-                  workspaceName: String(form.get('workspaceName') ?? ''),
-                  currencyCode: String(form.get('currencyCode') ?? ''),
-                  currencyLabel: String(form.get('currencyLabel') ?? ''),
-                }), 'تم حفظ بياناتك.');
-                if (ok) await onPlatformChanged();
-                return ok;
-              }}
-              onStudentAdd={(form) => void runAction(async () => {
-                await studentsService.create(workspaceId, {
-                  name: String(form.get('name') ?? ''),
-                  guardianName: String(form.get('guardianName') ?? ''),
-                  guardianPhone: String(form.get('guardianPhone') ?? ''),
-                  level: String(form.get('level') ?? ''),
-                  notes: String(form.get('notes') ?? ''),
-                });
-                setShowAddStudent(false);
-              }, 'تمت إضافة الطالب.')}
-              onPackage={(studentId, form) => void runAction(async () => {
-                await configureLocalStudentBilling(workspaceId, studentId, {
-                  billingMode: 'package',
-                  packageSize: Number(form.get('packageSize') ?? 8),
-                  packagePricePence: toPence(form.get('packagePrice'), true),
-                  openingCompletedCount: Number(form.get('openingCompletedCount') ?? 0),
-                  effectiveFrom: String(form.get('effectiveFrom') ?? todayIso()),
-                  cycleAnchorDate: null,
-                });
-              }, 'تم حفظ الباقة.')}
-            />
+              {page === 'schedule' && (
+                <ScheduleScreen
+                  data={data}
+                  busy={busy}
+                  mode={scheduleMode}
+                  assistantLabel={assistantLabel}
+                  onMode={setScheduleMode}
+                  monthCursor={scheduleMonthCursor}
+                  onMonthCursor={setScheduleMonthCursor}
+                  openPendingOnMount={openPendingSchedule}
+                  onOpenDay={openDay}
+                  onOpenStudent={openStudent}
+                  onAdd={async (form) => runAction(async () => {
+                    const pending = String(form.get('scheduleStatus') ?? 'confirmed') === 'pending';
+                    const weekdayRaw = String(form.get('weekday') ?? '');
+                    const studentIds = form.getAll('studentIds').map(String);
+                    const expectedCount = Math.max(1, Number(form.get('expectedStudentCount') ?? (studentIds.length || 1)));
+                    await sessionsService.create(workspaceId, {
+                      title: String(form.get('title') ?? ''),
+                      sessionType: String(form.get('sessionType') ?? 'private_student_home'),
+                      scheduleStatus: pending ? 'pending' : 'confirmed',
+                      weekday: weekdayRaw === '' ? null : Number(weekdayRaw),
+                      startTime: pending ? null : String(form.get('startTime') ?? ''),
+                      durationMinutes: Number(form.get('durationMinutes') ?? 90),
+                      travelMinutes: Number(form.get('travelMinutes') ?? 30),
+                      location: String(form.get('location') ?? ''),
+                      priceBasis: String(form.get('priceBasis') ?? 'total_session') as 'total_session' | 'per_student',
+                      defaultPricePence: toPence(form.get('price'), true),
+                      expectedStudentCount: expectedCount,
+                      centerCutBps: Math.round(Number(form.get('centerCut') ?? 0) * 100),
+                      studentIds,
+                    });
+                  }, 'تم حفظ الموعد.')}
+                  onUpdate={saveStudentSession}
+                />
+              )}
+
+              {page === 'manage' && (
+                <ManagementScreen
+                  snapshot={presentedSnapshot}
+                  data={data}
+                  cloudAvailable={cloudAvailable}
+                  pendingSync={pendingSync}
+                  busy={busy}
+                  showAddStudent={showAddStudent}
+                  onToggleAddStudent={() => setShowAddStudent((value) => !value)}
+                  onOpenPendingSchedule={openPendingScheduleEdits}
+                  onOpenStudent={openStudent}
+                  onOpenAdvanced={setAdvancedTab}
+                  onPlatformChanged={platformChanged}
+                  onPresentationSave={async (form) => {
+                    const ok = await runAction(() => updateWorkspacePresentation(snapshot, {
+                      displayName: String(form.get('displayName') ?? ''),
+                      workspaceName: String(form.get('workspaceName') ?? ''),
+                      currencyCode: String(form.get('currencyCode') ?? ''),
+                      currencyLabel: String(form.get('currencyLabel') ?? ''),
+                    }), 'تم حفظ بياناتك.');
+                    if (ok) await onPlatformChanged();
+                    return ok;
+                  }}
+                  onStudentAdd={(form) => void runAction(async () => {
+                    await studentsService.create(workspaceId, {
+                      name: String(form.get('name') ?? ''),
+                      guardianName: String(form.get('guardianName') ?? ''),
+                      guardianPhone: String(form.get('guardianPhone') ?? ''),
+                      level: String(form.get('level') ?? ''),
+                      notes: String(form.get('notes') ?? ''),
+                    });
+                    setShowAddStudent(false);
+                  }, 'تمت إضافة الطالب.')}
+                  onPackage={(studentId, form) => void runAction(async () => {
+                    await configureLocalStudentBilling(workspaceId, studentId, {
+                      billingMode: 'package',
+                      packageSize: Number(form.get('packageSize') ?? 8),
+                      packagePricePence: toPence(form.get('packagePrice'), true),
+                      openingCompletedCount: Number(form.get('openingCompletedCount') ?? 0),
+                      effectiveFrom: String(form.get('effectiveFrom') ?? todayIso()),
+                      cycleAnchorDate: null,
+                    });
+                  }, 'تم حفظ الباقة.')}
+                />
+              )}
+            </>
           )}
         </div>
 
