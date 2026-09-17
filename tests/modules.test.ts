@@ -17,10 +17,13 @@ describe('module platform', () => {
 
   it('uses capabilities for optional cross-module integration', () => {
     const tutoring = BUILTIN_MODULES.find((module) => module.key === 'tutoring');
+    const appointments = BUILTIN_MODULES.find((module) => module.key === 'appointments');
     const planner = BUILTIN_MODULES.find((module) => module.key === 'planner');
     const capabilities = availableCapabilities(BUILTIN_MODULES);
 
     expect(tutoring?.uses.some((item) => item.capability === 'finance.receipts' && item.required === false)).toBe(true);
+    expect(appointments?.uses.some((item) => item.capability === 'finance.receipts' && item.required === false)).toBe(true);
+    expect(appointments?.provides).toContain('schedule.provider');
     expect(planner?.uses.some((item) => item.capability === 'schedule.provider' && item.required === false)).toBe(true);
     expect(capabilities.has('schedule.provider')).toBe(true);
     expect(capabilities.has('finance.receipts')).toBe(true);
@@ -33,8 +36,17 @@ describe('module platform', () => {
     expect(template?.labels['entity.activity.singular']).toBe('حصة');
   });
 
-  it('reserves non-tutoring templates without pretending they are implemented', () => {
-    expect(getWorkspaceTemplate('appointments')?.implemented).toBe(false);
-    expect(getWorkspaceTemplate('appointments')?.labels['entity.activity.singular']).toBe('موعد');
+  it('implements appointments as a separate template without tutoring semantics', () => {
+    const template = getWorkspaceTemplate('appointments');
+    expect(template?.implemented).toBe(true);
+    expect(template?.modules).toEqual(['appointments', 'finance', 'planner', 'reports']);
+    expect(template?.modules).not.toContain('tutoring');
+    expect(template?.labels['entity.person.singular']).toBe('عميل');
+    expect(template?.labels['entity.activity.singular']).toBe('موعد');
+  });
+
+  it('keeps future templates reserved until they are actually implemented', () => {
+    expect(getWorkspaceTemplate('small_business')?.implemented).toBe(false);
+    expect(getWorkspaceTemplate('custom')?.implemented).toBe(false);
   });
 });
