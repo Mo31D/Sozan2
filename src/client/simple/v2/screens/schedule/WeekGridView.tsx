@@ -3,6 +3,7 @@ import { calendarDateInTimeZone } from '../../../../../platform/time/calendar-da
 import type { SimpleWorkspaceData } from '../../../data';
 import {
   formatClockTime,
+  packageLessonLabelForEntry,
   scheduleEntriesForDate,
   todayIso,
   WEEKDAYS,
@@ -180,13 +181,14 @@ export function WeekGridView({
                 {layout.visible.map((item) => {
                   const { entry } = item;
                   const clipped = item.clippedBefore || item.clippedAfter;
+                  const lessonLabel = packageLessonLabelForEntry(data, entry);
                   return (
                     <button
                       type="button"
                       className={`week-grid-entry type-${entry.session.sessionType} status-${entry.status}`}
                       style={entryStyle(item)}
                       key={`${entry.session.id}-${date}-${entry.occurrence?.id ?? 'recurring'}`}
-                      title={`${entry.session.title} · ${entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}`}
+                      title={`${entry.session.title} · ${entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}${lessonLabel ? ` · ${lessonLabel}` : ''}`}
                       onClick={() => onEdit(entry.session.id)}
                     >
                       <span className="week-grid-entry-accent" />
@@ -194,6 +196,7 @@ export function WeekGridView({
                         <strong>{entry.session.title}</strong>
                         <small>
                           {entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}
+                          {lessonLabel ? ` · ${lessonLabel}` : ''}
                           {clipped ? ' · ممتدة خارج النطاق' : ''}
                         </small>
                       </span>
@@ -216,7 +219,10 @@ export function WeekGridView({
                 key={`${date}-${entry.session.id}-${entry.occurrence?.id ?? 'recurring'}`}
                 onClick={() => onEdit(entry.session.id)}
               >
-                <span>{WEEKDAYS[weekdayForIso(date)]} · {entry.session.title}</span>
+                <span>
+                  {WEEKDAYS[weekdayForIso(date)]} · {entry.session.title}
+                  {packageLessonLabelForEntry(data, entry) ? ` · ${packageLessonLabelForEntry(data, entry)}` : ''}
+                </span>
                 <strong>{entry.startTime ? formatClockTime(entry.startTime) : 'وقت غير محدد'}</strong>
               </button>
             ))}
