@@ -9,6 +9,12 @@ import {
   partitionByCompletedIdempotency,
   requiresRevisionReservation,
 } from './revision-policy';
+import {
+  finalizeWorkspaceWrite,
+  readStableWorkspaceRevision,
+  reserveWorkspaceWrite,
+  withStableWorkspaceRead,
+} from './workspace-revision';
 
 const mutationSchema = z.object({
   id: z.string().uuid(),
@@ -118,44 +124,15 @@ async function completedMutationIds(
   return completed;
 }
 
-async function currentWorkspaceRevision(db: D1Database, workspaceId: string): Promise<number> {
-  await db.prepare(
-    `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id, revision)
-     VALUES(?1, 0)`,
-  ).bind(workspaceId).run();
-  const row = await db.prepare(
-    `SELECT revision FROM core_workspace_sync_revisions WHERE workspace_id=?1`,
-  ).bind(workspaceId).first<{ revision: number }>();
-  return Math.max(0, Number(row?.revision ?? 0));
-}
-
-async function reserveWorkspaceRevision(
-  db: D1Database,
-  workspaceId: string,
-  expectedRevision: number,
-): Promise<{ ok: true; revision: number } | { ok: false; revision: number }> {
-  await db.prepare(
-    `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id, revision)
-     VALUES(?1, 0)`,
-  ).bind(workspaceId).run();
-
-  const result = await db.prepare(
-    `UPDATE core_workspace_sync_revisions
-     SET revision=revision+1, updated_at=CURRENT_TIMESTAMP
-     WHERE workspace_id=?1 AND revision=?2`,
-  ).bind(workspaceId, expectedRevision).run();
-
-  if ((result.meta?.changes ?? 0) === 0) {
-    return { ok: false, revision: await currentWorkspaceRevision(db, workspaceId) };
-  }
-  return { ok: true, revision: expectedRevision + 1 };
-}
-
 function routeError(error: unknown): { status: 400 | 401 | 403 | 503; error: string } {
   const access = accessError(error);
   if (access) return access;
   if (error instanceof z.ZodError) return { status: 400, error: 'INVALID_SYNC_PAYLOAD' };
-  return { status: 400, error: error instanceof Error ? error.message : 'SYNC_FAILED' };
+  const code = error instanceof Error ? error.message : 'SYNC_FAILED';
+  if (code === 'SYNC_WRITE_IN_PROGRESS' || code === 'SYNC_SNAPSHOT_UNSTABLE') {
+    return { status: 503, error: code };
+  }
+  return { status: 400, error: code };
 }
 
 export const syncRoutes = new Hono<{ Bindings: Env }>();
@@ -181,20 +158,22 @@ syncRoutes.post('/:workspaceId/push', async (c) => {
           status: 'duplicate',
         })),
         serverTime: new Date().toISOString(),
-        revision: await currentWorkspaceRevision(db, workspaceId),
+        revision: await readStableWorkspaceRevision(db, workspaceId),
       });
     }
 
-    const reserved = await reserveWorkspaceRevision(db, workspaceId, parsed.baseRevision);
+    const reserved = await reserveWorkspaceWrite(db, workspaceId, parsed.baseRevision);
     if (!reserved.ok) {
+      const errorCode = reserved.busy ? 'SYNC_WRITE_IN_PROGRESS' : 'SYNC_REVISION_CONFLICT';
+      const retryable = reserved.busy;
       const results: MutationResult[] = parsed.mutations.map((mutation) =>
         doneIds.has(mutation.id)
           ? { mutationId: mutation.id, status: 'duplicate' }
           : {
               mutationId: mutation.id,
               status: 'failed',
-              error: 'SYNC_REVISION_CONFLICT',
-              retryable: false,
+              error: errorCode,
+              retryable,
             },
       );
       return c.json({
@@ -205,17 +184,22 @@ syncRoutes.post('/:workspaceId/push', async (c) => {
     }
 
     const results: MutationResult[] = [];
-    for (const mutation of parsed.mutations) {
-      if (doneIds.has(mutation.id)) {
-        results.push({ mutationId: mutation.id, status: 'duplicate' });
-      } else {
-        results.push(await applyMutation(db, workspaceId, mutation));
+    let revision: number;
+    try {
+      for (const mutation of parsed.mutations) {
+        if (doneIds.has(mutation.id)) {
+          results.push({ mutationId: mutation.id, status: 'duplicate' });
+        } else {
+          results.push(await applyMutation(db, workspaceId, mutation));
+        }
       }
+    } finally {
+      revision = await finalizeWorkspaceWrite(db, workspaceId, reserved.token);
     }
     return c.json({
       results,
       serverTime: new Date().toISOString(),
-      revision: reserved.revision,
+      revision,
     });
   } catch (error) {
     const response = routeError(error);
@@ -228,15 +212,16 @@ syncRoutes.get('/:workspaceId/snapshot', async (c) => {
     const workspaceId = c.req.param('workspaceId');
     await requireWorkspaceAccess(c, workspaceId);
     const db = requireDatabase(c.env);
-    const [modules, revision] = await Promise.all([
-      Promise.all(syncHandlers.map((handler) => handler.snapshot(db, workspaceId))),
-      currentWorkspaceRevision(db, workspaceId),
-    ]);
+    const stable = await withStableWorkspaceRead(
+      db,
+      workspaceId,
+      () => Promise.all(syncHandlers.map((handler) => handler.snapshot(db, workspaceId))),
+    );
     return c.json({
       workspaceId,
       generatedAt: new Date().toISOString(),
-      revision,
-      modules,
+      revision: stable.revision,
+      modules: stable.value,
     });
   } catch (error) {
     const response = routeError(error);
