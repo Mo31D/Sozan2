@@ -326,7 +326,6 @@ export function TutorWorkspace({
                   assistantLabel={assistantLabel}
                   onMode={setMoneyMode}
                   onOpenStudent={openStudent}
-                  onStudentRestore={restoreStudent}
                   onOpenAdvanced={setAdvancedTab}
                   onCollect={(form) => void runAction(async () => {
                     await collectLocalStudentPayment({
@@ -407,6 +406,7 @@ export function TutorWorkspace({
                   onToggleAddStudent={() => setShowAddStudent((value) => !value)}
                   onOpenPendingSchedule={openPendingScheduleEdits}
                   onOpenStudent={openStudent}
+                  onStudentRestore={restoreStudent}
                   onOpenAdvanced={setAdvancedTab}
                   onPlatformChanged={platformChanged}
                   onPresentationSave={async (form) => {
