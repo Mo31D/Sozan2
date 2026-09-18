@@ -200,6 +200,7 @@ function submitSessionEdit(
       expectedStudentCount: Number(form.get('studentCount') ?? 1),
       centerCutBps: Math.round(Number(form.get('centerCut') ?? 0) * 100),
       studentIds: form.getAll('studentIds').map(String),
+      payerStudentId: session.payerStudentId,
     });
     setEditId(null);
   }, 'تم تعديل بيانات الحصة القادمة.');
