@@ -143,6 +143,30 @@ export function baselineFor(data: SimpleWorkspaceData, studentId: string): Stude
   return data.studentBaselines.find((row) => row.studentId === studentId) ?? null;
 }
 
+export function completedLessonCountForStudent(
+  data: SimpleWorkspaceData,
+  studentId: string,
+): { beforeTracking: number; tracked: number; total: number } {
+  const beforeTracking = baselineFor(data, studentId)?.completedLessonsBeforeTracking ?? 0;
+  const linkedSessionIds = new Set(
+    data.sessions
+      .filter((session) => session.studentIds.includes(studentId))
+      .map((session) => session.id),
+  );
+  const tracked = data.occurrences.filter((occurrence) => (
+    occurrence.status === 'completed'
+    && linkedSessionIds.has(occurrence.recurringSessionId)
+    && Array.isArray(occurrence.studentIds)
+    && occurrence.studentIds.includes(studentId)
+  )).length;
+
+  return {
+    beforeTracking,
+    tracked,
+    total: beforeTracking + tracked,
+  };
+}
+
 export function studentForSession(data: SimpleWorkspaceData, session: RecurringSession): Student | null {
   const id = session.studentIds[0];
   return id ? data.students.find((student) => student.id === id) ?? null : null;
