@@ -201,21 +201,73 @@ export async function importSozan1(
     const oldId = legacyKey(row.id);
     if (shadowOccurrenceIds.has(oldId)) continue;
     const id = occurrenceIds.get(oldId);
-    const sessionId = sessionIds.get(legacyKey(row.recurring_session_id));
-    if (!id || !sessionId) continue;
+    const legacySessionId = legacyKey(row.recurring_session_id);
+    const sessionId = sessionIds.get(legacySessionId);
+    const sessionRow = sessionById.get(legacySessionId);
+    if (!id || !sessionId || !sessionRow) continue;
+
+    const status = mapOccurrenceStatus(row.status);
+    const completed = status === 'completed';
+    const participants = mappedParticipantsForSession(legacySessionId);
+    const priceBasis = sessionRow.price_basis === 'per_student' ? 'per_student' : 'total_session';
+    const payerStudentId = completed && priceBasis === 'total_session' && participants.length === 1
+      ? participants[0]
+      : null;
+
     statements.push(db.prepare(
       `INSERT OR IGNORE INTO tutoring_occurrences(
          id, workspace_id, recurring_session_id, session_date, scheduled_start,
          rescheduled_to_date, rescheduled_to_start, rescheduled_at, reschedule_note,
          status, gross_pence, center_cut_pence, earned_pence, completed_at, note,
-         created_from, created_at, updated_at
-       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'migration',?16,?17)`,
+         duration_minutes_snapshot, travel_minutes_snapshot, session_type_snapshot,
+         location_snapshot, price_basis_snapshot, default_price_pence_snapshot,
+         payer_student_id_snapshot, created_from, created_at, updated_at
+       ) VALUES (
+         ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
+         ?16,?17,?18,?19,?20,?21,?22,'migration',?23,?24
+       )`,
     ).bind(
-      id, workspaceId, sessionId, text(row.session_date), nullableText(row.scheduled_start),
-      nullableText(row.rescheduled_to_date), nullableText(row.rescheduled_to_start), nullableText(row.rescheduled_at), nullableText(row.reschedule_note),
-      mapOccurrenceStatus(row.status), Math.max(0, int(row.gross_pence)), Math.max(0, int(row.center_cut_pence)), Math.max(0, int(row.earned_pence)),
-      nullableText(row.completed_at), nullableText(row.note), timestamp(row.created_at), timestamp(row.updated_at),
+      id,
+      workspaceId,
+      sessionId,
+      text(row.session_date),
+      nullableText(row.scheduled_start),
+      nullableText(row.rescheduled_to_date),
+      nullableText(row.rescheduled_to_start),
+      nullableText(row.rescheduled_at),
+      nullableText(row.reschedule_note),
+      status,
+      Math.max(0, int(row.gross_pence)),
+      Math.max(0, int(row.center_cut_pence)),
+      Math.max(0, int(row.earned_pence)),
+      nullableText(row.completed_at),
+      nullableText(row.note),
+      completed ? clamp(int(sessionRow.duration_minutes, 60), 15, 360) : null,
+      completed ? clamp(int(sessionRow.travel_minutes, 0), 0, 360) : null,
+      completed ? mapSessionType(text(sessionRow.session_type, 'online')) : null,
+      completed ? nullableText(sessionRow.location) : null,
+      completed ? priceBasis : null,
+      completed ? Math.max(0, int(sessionRow.price_pence, 0)) : null,
+      payerStudentId,
+      timestamp(row.created_at),
+      timestamp(row.updated_at),
     ));
+
+    if (completed) {
+      for (const studentId of participants) {
+        statements.push(db.prepare(
+          `INSERT OR IGNORE INTO tutoring_occurrence_students(
+             workspace_id, occurrence_id, student_id, attendance_status, created_at, updated_at
+           ) VALUES (?1,?2,?3,'attended',?4,?5)`,
+        ).bind(
+          workspaceId,
+          id,
+          studentId,
+          timestamp(row.created_at),
+          timestamp(row.updated_at),
+        ));
+      }
+    }
   }
 
   for (const row of billingPlans) {
