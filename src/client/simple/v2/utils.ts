@@ -92,48 +92,10 @@ export function packageLessonNumberForEntry(
   entry: ScheduledEntry,
   studentId: string,
 ): string | null {
+  if (!entry.session.studentIds.includes(studentId)) return null;
   const plan = planFor(data, studentId);
   if (plan?.billingMode !== 'package') return null;
-
-  const cycle = activeCycleFor(data, studentId);
-  const size = cycle?.sessionLimit ?? plan.packageSize ?? 8;
-  if (!cycle) return `؟/${size}`;
-
-  const completed = cycle.openingCompletedCount + cycle.realCompletedCount;
-
-  // For a lesson that has already been completed today, the current cycle
-  // total already includes that occurrence. Showing the resulting ordinal is
-  // therefore the most faithful "lesson number" available without inventing
-  // historical occurrence positions.
-  if (entry.status === 'completed') {
-    const ordinal = completed <= 0 ? 1 : ((completed - 1) % size) + 1;
-    return `${ordinal}/${size}`;
-  }
-
-  if (entry.status === 'cancelled' || entry.status === 'missed') return null;
-
-  const today = todayIso();
-  if (entry.date < today) return null;
-
-  const targetKey = `${entry.date}T${entry.startTime ?? '99:99'}|${entry.session.id}`;
-  let priorScheduled = 0;
-  let cursor = today;
-  let guard = 0;
-
-  while (cursor <= entry.date && guard < 370) {
-    for (const candidate of scheduleEntriesForDate(data, cursor)) {
-      if (candidate.status === 'completed' || candidate.status === 'cancelled' || candidate.status === 'missed') continue;
-      if (!candidate.session.studentIds.includes(studentId)) continue;
-      const candidateKey = `${candidate.date}T${candidate.startTime ?? '99:99'}|${candidate.session.id}`;
-      if (candidateKey < targetKey) priorScheduled += 1;
-    }
-    if (cursor === entry.date) break;
-    cursor = addDays(cursor, 1);
-    guard += 1;
-  }
-
-  const ordinal = ((completed + priorScheduled) % size) + 1;
-  return `${ordinal}/${size}`;
+  return packageProgress(data, studentId);
 }
 
 export function packageLessonLabelForEntry(
@@ -147,8 +109,8 @@ export function packageLessonLabelForEntry(
   )];
 
   if (!numbers.length) return null;
-  if (numbers.length === 1) return `الحصة ${numbers[0]}`;
-  return `الحصص ${numbers.join('، ')}`;
+  if (numbers.length === 1) return `الحصة الحالية ${numbers[0]}`;
+  return `الحصص الحالية ${numbers.join('، ')}`;
 }
 
 export function compareSessionTime(a: RecurringSession, b: RecurringSession): number {
