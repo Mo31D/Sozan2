@@ -160,7 +160,7 @@ function monthKey(iso: string): string {
 
 function previousMonthKey(isoMonth: string, offset: number): string {
   const [year, month] = isoMonth.split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1 - offset, 1, 12));
+  const date = new Date(Date.UTC(year, month - 2 - offset, 1, 12));
   return date.toISOString().slice(0, 7);
 }
 
