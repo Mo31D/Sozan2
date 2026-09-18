@@ -137,6 +137,7 @@ export async function importSozan1(
     if (mapped) receiptStudentIds.set(legacyKey(row.id), mapped);
   }
 
+  const paymentStudentIds = new Map<string, string>();
   let ambiguousGroupPaymentCount = 0;
   let skippedOccurrenceAllocationCount = 0;
   const statements: D1PreparedStatement[] = [];
