@@ -3,7 +3,7 @@ import type { SimpleWorkspaceData } from '../../data';
 import { QuickForm, ScheduleTab, ScreenHeader } from '../components';
 import { ArabicTimeField } from '../localized-fields';
 import { lessonTimeDefaults } from '../session-defaults';
-import type { AddDraft, ScheduleMode } from '../types';
+import type { AddDraft, ScheduleMode, WeekDisplay } from '../types';
 import { todayIso, weekdayForIso, WEEKDAYS } from '../utils';
 import { EditScheduleView } from './schedule/EditScheduleView';
 import { FreeTimeView } from './schedule/FreeTimeView';
@@ -17,6 +17,8 @@ export function ScheduleScreen({
   mode,
   assistantLabel,
   timeZone,
+  weekDisplay,
+  onWeekDisplay,
   onMode,
   monthCursor,
   onMonthCursor,
@@ -31,6 +33,8 @@ export function ScheduleScreen({
   mode: ScheduleMode;
   assistantLabel: string;
   timeZone: string;
+  weekDisplay: WeekDisplay;
+  onWeekDisplay: (display: WeekDisplay) => void;
   onMode: (mode: ScheduleMode) => void;
   monthCursor: Date;
   onMonthCursor: (date: Date) => void;
@@ -42,7 +46,6 @@ export function ScheduleScreen({
 }) {
   const initialDefaults = lessonTimeDefaults(1);
   const [showAdd, setShowAdd] = useState(false);
-  const [weekDisplay, setWeekDisplay] = useState<'list' | 'grid'>('list');
   const [addDraft, setAddDraft] = useState<AddDraft>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [freeStart, setFreeStart] = useState('09:00');
@@ -164,8 +167,8 @@ export function ScheduleScreen({
       {mode === 'week' && (
         <>
           <div className="week-view-switch" role="group" aria-label="طريقة عرض الأسبوع">
-            <button type="button" className={weekDisplay === 'list' ? 'active' : ''} onClick={() => setWeekDisplay('list')}>قائمة</button>
-            <button type="button" className={weekDisplay === 'grid' ? 'active' : ''} onClick={() => setWeekDisplay('grid')}>جدول</button>
+            <button type="button" className={weekDisplay === 'list' ? 'active' : ''} onClick={() => onWeekDisplay('list')}>قائمة</button>
+            <button type="button" className={weekDisplay === 'grid' ? 'active' : ''} onClick={() => onWeekDisplay('grid')}>جدول</button>
           </div>
           {weekDisplay === 'list'
             ? <WeekView data={data} onEdit={openEdit} onOpenStudent={onOpenStudent} />
