@@ -342,17 +342,20 @@ export function TutorWorkspace({
                   onMode={setMoneyMode}
                   onOpenStudent={openStudent}
                   onOpenAdvanced={setAdvancedTab}
-                  onCollect={(form) => void runAction(async () => {
-                    await collectLocalStudentPayment({
-                      workspaceId,
-                      studentId: String(form.get('studentId') ?? ''),
-                      amountPence: toPence(form.get('amount')),
-                      receivedAt: String(form.get('receivedAt') ?? todayIso()),
-                      paymentMethod: String(form.get('paymentMethod') ?? 'cash') as 'cash' | 'bank' | 'wallet' | 'other',
-                      note: String(form.get('note') ?? ''),
-                    });
-                    setMoneyMode('none');
-                  }, 'تم تسجيل التحصيل.')}
+                  onCollect={async (form) => {
+                    const success = await runAction(async () => {
+                      await collectLocalStudentPayment({
+                        workspaceId,
+                        studentId: String(form.get('studentId') ?? ''),
+                        amountPence: toPence(form.get('amount')),
+                        receivedAt: String(form.get('receivedAt') ?? todayIso()),
+                        paymentMethod: String(form.get('paymentMethod') ?? 'cash') as 'cash' | 'bank' | 'wallet' | 'other',
+                        note: String(form.get('note') ?? ''),
+                      });
+                    }, 'تم تسجيل التحصيل.');
+                    if (success) setMoneyMode('none');
+                    return success;
+                  }}
                   onExpense={(form) => void runAction(async () => {
                     await addLocalExpense({
                       workspaceId,
