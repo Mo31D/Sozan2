@@ -215,7 +215,7 @@ export function WeekGridView({
 
       {outside.length > 0 && (
         <details className="week-grid-outside">
-          <summary>مواعيد خارج ٨ ص–٨ م أو بدون وقت <b>{outside.length}</b></summary>
+          <summary>مواعيد خارج ٨ ص–٨ م <b>{outside.length}</b></summary>
           <div>
             {outside.map(({ date, entry }) => (
               <button

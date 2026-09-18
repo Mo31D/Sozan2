@@ -18,6 +18,9 @@ export function ReportsHub({
   initialKind = 'work',
   initialPreset = 'week',
   onOpenStudent,
+  onOpenPendingSchedule,
+  onOpenDue,
+  onOpenExpenses,
   onBack,
 }: {
   data: SimpleWorkspaceData;
@@ -25,6 +28,9 @@ export function ReportsHub({
   initialKind?: TutoringReportKind;
   initialPreset?: Exclude<ReportPreset, 'last28'>;
   onOpenStudent: (studentId: string) => void;
+  onOpenPendingSchedule: () => void;
+  onOpenDue: () => void;
+  onOpenExpenses: () => void;
   onBack: () => void;
 }) {
   const [kind, setKind] = useState<TutoringReportKind>(initialKind);
@@ -37,6 +43,25 @@ export function ReportsHub({
     [preset, today, fromDate, toDate],
   );
   const report = useMemo(() => buildWorkspaceReportForRange(data, range), [data, range]);
+
+  const actionForInsight = (key: string): (() => void) | null => {
+    if (key === 'due') return onOpenDue;
+    if (key === 'pending') return onOpenPendingSchedule;
+    if (key === 'duplicate-expenses') return onOpenExpenses;
+    if (key === 'cancelled') {
+      return () => {
+        setKind('attendance');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+    }
+    if (key === 'travel') {
+      return () => {
+        setKind('work');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+    }
+    return null;
+  };
 
   return (
     <section className="management-subview reports-hub">
@@ -64,17 +89,37 @@ export function ReportsHub({
       )}
 
       {kind === 'work' && <WorkReport report={report} currency={currency} />}
-      {kind === 'finance' && <FinanceReport report={report} currency={currency} />}
+      {kind === 'finance' && <FinanceReport report={report} currency={currency} onOpenDue={onOpenDue} />}
       {kind === 'students' && <StudentsReport data={data} range={range} currency={currency} onOpenStudent={onOpenStudent} />}
       {kind === 'attendance' && <AttendanceReport report={report} />}
       {kind === 'packages' && <PackagesReport data={data} currency={currency} onOpenStudent={onOpenStudent} />}
 
       <div className="report-insights-list">
-        {report.insights.map((insight) => (
-          <article className={`report-insight-card ${insight.level}`} key={insight.key}>
-            <strong>{insight.title}</strong><span>{insight.detail}</span>
-          </article>
-        ))}
+        {report.insights.map((insight) => {
+          const action = actionForInsight(insight.key);
+          const detail = insight.key === 'due'
+            ? `${money(report.duePence, currency)} مطلوب تحصيلها الآن على حصص أو باقات مكتملة.`
+            : insight.detail;
+          return (
+            <article
+              className={`report-insight-card ${insight.level}${action ? ' actionable' : ''}`}
+              key={insight.key}
+              role={action ? 'button' : undefined}
+              tabIndex={action ? 0 : undefined}
+              onClick={action ?? undefined}
+              onKeyDown={action ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  action();
+                }
+              } : undefined}
+            >
+              <strong>{insight.title}</strong>
+              <span>{detail}</span>
+              {action && <small>عرض التفاصيل ‹</small>}
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -84,8 +129,8 @@ function WorkReport({ report, currency }: { report: ReturnType<typeof buildWorks
   return <><article className="report-answer-card"><span>اشتغلتي خلال الفترة</span><strong>{formatDurationArabic(report.workMinutes)}</strong><small>{report.completedLessons} حصة مكتملة · قيمة الشغل {money(report.earnedPence, currency)}</small></article><MetricGrid items={[["وقت التدريس", formatDurationArabic(report.teachingMinutes)],["وقت الانتقال", formatDurationArabic(report.travelMinutes)],["العائد الحقيقي/ساعة", money(report.effectiveHourlyPence, currency)],["إلغاء أو فوات", String(report.cancelledLessons)]]} /></>;
 }
 
-function FinanceReport({ report, currency }: { report: ReturnType<typeof buildWorkspaceReportForRange>; currency: string }) {
-  return <><article className="report-answer-card"><span>صافي الحركة خلال الفترة</span><strong>{money(report.netCashPence, currency)}</strong><small>المقبوض + الدخل الآخر − المصروفات</small></article><MetricGrid items={[["قبضتي", money(report.receivedPence, currency)],["دخل آخر", money(report.otherIncomePence, currency)],["صرفتي", money(report.expensesPence, currency)],["مطلوب تحصيله الآن", money(report.duePence, currency)]]} /></>;
+function FinanceReport({ report, currency, onOpenDue }: { report: ReturnType<typeof buildWorkspaceReportForRange>; currency: string; onOpenDue: () => void }) {
+  return <><article className="report-answer-card"><span>صافي الحركة خلال الفترة</span><strong>{money(report.netCashPence, currency)}</strong><small>المقبوض + الدخل الآخر − المصروفات</small></article><MetricGrid items={[["قبضتي", money(report.receivedPence, currency)],["دخل آخر", money(report.otherIncomePence, currency)],["صرفتي", money(report.expensesPence, currency)],["مطلوب تحصيله الآن", money(report.duePence, currency), onOpenDue]]} /></>;
 }
 
 function StudentsReport({ data, range, currency, onOpenStudent }: { data: SimpleWorkspaceData; range: ReportDateRange; currency: string; onOpenStudent: (studentId: string) => void }) {
@@ -129,6 +174,20 @@ function PackagesReport({ data, currency, onOpenStudent }: { data: SimpleWorkspa
   return <div className="report-row-list">{rows.map((row) => <button type="button" key={row.student.id} className="report-person-row" onClick={() => onOpenStudent(row.student.id)}><div className="avatar-circle">{row.student.name.trim().charAt(0)}</div><div><strong>{row.student.name}</strong><small>{row.completed}/{row.cycle.sessionLimit} تمت · باقي {row.remaining}</small></div><div><b>{money(row.cycle.pricePence, currency)}</b><small>{row.cycle.status === 'due' ? 'جاهزة للتحصيل' : row.cycle.status === 'paid' ? 'مدفوعة' : 'جارية'}</small></div></button>)}{!rows.length && <div className="friendly-empty">لا توجد باقات نشطة.</div>}</div>;
 }
 
-function MetricGrid({ items }: { items: Array<[string, string]> }) { return <div className="management-metric-grid">{items.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>; }
+function MetricGrid({ items }: { items: Array<[string, string, (() => void)?]> }) {
+  return <div className="management-metric-grid">{items.map(([label, value, onClick]) => <div
+    key={label}
+    className={onClick ? 'actionable' : undefined}
+    role={onClick ? 'button' : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onClick={onClick}
+    onKeyDown={onClick ? (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        onClick();
+      }
+    } : undefined}
+  ><span>{label}</span><strong>{value}</strong>{onClick && <small>عرض التفاصيل ‹</small>}</div>)}</div>;
+}
 function ReportKindButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) { return <button type="button" className={active ? 'active' : ''} onClick={onClick}>{children}</button>; }
 export function SubHeader({ title, subtitle, onBack }: { title: string; subtitle?: string; onBack: () => void }) { return <header className="management-subheader"><div>{subtitle && <small>{subtitle}</small>}<h2>{title}</h2></div><button type="button" onClick={onBack}>رجوع</button></header>; }

@@ -34,6 +34,8 @@ describe('workspace reports', () => {
     expect(report.travelMinutes).toBe(30);
     expect(report.effectiveHourlyPence).toBe(30000);
     expect(report.insights.some((item) => item.key === 'due')).toBe(true);
+    expect(report.insights.find((item) => item.key === 'due')?.detail).not.toContain('قرش');
+    expect(report.insights.find((item) => item.key === 'due')?.detail).not.toContain('50000');
     expect(report.insights.some((item) => item.key === 'pending')).toBe(true);
   });
 

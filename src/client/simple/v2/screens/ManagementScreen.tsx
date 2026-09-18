@@ -28,6 +28,7 @@ export function ManagementScreen({
   onStudentAdd,
   onPackage: _onPackage,
   onOpenPendingSchedule,
+  onOpenDue,
   onOpenStudent,
   onStudentRestore,
   onOpenAdvanced,
@@ -44,6 +45,7 @@ export function ManagementScreen({
   onStudentAdd: (form: FormData) => void;
   onPackage: (studentId: string, form: FormData) => void;
   onOpenPendingSchedule: () => void;
+  onOpenDue: () => void;
   onOpenStudent: (studentId: string) => void;
   onStudentRestore: (studentId: string) => Promise<boolean>;
   onOpenAdvanced: (tab: ControlTab) => void;
@@ -63,7 +65,7 @@ export function ManagementScreen({
   };
 
   if (view === 'reports') {
-    return <ReportsHub key={`${reportLaunch.kind}-${reportLaunch.preset}`} data={data} currency={presentation.currencyLabel} initialKind={reportLaunch.kind} initialPreset={reportLaunch.preset} onOpenStudent={onOpenStudent} onBack={back} />;
+    return <ReportsHub key={`${reportLaunch.kind}-${reportLaunch.preset}`} data={data} currency={presentation.currencyLabel} initialKind={reportLaunch.kind} initialPreset={reportLaunch.preset} onOpenStudent={onOpenStudent} onOpenPendingSchedule={onOpenPendingSchedule} onOpenDue={onOpenDue} onOpenExpenses={() => onOpenAdvanced('expenses')} onBack={back} />;
   }
   if (view === 'students') {
     return <StudentsSettings data={data} busy={busy} showAddStudent={showAddStudent} onToggleAddStudent={onToggleAddStudent} onStudentAdd={onStudentAdd} onOpenStudent={onOpenStudent} onStudentRestore={onStudentRestore} onBack={back} />;
@@ -98,7 +100,7 @@ export function ManagementScreen({
           <div><span>يحتاج انتباهك</span><strong>{attentionCount} {attentionCount === 1 ? 'حاجة' : 'حاجات'}</strong></div>
           <div className="management-attention-actions">
             {pendingTimes > 0 && <button type="button" onClick={onOpenPendingSchedule}>{pendingTimes} مواعيد بدون وقت</button>}
-            {due > 0 && <button type="button" onClick={() => openReport('finance', 'month')}>{money(due, presentation.currencyLabel)} مطلوب تحصيله</button>}
+            {due > 0 && <button type="button" onClick={onOpenDue}>{money(due, presentation.currencyLabel)} مطلوب تحصيله</button>}
             {pendingSync > 0 && <button type="button" onClick={() => setView('account')}>{pendingSync} تغيير للمزامنة</button>}
           </div>
         </article>
