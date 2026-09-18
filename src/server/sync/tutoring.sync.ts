@@ -21,6 +21,7 @@ const completeOccurrenceMutationSchema = z.object({
   scheduledStart: clockSchema.nullable(),
   completedAt: z.string().min(10).max(50),
   note: z.string().trim().max(500).nullable().optional().default(null),
+  participantStudentIds: z.array(z.string().uuid()).max(100).optional(),
 });
 const rescheduleMutationSchema = z.object({
   date: dateSchema,
@@ -42,6 +43,10 @@ type OccurrenceRow = {
   earned_pence: number;
   completed_at: string | null;
   note: string | null;
+  duration_minutes_snapshot: number | null;
+  travel_minutes_snapshot: number | null;
+  session_type_snapshot: string | null;
+  location_snapshot: string | null;
 };
 
 type BillingPlanRow = {
@@ -150,6 +155,12 @@ async function reopenCompletedOccurrence(db: D1Database, workspaceId: string, oc
     throw new Error('OCCURRENCE_STATE_INVALID');
   }
 
+  const attended = await db.prepare(
+    `SELECT student_id
+     FROM tutoring_occurrence_students
+     WHERE workspace_id=?1 AND occurrence_id=?2 AND attendance_status='attended'`,
+  ).bind(workspaceId, occurrenceId).all<{ student_id: string }>();
+
   const affected = await db.prepare(
     `SELECT co.billing_cycle_id, c.student_id, c.session_limit, c.price_pence,
             c.opening_completed_count
@@ -213,20 +224,21 @@ async function reopenCompletedOccurrence(db: D1Database, workspaceId: string, oc
     ).bind(completed ? 'due' : 'open', completedOn, workspaceId, cycle.billing_cycle_id).run();
   }
 
-  await db.prepare(
-    `UPDATE tutoring_occurrences
-     SET status='scheduled', gross_pence=0, center_cut_pence=0, earned_pence=0,
-         completed_at=NULL, updated_at=CURRENT_TIMESTAMP
-     WHERE workspace_id=?1 AND id=?2`,
-  ).bind(workspaceId, occurrenceId).run();
+  await db.batch([
+    db.prepare(
+      `DELETE FROM tutoring_occurrence_students
+       WHERE workspace_id=?1 AND occurrence_id=?2`,
+    ).bind(workspaceId, occurrenceId),
+    db.prepare(
+      `UPDATE tutoring_occurrences
+       SET status='scheduled', gross_pence=0, center_cut_pence=0, earned_pence=0,
+           completed_at=NULL, duration_minutes_snapshot=NULL, travel_minutes_snapshot=NULL,
+           session_type_snapshot=NULL, location_snapshot=NULL, updated_at=CURRENT_TIMESTAMP
+       WHERE workspace_id=?1 AND id=?2`,
+    ).bind(workspaceId, occurrenceId),
+  ]);
 
-  const directStudents = await db.prepare(
-    `SELECT ss.student_id FROM tutoring_occurrences o
-     JOIN tutoring_session_students ss
-       ON ss.workspace_id=o.workspace_id AND ss.recurring_session_id=o.recurring_session_id
-     WHERE o.workspace_id=?1 AND o.id=?2`,
-  ).bind(workspaceId, occurrenceId).all<{ student_id: string }>();
-  for (const row of directStudents.results ?? []) studentIds.add(row.student_id);
+  for (const row of attended.results ?? []) studentIds.add(row.student_id);
   for (const studentId of studentIds) await rebuildStudentAllocations(db, workspaceId, studentId);
 }
 
@@ -315,7 +327,11 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
         new BillingService(new D1BillingRepository(db), () => crypto.randomUUID()),
         () => crypto.randomUUID(),
       );
-      await service.complete(workspaceId, occurrenceId, { completedAt: parsed.completedAt, note: parsed.note });
+      await service.complete(workspaceId, occurrenceId, {
+        completedAt: parsed.completedAt,
+        note: parsed.note,
+        participantStudentIds: parsed.participantStudentIds,
+      });
       return;
     }
 
@@ -365,7 +381,9 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
       db.prepare(
         `SELECT id, workspace_id, recurring_session_id, session_date, scheduled_start,
                 rescheduled_to_date, rescheduled_to_start, status, gross_pence,
-                center_cut_pence, earned_pence, completed_at, note
+                center_cut_pence, earned_pence, completed_at, note,
+                duration_minutes_snapshot, travel_minutes_snapshot,
+                session_type_snapshot, location_snapshot
          FROM tutoring_occurrences
          WHERE workspace_id = ?1
          ORDER BY session_date, scheduled_start, id`,
@@ -396,17 +414,17 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
     ]);
 
     const occurrenceRows = occurrencesResult.results ?? [];
-    const studentIdsBySession = new Map<string, string[]>();
-    const links = await db.prepare(
-      `SELECT recurring_session_id, student_id
-       FROM tutoring_session_students
-       WHERE workspace_id = ?1
-       ORDER BY recurring_session_id, student_id`,
-    ).bind(workspaceId).all<{ recurring_session_id: string; student_id: string }>();
-    for (const row of links.results ?? []) {
-      const current = studentIdsBySession.get(row.recurring_session_id) ?? [];
+    const studentIdsByOccurrence = new Map<string, string[]>();
+    const attendance = await db.prepare(
+      `SELECT occurrence_id, student_id
+       FROM tutoring_occurrence_students
+       WHERE workspace_id = ?1 AND attendance_status='attended'
+       ORDER BY occurrence_id, student_id`,
+    ).bind(workspaceId).all<{ occurrence_id: string; student_id: string }>();
+    for (const row of attendance.results ?? []) {
+      const current = studentIdsByOccurrence.get(row.occurrence_id) ?? [];
       current.push(row.student_id);
-      studentIdsBySession.set(row.recurring_session_id, current);
+      studentIdsByOccurrence.set(row.occurrence_id, current);
     }
 
     return {
@@ -428,7 +446,11 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
           earnedPence: row.earned_pence,
           completedAt: row.completed_at,
           note: row.note,
-          studentIds: studentIdsBySession.get(row.recurring_session_id) ?? [],
+          studentIds: studentIdsByOccurrence.get(row.id) ?? [],
+          durationMinutesSnapshot: row.duration_minutes_snapshot,
+          travelMinutesSnapshot: row.travel_minutes_snapshot,
+          sessionTypeSnapshot: row.session_type_snapshot,
+          locationSnapshot: row.location_snapshot,
         })),
         billingPlans: (plansResult.results ?? []).map((row) => ({
           id: row.student_id,
