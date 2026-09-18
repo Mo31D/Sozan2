@@ -333,38 +333,69 @@
 
 @media(max-width:700px){
   .week-grid-view{
-    width:calc(100vw - 20px);
-    gap:9px;
+    width:calc(100vw - 16px);
+    gap:8px;
   }
-  .week-grid-meta{align-items:flex-start;flex-direction:column;gap:3px}
+  .week-grid-meta{align-items:flex-start;flex-direction:column;gap:2px}
+  .week-grid-meta strong{font-size:.94rem}
+  .week-grid-meta span,
+  .week-grid-meta small{font-size:.72rem}
   .week-grid-meta small{white-space:normal}
   .week-view-switch{align-self:stretch;grid-template-columns:1fr 1fr}
-  .week-view-switch button{min-height:40px}
+  .week-view-switch button{min-height:38px;padding-block:6px}
   .week-grid-scroll{
     border-radius:var(--ui-radius-sm);
     scroll-behavior:smooth;
   }
   .week-grid-board{
-    --week-grid-body-height:528px;
-    grid-template-columns:66px repeat(7,minmax(118px,1fr));
-    grid-template-rows:50px var(--week-grid-body-height);
-    min-width:892px;
+    --week-grid-body-height:480px;
+    grid-template-columns:60px repeat(7,minmax(102px,1fr));
+    grid-template-rows:46px var(--week-grid-body-height);
+    min-width:774px;
   }
-  .week-grid-day-head{padding:6px 3px}
-  .week-grid-day-head strong{font-size:.78rem}
-  .week-grid-day-head small{font-size:.61rem}
-  .week-grid-time-band{padding:6px 2px}
-  .week-grid-time-band strong{font-size:.68rem}
-  .week-grid-time-band span{font-size:.58rem}
-  .week-grid-entry{padding:4px 5px;gap:5px;border-radius:9px}
-  .week-grid-entry-copy strong{font-size:.7rem}
-  .week-grid-entry-copy small{font-size:.57rem}
+  .week-grid-day-head{padding:5px 2px}
+  .week-grid-day-head strong{font-size:.74rem}
+  .week-grid-day-head small{font-size:.57rem}
+  .week-grid-time-band{padding:5px 2px}
+  .week-grid-time-band strong{font-size:.64rem}
+  .week-grid-time-band span{font-size:.54rem}
+  .week-grid-entry{
+    height:max(24px,calc(var(--week-entry-height) - 4px));
+    padding:3px 4px;
+    gap:4px;
+    border-radius:8px;
+  }
+  .week-grid-entry-accent{width:3px;min-height:16px}
+  .week-grid-entry-copy strong{font-size:.66rem}
+  .week-grid-entry-copy small{font-size:.53rem}
 }
 
 @media(max-width:390px){
+  .week-grid-view{width:calc(100vw - 10px)}
+  .week-grid-board{
+    --week-grid-body-height:468px;
+    grid-template-columns:56px repeat(7,minmax(98px,1fr));
+    min-width:742px;
+  }
+}
+
+@media(max-width:900px) and (pointer:coarse) and (orientation:landscape){
   .week-grid-view{width:calc(100vw - 12px)}
   .week-grid-board{
-    grid-template-columns:62px repeat(7,minmax(114px,1fr));
-    min-width:860px;
+    --week-grid-body-height:420px;
+    grid-template-columns:54px repeat(7,minmax(98px,1fr));
+    grid-template-rows:44px var(--week-grid-body-height);
+    min-width:740px;
   }
+  .week-grid-day-head strong{font-size:.72rem}
+  .week-grid-day-head small{font-size:.55rem}
+  .week-grid-time-band strong{font-size:.62rem}
+  .week-grid-time-band span{font-size:.52rem}
+  .week-grid-entry{
+    height:max(23px,calc(var(--week-entry-height) - 4px));
+    padding:3px 4px;
+    gap:4px;
+  }
+  .week-grid-entry-copy strong{font-size:.64rem}
+  .week-grid-entry-copy small{font-size:.51rem}
 }
