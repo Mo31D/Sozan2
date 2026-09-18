@@ -98,7 +98,7 @@ export function packageLessonNumberForEntry(
   return packageProgress(data, studentId);
 }
 
-export function packageLessonLabelForEntry(
+export function packageLessonNumbersForEntry(
   data: SimpleWorkspaceData,
   entry: ScheduledEntry,
 ): string | null {
@@ -109,8 +109,16 @@ export function packageLessonLabelForEntry(
   )];
 
   if (!numbers.length) return null;
-  if (numbers.length === 1) return `الحصة الحالية ${numbers[0]}`;
-  return `الحصص الحالية ${numbers.join('، ')}`;
+  return numbers.join('، ');
+}
+
+export function packageLessonLabelForEntry(
+  data: SimpleWorkspaceData,
+  entry: ScheduledEntry,
+): string | null {
+  const numbers = packageLessonNumbersForEntry(data, entry);
+  if (!numbers) return null;
+  return `الحصة ${numbers}`;
 }
 
 export function compareSessionTime(a: RecurringSession, b: RecurringSession): number {
