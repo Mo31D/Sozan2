@@ -11,6 +11,7 @@ export type NewRecurringSession = CreateRecurringSessionInput & {
 
 export interface SessionRepository {
   listActive(workspaceId: string): Promise<RecurringSession[]>;
+  listAll(workspaceId: string): Promise<RecurringSession[]>;
   getById(workspaceId: string, sessionId: string): Promise<RecurringSession>;
   create(input: NewRecurringSession): Promise<RecurringSession>;
   updateSchedule(input: {
