@@ -5,6 +5,10 @@ import type { Env } from '../env';
 import { requireDatabase } from '../env';
 import { getSyncHandler, type SyncMutation } from './contracts';
 import { syncHandlers, syncPostApplyHooks } from './registry';
+import {
+  partitionByCompletedIdempotency,
+  requiresRevisionReservation,
+} from './revision-policy';
 
 const mutationSchema = z.object({
   id: z.string().uuid(),
@@ -98,6 +102,22 @@ async function applyMutation(
   }
 }
 
+async function completedMutationIds(
+  db: D1Database,
+  workspaceId: string,
+  mutations: readonly SyncMutation[],
+): Promise<Set<string>> {
+  const completed = new Set<string>();
+  for (const mutation of mutations) {
+    const row = await db.prepare(
+      `SELECT status FROM core_idempotency_keys
+       WHERE workspace_id=?1 AND idempotency_key=?2`,
+    ).bind(workspaceId, mutation.id).first<{ status: 'pending' | 'done' }>();
+    if (row?.status === 'done') completed.add(mutation.id);
+  }
+  return completed;
+}
+
 async function currentWorkspaceRevision(db: D1Database, workspaceId: string): Promise<number> {
   await db.prepare(
     `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id, revision)
@@ -147,14 +167,36 @@ syncRoutes.post('/:workspaceId/push', async (c) => {
     const parsed = pushSchema.parse(await c.req.json());
     const db = requireDatabase(c.env);
 
+    // Idempotency is checked before optimistic concurrency. This is essential
+    // for the "server committed, response was lost" case: a retry from the old
+    // revision must be acknowledged as duplicate, not turned into a false
+    // conflict/dead-letter.
+    const doneIds = await completedMutationIds(db, workspaceId, parsed.mutations);
+    const partition = partitionByCompletedIdempotency(parsed.mutations, doneIds);
+
+    if (!requiresRevisionReservation(partition)) {
+      return c.json({
+        results: parsed.mutations.map((mutation): MutationResult => ({
+          mutationId: mutation.id,
+          status: 'duplicate',
+        })),
+        serverTime: new Date().toISOString(),
+        revision: await currentWorkspaceRevision(db, workspaceId),
+      });
+    }
+
     const reserved = await reserveWorkspaceRevision(db, workspaceId, parsed.baseRevision);
     if (!reserved.ok) {
-      const results: MutationResult[] = parsed.mutations.map((mutation) => ({
-        mutationId: mutation.id,
-        status: 'failed',
-        error: 'SYNC_REVISION_CONFLICT',
-        retryable: false,
-      }));
+      const results: MutationResult[] = parsed.mutations.map((mutation) =>
+        doneIds.has(mutation.id)
+          ? { mutationId: mutation.id, status: 'duplicate' }
+          : {
+              mutationId: mutation.id,
+              status: 'failed',
+              error: 'SYNC_REVISION_CONFLICT',
+              retryable: false,
+            },
+      );
       return c.json({
         results,
         serverTime: new Date().toISOString(),
@@ -164,7 +206,11 @@ syncRoutes.post('/:workspaceId/push', async (c) => {
 
     const results: MutationResult[] = [];
     for (const mutation of parsed.mutations) {
-      results.push(await applyMutation(db, workspaceId, mutation));
+      if (doneIds.has(mutation.id)) {
+        results.push({ mutationId: mutation.id, status: 'duplicate' });
+      } else {
+        results.push(await applyMutation(db, workspaceId, mutation));
+      }
     }
     return c.json({
       results,
