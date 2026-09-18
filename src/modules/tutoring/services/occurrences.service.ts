@@ -90,6 +90,9 @@ export class OccurrencesService {
       travelMinutes: session.travelMinutes,
       sessionType: session.sessionType,
       location: session.location,
+      priceBasis: session.priceBasis,
+      defaultPricePence: session.defaultPricePence,
+      payerStudentId: session.payerStudentId,
     });
 
     for (const studentId of participants) {
