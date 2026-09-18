@@ -613,8 +613,8 @@ async function beginImportJob(
   importId: string,
   fingerprint: string,
   expectedRevision: number,
-): Promise<ImportJobRow> {
-  await db.prepare(
+): Promise<{ row: ImportJobRow; created: boolean }> {
+  const inserted = await db.prepare(
     `INSERT OR IGNORE INTO core_backup_imports(
        workspace_id,import_id,backup_fingerprint,expected_revision,status
      ) VALUES(?1,?2,?3,?4,'applying')`,
@@ -625,7 +625,7 @@ async function beginImportJob(
   if (row.backup_fingerprint !== fingerprint || row.expected_revision !== expectedRevision) {
     throw new Error('BACKUP_IMPORT_ID_REUSED');
   }
-  return row;
+  return { row, created: (inserted.meta?.changes ?? 0) > 0 };
 }
 
 async function failImportJob(
@@ -735,23 +735,27 @@ backupRoutes.post('/:workspaceId/import', async (c) => {
 
     db = requireDatabase(c.env);
     const fingerprint = await sha256(JSON.stringify(backup));
-    const existing = await beginImportJob(
+    const started = await beginImportJob(
       db,
       workspaceId,
       importId,
       fingerprint,
       parsed.expectedRevision,
     );
+    const existing = started.row;
 
-    if (existing.status === 'completed') {
-      return c.json({
-        ok: true,
-        importId,
-        revision: Number(existing.applied_revision ?? parsed.expectedRevision),
-        replayed: true,
-      });
+    if (!started.created) {
+      if (existing.status === 'completed') {
+        return c.json({
+          ok: true,
+          importId,
+          revision: Number(existing.applied_revision ?? parsed.expectedRevision),
+          replayed: true,
+        });
+      }
+      if (existing.status === 'failed') throw new Error('BACKUP_IMPORT_ALREADY_FAILED');
+      throw new Error('BACKUP_IMPORT_IN_PROGRESS');
     }
-    if (existing.status === 'failed') throw new Error('BACKUP_IMPORT_ALREADY_FAILED');
 
     const token = `backup-import:${importId}`;
     const reserved = await reserveWorkspaceWrite(
