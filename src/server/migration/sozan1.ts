@@ -535,6 +535,24 @@ export async function importSozan1(
     warnings.push('LEGACY_MONTHLY_DUES_PRESERVED_AS_LEGACY_ONLY');
     await upsertSetting(db, workspaceId, 'migration.sozan1.monthly_dues_count', String(monthlyDues.length));
   }
+  if (ambiguousGroupPaymentCount > 0) {
+    warnings.push('LEGACY_GROUP_PAYMENTS_REQUIRE_PAYER_REVIEW');
+    await upsertSetting(
+      db,
+      workspaceId,
+      'migration.sozan1.ambiguous_group_payments_count',
+      String(ambiguousGroupPaymentCount),
+    );
+  }
+  if (skippedOccurrenceAllocationCount > 0) {
+    warnings.push('LEGACY_OCCURRENCE_ALLOCATIONS_REQUIRE_REVIEW');
+    await upsertSetting(
+      db,
+      workspaceId,
+      'migration.sozan1.skipped_occurrence_allocations_count',
+      String(skippedOccurrenceAllocationCount),
+    );
+  }
   await upsertSetting(db, workspaceId, 'migration.sozan1.source_exported_at', payload.exportedAt ?? 'unknown');
   await upsertSetting(db, workspaceId, 'migration.sozan1.summary', JSON.stringify(summary));
   await upsertSetting(db, workspaceId, 'migration.sozan1.completed_at', new Date().toISOString());
