@@ -96,6 +96,24 @@ export async function reconcileStudentFinancialState(db: D1Database, workspaceId
   await normalizeCycles(db, workspaceId, studentId);
 }
 
+export async function rebuildStudentFinancialState(
+  db: D1Database,
+  workspaceId: string,
+  studentId: string,
+): Promise<void> {
+  await db.prepare(
+    `DELETE FROM finance_receipt_allocations
+     WHERE workspace_id=?1 AND receipt_id IN (
+       SELECT id FROM finance_receipts
+       WHERE workspace_id=?1
+         AND payer_ref_type='tutoring.student'
+         AND payer_ref_id=?2
+     )`,
+  ).bind(workspaceId, studentId).run();
+
+  await reconcileStudentFinancialState(db, workspaceId, studentId);
+}
+
 export async function reconcileWorkspaceFinancialState(db: D1Database, workspaceId: string): Promise<void> {
   const students = await db.prepare(
     `SELECT id FROM tutoring_students WHERE workspace_id=?1 AND deleted_at IS NULL`,
