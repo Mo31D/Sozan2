@@ -27,6 +27,18 @@ export class IndexedDbSessionRepository implements SessionRepository {
       });
   }
 
+  async listAll(workspaceId: string): Promise<RecurringSession[]> {
+    const db = await openLocalDatabase();
+    const rows = await requestResult<RecurringSession[]>(
+      db.transaction(STORES.tutoringSessions, 'readonly').objectStore(STORES.tutoringSessions).getAll(),
+    );
+    return rows
+      .filter((row) => row.workspaceId === workspaceId)
+      .sort((a, b) => Number(b.active) - Number(a.active)
+        || (a.weekday ?? 99) - (b.weekday ?? 99)
+        || (a.startTime ?? '99:99').localeCompare(b.startTime ?? '99:99'));
+  }
+
   async getById(workspaceId: string, sessionId: string): Promise<RecurringSession> {
     const db = await openLocalDatabase();
     const row = await requestResult<RecurringSession | undefined>(
