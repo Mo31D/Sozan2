@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import {
   assertBackupWorkspaceScope,
   FULL_BACKUP_SCHEMA_VERSION,
-  backupManifest,
   validateWorkspaceBackup,
   workspaceBackupSchema,
   type WorkspaceBackup,
@@ -516,7 +515,7 @@ async function restoreBackupAtomic(db: D1Database, workspaceId: string, backup: 
     s.coreActivityEvents.map((raw) => { const x=r(raw); return [
       String(x.id),workspaceId,String(x.moduleKey),String(x.entityType),x.entityId==null?null:String(x.entityId),
       String(x.action),String(x.title),x.detail==null?null:String(x.detail),x.beforeJson==null?null:String(x.beforeJson),
-      x.afterJson==null?null:String(x.afterJson),asBool(x.undoable),x.undoneAt==null?null:String(x.undoneAt),nowFor(x.createdAt),
+      x.afterJson==null?null:String(x.afterJson),x.undoable?1:0,x.undoneAt==null?null:String(x.undoneAt),nowFor(x.createdAt),
     ]; })));
 
   // D1 batch is the atomic boundary. Refuse a backup that would exceed the
