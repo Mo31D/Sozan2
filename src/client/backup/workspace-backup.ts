@@ -16,7 +16,7 @@ import {
   type LocalWorkspaceRecord,
 } from '../adapters/indexeddb/platform.repository';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
-import { withWorkspaceOperation } from '../sync/workspace-operation';
+import { withWorkspaceOperationWhenFree } from '../sync/workspace-operation';
 
 type Row = Record<string, any>;
 
@@ -360,7 +360,7 @@ export async function importWorkspaceBackupLocalFirst(
   const { backup } = await validateWorkspaceBackupForImport(snapshot, input);
   const workspaceId = snapshot.workspace.id;
 
-  return withWorkspaceOperation(workspaceId, 'backup-import', async () => {
+  return withWorkspaceOperationWhenFree(workspaceId, 'backup-import', async () => {
     const cloudLink = snapshot.cloudLink;
     const importId = cloudLink ? crypto.randomUUID() : null;
     const expectedRevision = Math.max(0, Number(cloudLink?.serverRevision ?? 0));
