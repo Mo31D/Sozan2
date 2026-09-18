@@ -58,6 +58,12 @@ export async function completeLocalSession(
 
   if (existing?.status === 'completed') {
     await transactionDone(transaction);
+    // A previous attempt may have committed attendance/package state and then
+    // failed while reconciling Finance. Retrying completion must repair that
+    // downstream projection instead of returning with stale due/credit values.
+    for (const studentId of existing.studentIds ?? []) {
+      await rebalanceStudentLocally(workspaceId, studentId);
+    }
     return;
   }
 
