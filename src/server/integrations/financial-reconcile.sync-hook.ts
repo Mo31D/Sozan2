@@ -1,4 +1,7 @@
-import { reconcileWorkspaceFinancialState } from './financial-reconcile';
+import {
+  rebuildStudentFinancialState,
+  reconcileWorkspaceFinancialState,
+} from './financial-reconcile';
 import type { SyncMutation, SyncPostApplyHook } from '../sync/contracts';
 
 /**
@@ -11,7 +14,15 @@ export const financialReconcileSyncHook: SyncPostApplyHook = {
     return mutation.moduleKey === 'tutoring';
   },
 
-  async afterApply(db: D1Database, workspaceId: string): Promise<void> {
+  async afterApply(db: D1Database, workspaceId: string, mutation: SyncMutation): Promise<void> {
+    if (mutation.operation === 'billing.configure') {
+      // Changing opening package progress is an explicit correction. Existing
+      // allocations may point at a cycle that has just moved from due→open (or
+      // open→due), so preserving them would misstate both due and prepaid
+      // credit. Rebuild this student's allocation ledger deterministically.
+      await rebuildStudentFinancialState(db, workspaceId, mutation.entityId);
+      return;
+    }
     await reconcileWorkspaceFinancialState(db, workspaceId);
   },
 };
