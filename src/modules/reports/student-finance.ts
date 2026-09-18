@@ -20,6 +20,14 @@ type StudentFinanceInput = {
     expectedStudentCount: number;
     payerStudentId?: string | null;
   }>;
+  archivedSessions?: Array<{
+    id: string;
+    studentIds: string[];
+    priceBasis: 'total_session' | 'per_student';
+    defaultPricePence: number;
+    expectedStudentCount: number;
+    payerStudentId?: string | null;
+  }>;
   occurrences: Array<{
     id: string;
     recurringSessionId: string;
@@ -91,7 +99,9 @@ export function buildStudentFinancialSummary(
 
   const billingMode = data.billingPlans.find((row) => row.studentId === studentId)?.billingMode ?? null;
   if (billingMode === 'per_session') {
-    const sessions = new Map(data.sessions.map((session) => [session.id, session]));
+    const sessions = new Map(
+      [...data.sessions, ...(data.archivedSessions ?? [])].map((session) => [session.id, session]),
+    );
     for (const occurrence of data.occurrences) {
       if (occurrence.status !== 'completed') continue;
       const session = sessions.get(occurrence.recurringSessionId);
