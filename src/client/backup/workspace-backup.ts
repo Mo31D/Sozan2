@@ -397,6 +397,57 @@ export async function importWorkspaceBackupLocalFirst(
   });
 }
 
+export async function resumePendingBackupImport(
+  snapshot: LocalPlatformSnapshot,
+): Promise<number> {
+  const cloudLink = snapshot.cloudLink;
+  if (
+    !cloudLink
+    || cloudLink.initializationState !== 'provisioning'
+    || cloudLink.provisioningReason !== 'backup-import'
+  ) {
+    throw new Error('BACKUP_IMPORT_NOT_PENDING');
+  }
+
+  const workspaceId = snapshot.workspace.id;
+  return withWorkspaceOperationWhenFree(workspaceId, 'backup-import-cloud-resume', async () => {
+    const backup = await createLocalWorkspaceBackup(snapshot);
+    const expectedRevision = Math.max(0, Number(cloudLink.serverRevision ?? 0));
+    let importId = cloudLink.pendingBackupImportId ?? crypto.randomUUID();
+
+    if (cloudLink.pendingBackupImportId) {
+      try {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          const status = await cloudImportStatus(workspaceId, importId);
+          if (status.status === 'completed') {
+            await markLocalCloudLinkReady(workspaceId, status.revision);
+            return status.revision;
+          }
+          if (status.status === 'failed') {
+            throw new Error(status.error);
+          }
+          await new Promise((resolve) => globalThis.setTimeout(resolve, 500 * (attempt + 1)));
+        }
+        throw new Error('BACKUP_IMPORT_IN_PROGRESS');
+      } catch (error) {
+        const code = error instanceof Error ? error.message : '';
+        if (code !== 'BACKUP_IMPORT_NOT_FOUND') throw error;
+        importId = crypto.randomUUID();
+      }
+    }
+
+    await markLocalCloudLinkProvisioning(workspaceId, 'backup-import', importId);
+    const revision = await publishBackupImportToCloud(
+      snapshot,
+      backup,
+      importId,
+      expectedRevision,
+    );
+    await markLocalCloudLinkReady(workspaceId, revision);
+    return revision;
+  });
+}
+
 /**
  * Compatibility wrapper for callers that only need "restore completed".
  * A pending cloud publish is still a successful local restore.
