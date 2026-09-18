@@ -388,7 +388,12 @@
     font-size:.78rem;
   }
   .week-grid-view{
+    left:auto;
+    transform:none;
     width:calc(100vw - 8px);
+    margin-left:auto;
+    margin-right:0;
+    align-self:flex-end;
     gap:5px;
   }
   .week-grid-meta{
