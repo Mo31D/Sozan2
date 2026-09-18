@@ -6,21 +6,10 @@ import sqlite3
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations"
-TARGET_WORKSPACE = "fb71d118-de05-4fe0-9001-c7a764adc0ff"
-STUDENT_ID = "074a0fb8-e41b-5805-9a01-8c1a9c2fe1e9"
-
-
-def apply(db: sqlite3.Connection, name: str) -> None:
-    db.executescript((MIGRATIONS / name).read_text(encoding="utf-8"))
 
 
 def validate_d1_migration_source_compatibility() -> None:
-    """Guard source patterns known to break D1 remote migration splitting.
-
-    SQLite accepts more trigger syntax than D1's remote migration statement
-    splitter reliably recognizes. Keep migrations portable by enforcing LF,
-    uppercase trigger BEGIN, and trigger bodies without CASE ... END; blocks.
-    """
+    """Guard source patterns known to break D1 remote migration splitting."""
     for path in sorted(MIGRATIONS.glob("*.sql")):
         raw = path.read_bytes()
         if b"\r\n" in raw:
@@ -63,19 +52,11 @@ def validate_d1_migration_source_compatibility() -> None:
             raise SystemExit(f"Unclosed trigger in D1 migration: {path.name}")
 
 
-def make_pre_repair_database() -> sqlite3.Connection:
+def make_database() -> sqlite3.Connection:
     db = sqlite3.connect(":memory:")
     db.execute("PRAGMA foreign_keys = ON")
     for path in sorted(MIGRATIONS.glob("*.sql")):
-        if path.name >= "0007_correct_tutoring_data_2026_09_17.sql":
-            break
         db.executescript(path.read_text(encoding="utf-8"))
-    db.execute(
-        "INSERT INTO core_workspaces(id, name, template_key) VALUES (?, 'Repair fixture', 'tutoring')",
-        (TARGET_WORKSPACE,),
-    )
-    apply(db, "0007_correct_tutoring_data_2026_09_17.sql")
-    apply(db, "0008_domain_integrity.sql")
     return db
 
 
@@ -87,91 +68,120 @@ def expect_integrity_error(action, message: str) -> None:
     raise SystemExit(message)
 
 
-def validate_untouched_synthetic_repair() -> sqlite3.Connection:
-    db = make_pre_repair_database()
-    before = db.execute(
-        "SELECT COUNT(*) FROM tutoring_billing_plans WHERE workspace_id=?",
-        (TARGET_WORKSPACE,),
-    ).fetchone()[0]
-    if before != 24:
-        raise SystemExit(f"Expected 24 synthetic billing plans after 0007, found {before}")
-
-    apply(db, "0009_repair_tutoring_baselines_2026_09_17.sql")
-
-    students = db.execute(
-        "SELECT COUNT(*) FROM tutoring_students WHERE workspace_id=? AND active=1 AND deleted_at IS NULL",
-        (TARGET_WORKSPACE,),
-    ).fetchone()[0]
-    if students != 24:
-        raise SystemExit(f"Repair changed canonical roster: expected 24 active students, found {students}")
-
-    baselines = db.execute(
-        "SELECT COUNT(*) FROM tutoring_student_baselines WHERE workspace_id=?",
-        (TARGET_WORKSPACE,),
-    ).fetchone()[0]
-    if baselines != 18:
-        raise SystemExit(f"Expected 18 observed lesson baselines, found {baselines}")
-
-    synthetic_plans = db.execute(
-        "SELECT COUNT(*) FROM tutoring_billing_plans WHERE workspace_id=?",
-        (TARGET_WORKSPACE,),
-    ).fetchone()[0]
-    synthetic_cycles = db.execute(
-        "SELECT COUNT(*) FROM tutoring_billing_cycles WHERE workspace_id=?",
-        (TARGET_WORKSPACE,),
-    ).fetchone()[0]
-    if synthetic_plans != 0 or synthetic_cycles != 0:
-        raise SystemExit(
-            "Untouched synthetic zero-price billing survived repair: "
-            f"plans={synthetic_plans}, cycles={synthetic_cycles}"
-        )
-    return db
-
-
-def validate_user_owned_billing_survives() -> None:
-    db = make_pre_repair_database()
+def validate_domain_integrity() -> None:
+    db = make_database()
     db.execute(
-        "UPDATE tutoring_billing_plans SET package_price_pence=12500 WHERE workspace_id=? AND student_id=?",
-        (TARGET_WORKSPACE, STUDENT_ID),
-    )
-    apply(db, "0009_repair_tutoring_baselines_2026_09_17.sql")
-    preserved = db.execute(
-        "SELECT package_price_pence FROM tutoring_billing_plans WHERE workspace_id=? AND student_id=?",
-        (TARGET_WORKSPACE, STUDENT_ID),
-    ).fetchone()
-    if preserved != (12500,):
-        raise SystemExit("Targeted repair overwrote an explicitly changed billing plan")
-
-
-def validate_finance_guard(db: sqlite3.Connection) -> None:
-    db.execute(
-        "INSERT INTO finance_receipts(id,workspace_id,payer_ref_type,payer_ref_id,amount_pence,received_at) "
-        "VALUES('receipt-ci',?,'tutoring.student',?,1000,'2026-09-17')",
-        (TARGET_WORKSPACE, STUDENT_ID),
+        "INSERT INTO core_workspaces(id,name,template_key) VALUES('ws-integrity','Integrity','tutoring')"
     )
     db.execute(
-        "INSERT INTO finance_receipt_allocations(id,workspace_id,receipt_id,target_module,target_type,target_id,amount_pence) "
-        "VALUES('allocation-1',?,'receipt-ci','tutoring','test','target-1',800)",
-        (TARGET_WORKSPACE,),
+        "INSERT INTO tutoring_students(id,workspace_id,name) "
+        "VALUES('student-a','ws-integrity','Student A')"
     )
+    db.execute(
+        "INSERT INTO tutoring_students(id,workspace_id,name) "
+        "VALUES('student-b','ws-integrity','Student B')"
+    )
+    db.execute(
+        "INSERT INTO tutoring_recurring_sessions("
+        "id,workspace_id,title,session_type,schedule_status,weekday,start_time,"
+        "duration_minutes,travel_minutes,price_basis,default_price_pence,expected_student_count"
+        ") VALUES("
+        "'session-group','ws-integrity','Group','own_group','confirmed',1,'17:00',"
+        "90,30,'per_student',2500,2"
+        ")"
+    )
+    db.execute(
+        "INSERT INTO tutoring_session_students(workspace_id,recurring_session_id,student_id) "
+        "VALUES('ws-integrity','session-group','student-a')"
+    )
+    db.execute(
+        "INSERT INTO tutoring_session_students(workspace_id,recurring_session_id,student_id) "
+        "VALUES('ws-integrity','session-group','student-b')"
+    )
+    db.execute(
+        "INSERT INTO tutoring_occurrences("
+        "id,workspace_id,recurring_session_id,session_date,status,"
+        "gross_pence,center_cut_pence,earned_pence,"
+        "duration_minutes_snapshot,travel_minutes_snapshot,session_type_snapshot,"
+        "price_basis_snapshot,default_price_pence_snapshot"
+        ") VALUES("
+        "'occurrence-a','ws-integrity','session-group','2026-09-17','completed',"
+        "5000,0,5000,90,30,'own_group','per_student',2500"
+        ")"
+    )
+    db.execute(
+        "INSERT INTO tutoring_occurrence_students("
+        "workspace_id,occurrence_id,student_id,attendance_status"
+        ") VALUES('ws-integrity','occurrence-a','student-a','attended')"
+    )
+    db.execute(
+        "INSERT INTO tutoring_occurrence_students("
+        "workspace_id,occurrence_id,student_id,attendance_status"
+        ") VALUES('ws-integrity','occurrence-a','student-b','absent')"
+    )
+
+    attendance = db.execute(
+        "SELECT student_id,attendance_status FROM tutoring_occurrence_students "
+        "WHERE occurrence_id='occurrence-a' ORDER BY student_id"
+    ).fetchall()
+    if attendance != [("student-a", "attended"), ("student-b", "absent")]:
+        raise SystemExit(f"Occurrence attendance invariant failed: {attendance}")
+
+    db.execute(
+        "INSERT INTO finance_receipts("
+        "id,workspace_id,payer_ref_type,payer_ref_id,amount_pence,received_at"
+        ") VALUES('receipt-ci','ws-integrity','tutoring.student','student-a',1000,'2026-09-17')"
+    )
+    db.execute(
+        "INSERT INTO finance_receipt_allocations("
+        "id,workspace_id,receipt_id,target_module,target_type,target_id,amount_pence"
+        ") VALUES("
+        "'allocation-1','ws-integrity','receipt-ci','tutoring','student_occurrence',"
+        "'occurrence-a:student-a',800"
+        ")"
+    )
+
     expect_integrity_error(
         lambda: db.execute(
-            "INSERT INTO finance_receipt_allocations(id,workspace_id,receipt_id,target_module,target_type,target_id,amount_pence) "
-            "VALUES('allocation-2',?,'receipt-ci','tutoring','test','target-2',300)",
-            (TARGET_WORKSPACE,),
+            "INSERT INTO finance_receipt_allocations("
+            "id,workspace_id,receipt_id,target_module,target_type,target_id,amount_pence"
+            ") VALUES("
+            "'allocation-2','ws-integrity','receipt-ci','tutoring','student_occurrence',"
+            "'another:student-a',300"
+            ")"
         ),
         "Receipt allocation guard allowed allocations to exceed the receipt amount",
     )
-    violations = db.execute("SELECT COUNT(*) FROM finance_allocation_integrity_violations").fetchone()[0]
+
+    expect_integrity_error(
+        lambda: db.execute(
+            "UPDATE finance_receipts SET amount_pence=700 WHERE id='receipt-ci'"
+        ),
+        "Receipt update guard allowed amount below allocated total",
+    )
+
+    violations = db.execute(
+        "SELECT COUNT(*) FROM finance_allocation_integrity_violations"
+    ).fetchone()[0]
     if violations != 0:
         raise SystemExit(f"Finance integrity view reports {violations} violations")
 
 
+def validate_no_tenant_data_in_schema_migrations() -> None:
+    """Schema migrations must be reusable and must not seed real tenant rows."""
+    db = make_database()
+    if db.execute("SELECT COUNT(*) FROM core_users").fetchone()[0] != 0:
+        raise SystemExit("Schema migrations must not seed users")
+    if db.execute("SELECT COUNT(*) FROM core_workspaces").fetchone()[0] != 0:
+        raise SystemExit("Schema migrations must not seed workspaces")
+    if db.execute("SELECT COUNT(*) FROM tutoring_students").fetchone()[0] != 0:
+        raise SystemExit("Schema migrations must not seed tutoring students")
+
+
 def main() -> None:
     validate_d1_migration_source_compatibility()
-    repaired = validate_untouched_synthetic_repair()
-    validate_user_owned_billing_survives()
-    validate_finance_guard(repaired)
+    validate_no_tenant_data_in_schema_migrations()
+    validate_domain_integrity()
     print("Domain integrity migrations validated")
 
 
