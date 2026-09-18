@@ -69,14 +69,6 @@ export async function reconcileStudentFinancialState(db: D1Database, workspaceId
      ORDER BY received_at,id`,
   ).bind(workspaceId, studentId).all<ReceiptRow>();
 
-  await db.prepare(
-    `DELETE FROM finance_receipt_allocations
-     WHERE workspace_id=?1 AND receipt_id IN (
-       SELECT id FROM finance_receipts
-       WHERE workspace_id=?1 AND payer_ref_type='tutoring.student' AND payer_ref_id=?2
-     )`,
-  ).bind(workspaceId, studentId).run();
-
   const service = new FinanceCollectionService(
     new D1FinanceGateway(db),
     [new TutoringObligationProvider(db)],
