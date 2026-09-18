@@ -1,4 +1,8 @@
-import { studentOccurrenceTargetId } from '../../modules/tutoring/domain/finance-target';
+import {
+  legacyOccurrenceAllocationTarget,
+  legacyTotalSessionPayer,
+  uniqueLegacyParticipants,
+} from './legacy-tutoring-policy';
 
 type LegacyRow = Record<string, unknown>;
 
@@ -128,7 +132,7 @@ export async function importSozan1(
     const participants = (sessionRowsById.get(legacySessionId) ?? [])
       .map((sessionRow) => studentIds.get(legacyKey(sessionRow.student_id)))
       .filter((value): value is string => Boolean(value));
-    return [...new Set(participants)];
+    return uniqueLegacyParticipants(participants);
   };
 
   const receiptStudentIds = new Map<string, string>();
@@ -173,9 +177,7 @@ export async function importSozan1(
     const centerBps = clamp(Math.round(number(row.center_cut_percent) * 100), 0, 10000);
     const priceBasis = row.price_basis === 'per_student' ? 'per_student' : 'total_session';
     const participants = mappedParticipantsForSession(oldId);
-    const payerStudentId = priceBasis === 'total_session' && participants.length === 1
-      ? participants[0]
-      : null;
+    const payerStudentId = legacyTotalSessionPayer(priceBasis, participants);
     statements.push(db.prepare(
       `INSERT OR IGNORE INTO tutoring_recurring_sessions(
          id, workspace_id, title, session_type, schedule_status, weekday, start_time,
@@ -213,8 +215,8 @@ export async function importSozan1(
     const completed = status === 'completed';
     const participants = mappedParticipantsForSession(legacySessionId);
     const priceBasis = sessionRow.price_basis === 'per_student' ? 'per_student' : 'total_session';
-    const payerStudentId = completed && priceBasis === 'total_session' && participants.length === 1
-      ? participants[0]
+    const payerStudentId = completed
+      ? legacyTotalSessionPayer(priceBasis, participants)
       : null;
 
     statements.push(db.prepare(
@@ -387,17 +389,22 @@ export async function importSozan1(
     const participants = legacySessionId ? mappedParticipantsForSession(legacySessionId) : [];
 
     if (!receiptId || !occurrenceId || int(row.amount_pence) <= 0) continue;
-    if (!studentId || !participants.includes(studentId)) {
+    const target = legacyOccurrenceAllocationTarget(
+      occurrenceId,
+      studentId,
+      participants,
+    );
+    if (!target) {
       skippedOccurrenceAllocationCount += 1;
       continue;
     }
 
     addAllocation(
       allocationMap,
-      `receipt:${oldReceiptId}:student-occurrence:${oldOccurrenceId}:${studentId}`,
+      `receipt:${oldReceiptId}:student-occurrence:${oldOccurrenceId}:${studentId ?? 'unknown'}`,
       receiptId,
-      'student_occurrence',
-      studentOccurrenceTargetId(occurrenceId, studentId),
+      target.type,
+      target.id,
       int(row.amount_pence),
       timestamp(row.created_at),
     );
@@ -414,16 +421,24 @@ export async function importSozan1(
     const occurrenceId = occurrenceIds.get(legacyKey(row.occurrence_id));
     const studentId = paymentStudentIds.get(oldPaymentId);
     if (!receiptId || !occurrenceId || int(row.amount_pence) <= 0) continue;
-    if (!studentId) {
+    const legacyOccurrence = occurrenceById.get(legacyKey(row.occurrence_id));
+    const legacySessionId = legacyOccurrence ? legacyKey(legacyOccurrence.recurring_session_id) : '';
+    const participants = legacySessionId ? mappedParticipantsForSession(legacySessionId) : [];
+    const target = legacyOccurrenceAllocationTarget(
+      occurrenceId,
+      studentId,
+      participants,
+    );
+    if (!target) {
       skippedOccurrenceAllocationCount += 1;
       continue;
     }
     addAllocation(
       allocationMap,
-      `payment:${oldPaymentId}:student-occurrence:${legacyKey(row.occurrence_id)}:${studentId}`,
+      `payment:${oldPaymentId}:student-occurrence:${legacyKey(row.occurrence_id)}:${studentId ?? 'unknown'}`,
       receiptId,
-      'student_occurrence',
-      studentOccurrenceTargetId(occurrenceId, studentId),
+      target.type,
+      target.id,
       int(row.amount_pence),
       timestamp(row.created_at),
     );
