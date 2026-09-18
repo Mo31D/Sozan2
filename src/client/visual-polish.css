@@ -259,14 +259,14 @@ body{background:var(--ui-canvas);color:var(--ui-text)}
   gap:4px;
 }
 .money-due-confirm-copy small{
-  color:var(--ui-text-muted);
+  color:var(--ui-muted);
   line-height:1.5;
 }
 .money-due-collection-form label{
   display:flex;
   flex-direction:column;
   gap:6px;
-  color:var(--ui-text-muted);
+  color:var(--ui-muted);
   font-size:.82rem;
   font-weight:800;
 }
