@@ -12,6 +12,7 @@ import './simple/v2/money.css';
 import './simple/v2/student-hub.css';
 import './appointments/appointments.css';
 import './control-center.css';
+import './visual-polish.css';
 import './mobile-compact.css';
 
 const root = document.getElementById('root');
