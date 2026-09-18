@@ -108,3 +108,36 @@
   .attendance-options{grid-template-columns:1fr}
   .attendance-option{min-height:42px}
 }
+
+.attendance-summary{
+  margin-top:10px;
+  padding:10px 11px;
+  border:1px solid #dbe8de;
+  border-radius:14px;
+  background:#f4faf5;
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+}
+.attendance-summary>strong{
+  color:#3f6549;
+  font-size:.78rem;
+}
+.attendance-summary-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.attendance-summary-list span{
+  border-radius:999px;
+  background:#fff;
+  color:#3e6d4b;
+  padding:5px 8px;
+  font-size:.72rem;
+  font-weight:850;
+  border:1px solid #d5e6d9;
+}
+.attendance-summary>small{
+  color:#7d7480;
+  font-size:.72rem;
+}
