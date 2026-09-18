@@ -123,7 +123,7 @@ describe('package lesson number display', () => {
 
     expect(packageLessonNumberForEntry(value, entry(value, 0, today), studentId)).toBe('2/8');
     expect(packageLessonNumberForEntry(value, entry(value, 1, tomorrow), studentId)).toBe('2/8');
-    expect(packageLessonLabelForEntry(value, entry(value, 0, today))).toBe('الحصة الحالية 2/8');
+    expect(packageLessonLabelForEntry(value, entry(value, 0, today))).toBe('الحصة 2/8');
   });
 
   it('updates the visible current lesson number when package progress changes', () => {
