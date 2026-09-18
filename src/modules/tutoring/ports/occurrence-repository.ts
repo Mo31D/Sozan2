@@ -20,6 +20,9 @@ export type CompletionSnapshot = {
   travelMinutes: number;
   sessionType: string;
   location: string | null;
+  priceBasis: 'total_session' | 'per_student';
+  defaultPricePence: number;
+  payerStudentId: string | null;
 };
 
 export interface OccurrenceRepository {
