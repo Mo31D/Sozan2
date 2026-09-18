@@ -83,7 +83,16 @@ export async function importSozan1(
   const monthlyDues = table('monthly_dues_v5');
 
   const shadowSessionIds = new Set(openingProgress.map((row) => legacyKey(row.shadow_session_id)).filter(Boolean));
-  const sessionById = new Map(sessions.map((row) => [legacyKey(row.id), row]));
+  const sessionRowsById = new Map<string, LegacyRow[]>();
+  const sessionById = new Map<string, LegacyRow>();
+  for (const row of sessions) {
+    const key = legacyKey(row.id);
+    if (!key) continue;
+    const grouped = sessionRowsById.get(key) ?? [];
+    grouped.push(row);
+    sessionRowsById.set(key, grouped);
+    if (!sessionById.has(key)) sessionById.set(key, row);
+  }
   const occurrenceById = new Map(occurrences.map((row) => [legacyKey(row.id), row]));
   const shadowOccurrenceIds = new Set(
     occurrences
@@ -113,6 +122,21 @@ export async function importSozan1(
   const cashCheckIds = await ids.mapRows('cash-check', cashChecks);
   const activityIds = await ids.mapRows('activity', activities);
 
+  const mappedParticipantsForSession = (legacySessionId: string): string[] => {
+    const participants = (sessionRowsById.get(legacySessionId) ?? [])
+      .map((sessionRow) => studentIds.get(legacyKey(sessionRow.student_id)))
+      .filter((value): value is string => Boolean(value));
+    return [...new Set(participants)];
+  };
+
+  const receiptStudentIds = new Map<string, string>();
+  for (const row of receipts) {
+    const mapped = studentIds.get(legacyKey(row.student_id));
+    if (mapped) receiptStudentIds.set(legacyKey(row.id), mapped);
+  }
+
+  let ambiguousGroupPaymentCount = 0;
+  let skippedOccurrenceAllocationCount = 0;
   const statements: D1PreparedStatement[] = [];
 
   for (const row of students) {
