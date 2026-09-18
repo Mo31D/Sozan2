@@ -1,0 +1,185 @@
+/* Cross-screen visual harmonization.
+   This layer changes presentation only; feature layout and domain behavior stay untouched. */
+
+body{background:var(--ui-canvas);color:var(--ui-text)}
+.simple-app{background:linear-gradient(180deg,#faf9fc 0%,var(--ui-canvas) 100%)}
+
+.simple-header span,
+.simple-section-title span,
+.attention-card>span,
+.cash-card>span{color:var(--ui-primary)}
+
+.primary-small,
+.report-kind-scroll button.active{background:var(--ui-primary);color:#fff}
+.primary-small:hover,
+.report-kind-scroll button.active:hover{background:var(--ui-primary-strong)}
+
+.secondary-small,
+.secondary-button,
+.money-subheader button,
+.management-subheader button,
+.student-hub-header>button,
+.edit-title-row button{
+  background:var(--ui-primary-soft);
+  color:var(--ui-primary-strong);
+}
+
+.lesson-card,
+.due-card,
+.metric-card,
+.settings-card,
+.day-block,
+.money-person-hero,
+.money-detail-metric,
+.money-ledger-row,
+.money-person-row,
+.money-movement-card,
+.management-profile-strip,
+.management-report-shortcut,
+.management-group,
+.management-student-card,
+.management-settings-form,
+.management-form-card,
+.management-legacy-import,
+.student-hub-hero,
+.student-hub-metrics>div,
+.student-hub-info-list,
+.student-hub-ledger,
+.student-hub-history,
+.student-hub-form,
+.student-hub-session,
+.appointment-card,
+.appointment-summary-card,
+.appointment-month,
+.appointment-upcoming-row,
+.appointment-client-card{
+  border-color:var(--ui-border);
+  background-color:var(--ui-surface);
+}
+
+.lesson-card,
+.due-card,
+.metric-card,
+.money-person-hero,
+.money-movement-card,
+.management-profile-strip,
+.management-report-shortcut,
+.management-group,
+.management-student-card,
+.management-settings-form,
+.management-form-card,
+.management-legacy-import,
+.student-hub-hero,
+.student-hub-session,
+.appointment-card,
+.appointment-summary-card,
+.appointment-month{
+  border-radius:var(--ui-radius-md);
+}
+
+.money-detail-metric,
+.money-ledger-row,
+.money-person-row,
+.management-metric-grid>div,
+.report-person-row,
+.student-hub-metrics>div,
+.student-hub-info-list,
+.student-hub-ledger,
+.student-hub-history,
+.student-hub-form,
+.appointment-upcoming-row,
+.appointment-client-card{
+  border-radius:var(--ui-radius-sm);
+}
+
+.today-hero,
+.attention-card,
+.cash-card,
+.report-answer-card{
+  border-radius:var(--ui-radius-lg);
+}
+
+.today-hero,
+.lesson-card,
+.due-card,
+.metric-card,
+.attention-card,
+.cash-card,
+.money-person-hero,
+.money-movement-card,
+.management-profile-strip,
+.management-group,
+.student-hub-hero,
+.appointment-card,
+.appointment-summary-card{
+  box-shadow:var(--ui-shadow-soft);
+}
+
+.quick-actions button,
+.quick-form,
+.edit-schedule-card{
+  border-color:var(--ui-border);
+}
+.quick-actions button{border-radius:var(--ui-radius-md)}
+.quick-form{border-radius:var(--ui-radius-lg)}
+.quick-form input,
+.quick-form select,
+.edit-schedule-card input,
+.edit-schedule-card select,
+.management-settings-form input,
+.student-hub-form input,
+.student-hub-form select{
+  border-color:var(--ui-border-strong);
+  border-radius:var(--ui-radius-sm);
+}
+
+.due-status,
+.progress-chip,
+.management-sync-dot,
+.student-hub-state,
+.cloud-linked-mark{
+  border-radius:999px;
+}
+
+.metric-card.accent,
+.quick-actions button:first-child,
+.money-package-strip,
+.student-hub-session-preview{
+  background:var(--ui-primary-soft);
+}
+
+.avatar-circle,
+.management-avatar,
+.student-hub-avatar,
+.management-row-icon,
+.management-report-shortcut>b{
+  background:var(--ui-primary-soft);
+  color:var(--ui-primary-strong);
+  border-radius:var(--ui-radius-sm);
+}
+
+.simple-bottom-nav{border-color:var(--ui-border)}
+.simple-bottom-nav button.active{color:var(--ui-primary)}
+
+@media(max-width:700px){
+  .today-hero{border-radius:var(--ui-radius-lg)}
+  .quick-actions button,
+  .quick-form,
+  .lesson-card,
+  .due-card,
+  .metric-card,
+  .attention-card,
+  .cash-card,
+  .settings-card,
+  .money-person-hero,
+  .money-movement-card,
+  .management-profile-strip,
+  .management-group,
+  .student-hub-hero,
+  .student-hub-session,
+  .appointment-card,
+  .appointment-summary-card,
+  .appointment-month{
+    border-radius:var(--ui-radius-md);
+  }
+}
