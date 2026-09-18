@@ -296,7 +296,7 @@ function DueCollectionForm({
         <input name="note" placeholder="اختياري" />
       </label>
       <div className="money-due-confirm-actions">
-        <button className="primary-small" type="submit" disabled={busy}>{busy ? 'جاري التسجيل…' : `تأكيد تحصيل ${money(duePence, currency)}`}</button>
+        <button className="primary-small" type="submit" disabled={busy}>{busy ? 'جاري التسجيل…' : 'تأكيد التحصيل'}</button>
         <button className="secondary-small" type="button" disabled={busy} onClick={onCancel}>إلغاء</button>
       </div>
     </form>
