@@ -47,6 +47,9 @@ type OccurrenceRow = {
   travel_minutes_snapshot: number | null;
   session_type_snapshot: string | null;
   location_snapshot: string | null;
+  price_basis_snapshot: 'total_session' | 'per_student' | null;
+  default_price_pence_snapshot: number | null;
+  payer_student_id_snapshot: string | null;
 };
 
 type BillingPlanRow = {
@@ -233,7 +236,9 @@ async function reopenCompletedOccurrence(db: D1Database, workspaceId: string, oc
       `UPDATE tutoring_occurrences
        SET status='scheduled', gross_pence=0, center_cut_pence=0, earned_pence=0,
            completed_at=NULL, duration_minutes_snapshot=NULL, travel_minutes_snapshot=NULL,
-           session_type_snapshot=NULL, location_snapshot=NULL, updated_at=CURRENT_TIMESTAMP
+           session_type_snapshot=NULL, location_snapshot=NULL, price_basis_snapshot=NULL,
+           default_price_pence_snapshot=NULL, payer_student_id_snapshot=NULL,
+           updated_at=CURRENT_TIMESTAMP
        WHERE workspace_id=?1 AND id=?2`,
     ).bind(workspaceId, occurrenceId),
   ]);
@@ -383,7 +388,9 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
                 rescheduled_to_date, rescheduled_to_start, status, gross_pence,
                 center_cut_pence, earned_pence, completed_at, note,
                 duration_minutes_snapshot, travel_minutes_snapshot,
-                session_type_snapshot, location_snapshot
+                session_type_snapshot, location_snapshot,
+                price_basis_snapshot, default_price_pence_snapshot,
+                payer_student_id_snapshot
          FROM tutoring_occurrences
          WHERE workspace_id = ?1
          ORDER BY session_date, scheduled_start, id`,
@@ -451,6 +458,9 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
           travelMinutesSnapshot: row.travel_minutes_snapshot,
           sessionTypeSnapshot: row.session_type_snapshot,
           locationSnapshot: row.location_snapshot,
+          priceBasisSnapshot: row.price_basis_snapshot,
+          defaultPricePenceSnapshot: row.default_price_pence_snapshot,
+          payerStudentIdSnapshot: row.payer_student_id_snapshot,
         })),
         billingPlans: (plansResult.results ?? []).map((row) => ({
           id: row.student_id,
