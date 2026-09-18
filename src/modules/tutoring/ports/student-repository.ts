@@ -7,5 +7,6 @@ export type NewStudent = CreateStudentInput & {
 
 export interface StudentRepository {
   listActive(workspaceId: string): Promise<Student[]>;
+  listAll(workspaceId: string): Promise<Student[]>;
   create(input: NewStudent): Promise<Student>;
 }
