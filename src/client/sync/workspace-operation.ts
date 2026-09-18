@@ -34,3 +34,21 @@ export async function withWorkspaceOperation<T>(
     release();
   }
 }
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+export async function withWorkspaceOperationWhenFree<T>(
+  workspaceId: string,
+  name: string,
+  run: () => Promise<T>,
+  waitMs = 15_000,
+): Promise<T> {
+  const deadline = Date.now() + waitMs;
+  while (currentWorkspaceOperation(workspaceId)) {
+    if (Date.now() >= deadline) throw new Error('WORKSPACE_OPERATION_BUSY');
+    await sleep(100);
+  }
+  return withWorkspaceOperation(workspaceId, name, run);
+}
