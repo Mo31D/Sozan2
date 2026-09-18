@@ -17,7 +17,7 @@ type ReceiptRow = {
 
 async function normalizeCycles(db: D1Database, workspaceId: string, studentId: string): Promise<void> {
   const cycles = await db.prepare(
-    `SELECT c.id,c.session_limit,c.price_pence,c.opening_completed_count,c.completed_on,
+    `SELECT c.id,c.session_limit,c.price_pence,c.opening_completed_count,c.completed_on,c.started_on,
             COALESCE(SUM(CASE WHEN o.status='completed' THEN 1 ELSE 0 END),0) AS real_completed_count,
             MAX(CASE WHEN o.status='completed' THEN COALESCE(o.rescheduled_to_date,o.session_date) END) AS latest_completed
      FROM tutoring_billing_cycles c
@@ -33,6 +33,7 @@ async function normalizeCycles(db: D1Database, workspaceId: string, studentId: s
     price_pence: number;
     opening_completed_count: number;
     completed_on: string | null;
+    started_on: string | null;
     real_completed_count: number;
     latest_completed: string | null;
   }>();
@@ -53,7 +54,8 @@ async function normalizeCycles(db: D1Database, workspaceId: string, studentId: s
        WHERE a.workspace_id=?1 AND a.target_module='tutoring' AND a.target_type='package_cycle' AND a.target_id=?2`,
     ).bind(workspaceId, cycle.id).first<{ allocated_pence: number; paid_on: string | null }>();
     const isPaid = Number(paid?.allocated_pence || 0) >= Number(cycle.price_pence || 0);
-    const completedOn = cycle.completed_on ?? cycle.latest_completed ?? new Date().toISOString().slice(0, 10);
+    const completedOn = cycle.completed_on ?? cycle.latest_completed ?? cycle.started_on;
+    if (!completedOn) throw new Error('BILLING_CYCLE_COMPLETION_DATE_MISSING');
     await db.prepare(
       `UPDATE tutoring_billing_cycles SET status=?1,completed_on=?2,paid_on=?3,updated_at=CURRENT_TIMESTAMP
        WHERE workspace_id=?4 AND id=?5`,
