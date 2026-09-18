@@ -4,7 +4,11 @@ import {
   workspaceBackupSchema,
   type WorkspaceBackup,
 } from '../../modules/backup/workspace-backup';
-import type { LocalPlatformSnapshot, LocalWorkspaceRecord } from '../adapters/indexeddb/platform.repository';
+import type {
+  LocalCloudLinkRecord,
+  LocalPlatformSnapshot,
+  LocalWorkspaceRecord,
+} from '../adapters/indexeddb/platform.repository';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 
 type Row = Record<string, any>;
@@ -153,6 +157,28 @@ export async function clearWorkspaceSyncOutbox(workspaceId: string): Promise<voi
   await transactionDone(transaction);
 }
 
+async function acknowledgeRestoredCloudRevision(
+  workspaceId: string,
+  revision: number,
+): Promise<void> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(STORES.coreCloudLinks, 'readwrite');
+  const store = transaction.objectStore(STORES.coreCloudLinks);
+  const current = await requestResult<LocalCloudLinkRecord | undefined>(store.get(workspaceId));
+  if (!current) {
+    await transactionDone(transaction);
+    throw new Error('CLOUD_LINK_STATE_INVALID');
+  }
+  const now = new Date().toISOString();
+  store.put({
+    ...current,
+    serverRevision: revision,
+    lastCloudPullAt: now,
+    initializationState: 'ready',
+  } satisfies LocalCloudLinkRecord);
+  await transactionDone(transaction);
+}
+
 export async function restoreLocalWorkspaceBackup(
   snapshot: LocalPlatformSnapshot,
   input: unknown,
@@ -235,8 +261,13 @@ export async function restoreWorkspaceBackup(
     return;
   }
 
-  await restoreCloudWorkspaceBackup(snapshot.workspace.id, backup);
-  await clearWorkspaceSyncOutbox(snapshot.workspace.id);
+  const revision = await restoreCloudWorkspaceBackup(snapshot.workspace.id, backup);
+
+  // The cloud restore is already authoritative. Apply the exact same validated
+  // payload locally instead of issuing a second network sync request. This
+  // avoids reporting a false restore failure when the post-restore pull fails.
+  await restoreLocalWorkspaceBackup(snapshot, backup);
+  await acknowledgeRestoredCloudRevision(snapshot.workspace.id, revision);
 }
 
 export function downloadWorkspaceBackup(backup: WorkspaceBackup, suffix = ''): void {
