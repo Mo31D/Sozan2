@@ -59,10 +59,22 @@ export function App() {
     };
     void sync();
     const online = () => { void sync(); };
+    const focus = () => { void sync(); };
+    const visibility = () => {
+      if (document.visibilityState === 'visible') void sync();
+    };
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void sync();
+    }, 60_000);
     window.addEventListener('online', online);
+    window.addEventListener('focus', focus);
+    document.addEventListener('visibilitychange', visibility);
     return () => {
       active = false;
+      window.clearInterval(interval);
       window.removeEventListener('online', online);
+      window.removeEventListener('focus', focus);
+      document.removeEventListener('visibilitychange', visibility);
     };
   }, [cloud.status, local]);
 
