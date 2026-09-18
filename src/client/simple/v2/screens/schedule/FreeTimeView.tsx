@@ -61,7 +61,7 @@ export function FreeTimeView({
         </label>
       </section>
 
-      <p className="free-explainer">نعرض فقط الفراغات التي تكفي {formatDurationArabic(requirement.minutes)} أو أكثر. الحساب يراعي مدة الحصص ووقت الانتقال المسجل، والمواعيد المعلقة لا تحجز وقتًا حتى تتحدد.</p>
+      <p className="free-explainer">نعرض فقط الفراغات التي تكفي {formatDurationArabic(requirement.minutes)} أو أكثر. الحساب يحجز وقت الانتقال قبل وبعد الحصة حتى لا يظهر انتقال مستحيل بين مكانين، والمواعيد المعلقة لا تحجز وقتًا حتى تتحدد.</p>
       {pendingCount > 0 && (
         <div className="free-warning free-global-warning">
           عندك {pendingCount} {pendingCount === 1 ? 'موعد لسه محتاج وقت' : 'مواعيد لسه محتاجة وقت'}؛ الفراغات المعروضة محسوبة بدونها.
@@ -78,9 +78,10 @@ export function FreeTimeView({
               .map((entry) => {
                 const startAt = timeToMinutes(entry.startTime);
                 if (startAt === null) return null;
+                const travel = Math.max(0, entry.session.travelMinutes);
                 return {
-                  start: startAt,
-                  end: startAt + Math.max(15, entry.session.durationMinutes) + Math.max(0, entry.session.travelMinutes),
+                  start: Math.max(0, startAt - travel),
+                  end: Math.min(24 * 60, startAt + Math.max(15, entry.session.durationMinutes) + travel),
                 };
               })
               .filter((item): item is { start: number; end: number } => item !== null)
