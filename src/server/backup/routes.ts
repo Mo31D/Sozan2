@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import {
   assertBackupWorkspaceScope,
   FULL_BACKUP_SCHEMA_VERSION,
+  backupManifest,
+  validateWorkspaceBackup,
   workspaceBackupSchema,
   type WorkspaceBackup,
 } from '../../modules/backup/workspace-backup';
@@ -90,6 +92,7 @@ async function exportBackup(db: D1Database, workspaceId: string): Promise<Worksp
     all(db, `SELECT id,workspace_id AS workspaceId,recurring_session_id AS recurringSessionId,
                     session_date AS sessionDate,scheduled_start AS scheduledStart,
                     rescheduled_to_date AS rescheduledToDate,rescheduled_to_start AS rescheduledToStart,
+                    rescheduled_at AS rescheduledAt,reschedule_note AS rescheduleNote,created_from AS createdFrom,
                     status,gross_pence AS grossPence,center_cut_pence AS centerCutPence,
                     earned_pence AS earnedPence,completed_at AS completedAt,note,
                     duration_minutes_snapshot AS durationMinutesSnapshot,
@@ -196,6 +199,15 @@ async function exportBackup(db: D1Database, workspaceId: string): Promise<Worksp
   return {
     schemaVersion: FULL_BACKUP_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
+    manifest: {
+      students: tutoringStudents.length,
+      sessions: tutoringSessions.length,
+      baselines: tutoringStudentBaselines.length,
+      occurrences: tutoringOccurrences.length,
+      receipts: financeReceipts.length,
+      expenses: financeExpenses.length,
+      activityEvents: coreActivityEvents.length,
+    },
     workspace: {
       id: workspace.id,
       name: workspace.name,
@@ -233,10 +245,53 @@ function r(row: Record<string, unknown>): Row {
   return row as Row;
 }
 
-async function restoreBackup(db: D1Database, workspaceId: string, backup: WorkspaceBackup): Promise<void> {
+type SqlValue = string | number | null;
+const MAX_BOUND_PARAMS = 90;
+const MAX_ATOMIC_STATEMENTS = 90;
+
+function bulkInsert(
+  db: D1Database,
+  table: string,
+  columns: readonly string[],
+  rows: readonly SqlValue[][],
+): D1PreparedStatement[] {
+  if (!rows.length) return [];
+  const perStatement = Math.max(1, Math.floor(MAX_BOUND_PARAMS / columns.length));
+  const result: D1PreparedStatement[] = [];
+  for (let index = 0; index < rows.length; index += perStatement) {
+    const chunk = rows.slice(index, index + perStatement);
+    const values: SqlValue[] = [];
+    const tuples = chunk.map((row) => {
+      if (row.length !== columns.length) throw new Error('BACKUP_INTERNAL_COLUMN_MISMATCH');
+      const placeholders = row.map((value) => {
+        values.push(value);
+        return `?${values.length}`;
+      });
+      return `(${placeholders.join(',')})`;
+    });
+    result.push(
+      db.prepare(`INSERT INTO ${table}(${columns.join(',')}) VALUES ${tuples.join(',')}`).bind(...values),
+    );
+  }
+  return result;
+}
+
+function asBool(value: unknown): number {
+  return value === false || value === 0 ? 0 : 1;
+}
+
+function nowFor(value: unknown): string {
+  return typeof value === 'string' && value ? value : new Date().toISOString();
+}
+
+async function restoreBackupAtomic(db: D1Database, workspaceId: string, backup: WorkspaceBackup): Promise<void> {
+  const validation = validateWorkspaceBackup(backup);
+  if (!validation.valid) throw new Error(validation.errors[0] ?? 'BACKUP_VALIDATION_FAILED');
+
   const s = backup.stores;
   const statements: D1PreparedStatement[] = [
-    // Delete children before parents. Workspace identity/auth membership stays intact.
+    // Delete children before parents. The workspace identity, user and membership
+    // intentionally remain intact.
     db.prepare(`DELETE FROM finance_receipt_allocations WHERE workspace_id=?1`).bind(workspaceId),
     db.prepare(`DELETE FROM tutoring_billing_cycle_occurrences WHERE workspace_id=?1`).bind(workspaceId),
     db.prepare(`DELETE FROM tutoring_occurrence_students WHERE workspace_id=?1`).bind(workspaceId),
@@ -274,187 +329,206 @@ async function restoreBackup(db: D1Database, workspaceId: string, backup: Worksp
     ),
   ];
 
-  for (const raw of s.coreWorkspaceModules) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO core_workspace_modules(workspace_id,module_key,enabled,position,config_json,updated_at)
-       VALUES(?1,?2,?3,?4,?5,?6)`,
-    ).bind(workspaceId,x.moduleKey,x.enabled?1:0,x.position,x.configJson??null,x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.coreWorkspaceLabels) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO core_workspace_labels(workspace_id,label_key,value,updated_at) VALUES(?1,?2,?3,?4)`,
-    ).bind(workspaceId,x.labelKey,x.value,x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.coreWorkspaceSettings) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO core_workspace_settings(workspace_id,key,value) VALUES(?1,?2,?3)`,
-    ).bind(workspaceId,x.key,x.value));
-  }
-  for (const raw of s.coreSurfaceLayouts) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO core_surface_layouts(workspace_id,user_id,surface_key,layout_json,updated_at)
-       VALUES(?1,?2,?3,?4,?5)`,
-    ).bind(workspaceId,x.userId??null,x.surfaceKey,x.layoutJson,x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.tutoringStudents) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO tutoring_students(
-         id,workspace_id,name,age,guardian_name,guardian_phone,level,notes,active,deleted_at,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)`,
-    ).bind(x.id,workspaceId,x.name,x.age??null,x.guardianName??null,x.guardianPhone??null,x.level??null,
-      x.notes??null,x.active===false?0:1,x.deletedAt??null,x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.tutoringStudentBaselines) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO tutoring_student_baselines(
-         workspace_id,student_id,completed_lessons_before_tracking,source_note,observed_at,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7)`,
-    ).bind(workspaceId,x.studentId,x.completedLessonsBeforeTracking,x.sourceNote??null,x.observedAt,
-      x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-  }
+  statements.push(...bulkInsert(db, 'core_workspace_modules',
+    ['workspace_id','module_key','enabled','position','config_json','updated_at'],
+    s.coreWorkspaceModules.map((raw) => { const x=r(raw); return [
+      workspaceId,String(x.moduleKey),asBool(x.enabled),Number(x.position),x.configJson==null?null:String(x.configJson),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'core_workspace_labels',
+    ['workspace_id','label_key','value','updated_at'],
+    s.coreWorkspaceLabels.map((raw) => { const x=r(raw); return [
+      workspaceId,String(x.labelKey),String(x.value),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'core_workspace_settings',
+    ['workspace_id','key','value'],
+    s.coreWorkspaceSettings.map((raw) => { const x=r(raw); return [
+      workspaceId,String(x.key),String(x.value),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'core_surface_layouts',
+    ['workspace_id','user_id','surface_key','layout_json','updated_at'],
+    s.coreSurfaceLayouts.map((raw) => { const x=r(raw); return [
+      workspaceId,x.userId==null?null:String(x.userId),String(x.surfaceKey),String(x.layoutJson),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'tutoring_students',
+    ['id','workspace_id','name','age','guardian_name','guardian_phone','level','notes','active','deleted_at','created_at','updated_at'],
+    s.tutoringStudents.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.name),x.age==null?null:Number(x.age),
+      x.guardianName==null?null:String(x.guardianName),x.guardianPhone==null?null:String(x.guardianPhone),
+      x.level==null?null:String(x.level),x.notes==null?null:String(x.notes),asBool(x.active),
+      x.deletedAt==null?null:String(x.deletedAt),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'tutoring_student_baselines',
+    ['workspace_id','student_id','completed_lessons_before_tracking','source_note','observed_at','created_at','updated_at'],
+    s.tutoringStudentBaselines.map((raw) => { const x=r(raw); return [
+      workspaceId,String(x.studentId),Number(x.completedLessonsBeforeTracking),x.sourceNote==null?null:String(x.sourceNote),
+      String(x.observedAt),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'tutoring_recurring_sessions',
+    ['id','workspace_id','title','session_type','schedule_status','weekday','start_time','duration_minutes','travel_minutes',
+     'location','price_basis','default_price_pence','expected_student_count','center_cut_bps','active','payer_student_id',
+     'deleted_at','created_at','updated_at'],
+    s.tutoringSessions.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.title),String(x.sessionType),String(x.scheduleStatus),
+      x.weekday==null?null:Number(x.weekday),x.startTime==null?null:String(x.startTime),Number(x.durationMinutes),
+      Number(x.travelMinutes),x.location==null?null:String(x.location),String(x.priceBasis),Number(x.defaultPricePence),
+      Number(x.expectedStudentCount),Number(x.centerCutBps),asBool(x.active),
+      x.payerStudentId==null?null:String(x.payerStudentId),x.deletedAt==null?null:String(x.deletedAt),
+      nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  const sessionLinks: SqlValue[][] = [];
   for (const raw of s.tutoringSessions) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO tutoring_recurring_sessions(
-         id,workspace_id,title,session_type,schedule_status,weekday,start_time,duration_minutes,travel_minutes,
-         location,price_basis,default_price_pence,expected_student_count,center_cut_bps,active,payer_student_id,
-         deleted_at,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)`,
-    ).bind(x.id,workspaceId,x.title,x.sessionType,x.scheduleStatus,x.weekday??null,x.startTime??null,
-      x.durationMinutes,x.travelMinutes,x.location??null,x.priceBasis,x.defaultPricePence,x.expectedStudentCount,
-      x.centerCutBps,x.active===false?0:1,x.payerStudentId??null,x.deletedAt??null,
-      x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-    for (const studentId of Array.isArray(x.studentIds)?x.studentIds:[]) {
-      statements.push(db.prepare(
-        `INSERT INTO tutoring_session_students(workspace_id,recurring_session_id,student_id)
-         VALUES(?1,?2,?3)`,
-      ).bind(workspaceId,x.id,studentId));
-    }
+    const x=r(raw);
+    const ids = Array.isArray(x.studentIds) ? x.studentIds : [];
+    for (const studentId of ids) sessionLinks.push([workspaceId,String(x.id),String(studentId)]);
   }
+  statements.push(...bulkInsert(db, 'tutoring_session_students',
+    ['workspace_id','recurring_session_id','student_id'], sessionLinks));
+
+  statements.push(...bulkInsert(db, 'tutoring_occurrences',
+    ['id','workspace_id','recurring_session_id','session_date','scheduled_start','rescheduled_to_date','rescheduled_to_start',
+     'rescheduled_at','reschedule_note','status','gross_pence','center_cut_pence','earned_pence','completed_at','note',
+     'duration_minutes_snapshot','travel_minutes_snapshot','session_type_snapshot','location_snapshot',
+     'price_basis_snapshot','default_price_pence_snapshot','payer_student_id_snapshot','created_from','created_at','updated_at'],
+    s.tutoringOccurrences.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.recurringSessionId),String(x.sessionDate),
+      x.scheduledStart==null?null:String(x.scheduledStart),x.rescheduledToDate==null?null:String(x.rescheduledToDate),
+      x.rescheduledToStart==null?null:String(x.rescheduledToStart),x.rescheduledAt==null?null:String(x.rescheduledAt),
+      x.rescheduleNote==null?null:String(x.rescheduleNote),String(x.status),Number(x.grossPence??0),
+      Number(x.centerCutPence??0),Number(x.earnedPence??0),x.completedAt==null?null:String(x.completedAt),
+      x.note==null?null:String(x.note),x.durationMinutesSnapshot==null?null:Number(x.durationMinutesSnapshot),
+      x.travelMinutesSnapshot==null?null:Number(x.travelMinutesSnapshot),
+      x.sessionTypeSnapshot==null?null:String(x.sessionTypeSnapshot),
+      x.locationSnapshot==null?null:String(x.locationSnapshot),
+      x.priceBasisSnapshot==null?null:String(x.priceBasisSnapshot),
+      x.defaultPricePenceSnapshot==null?null:Number(x.defaultPricePenceSnapshot),
+      x.payerStudentIdSnapshot==null?null:String(x.payerStudentIdSnapshot),
+      typeof x.createdFrom==='string'?x.createdFrom:'schedule',nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  const attendanceRows: SqlValue[][] = [];
   for (const raw of s.tutoringOccurrences) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO tutoring_occurrences(
-         id,workspace_id,recurring_session_id,session_date,scheduled_start,rescheduled_to_date,rescheduled_to_start,
-         status,gross_pence,center_cut_pence,earned_pence,completed_at,note,
-         duration_minutes_snapshot,travel_minutes_snapshot,session_type_snapshot,location_snapshot,
-         price_basis_snapshot,default_price_pence_snapshot,payer_student_id_snapshot,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)`,
-    ).bind(x.id,workspaceId,x.recurringSessionId,x.sessionDate,x.scheduledStart??null,x.rescheduledToDate??null,
-      x.rescheduledToStart??null,x.status,x.grossPence??0,x.centerCutPence??0,x.earnedPence??0,x.completedAt??null,
-      x.note??null,x.durationMinutesSnapshot??null,x.travelMinutesSnapshot??null,x.sessionTypeSnapshot??null,
-      x.locationSnapshot??null,x.priceBasisSnapshot??null,x.defaultPricePenceSnapshot??null,
-      x.payerStudentIdSnapshot??null,x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
+    const x=r(raw);
     const attendance = Array.isArray(x.attendance)
       ? x.attendance
-      : (Array.isArray(x.studentIds)?x.studentIds:[]).map((studentId:string)=>({studentId,status:'attended'}));
+      : (Array.isArray(x.studentIds)?x.studentIds:[]).map((studentId:unknown)=>({studentId,status:'attended'}));
     for (const item of attendance) {
-      statements.push(db.prepare(
-        `INSERT INTO tutoring_occurrence_students(workspace_id,occurrence_id,student_id,attendance_status)
-         VALUES(?1,?2,?3,?4)`,
-      ).bind(workspaceId,x.id,item.studentId,item.status));
+      if (!item || typeof item !== 'object') continue;
+      const a=r(item as Record<string, unknown>);
+      attendanceRows.push([workspaceId,String(x.id),String(a.studentId),String(a.status)]);
     }
   }
-  for (const raw of s.tutoringBillingPlans) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO tutoring_billing_plans(
-         workspace_id,student_id,billing_mode,package_size,package_price_pence,cycle_anchor_date,effective_from,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)`,
-    ).bind(workspaceId,x.studentId,x.billingMode,x.packageSize??null,x.packagePricePence??null,x.cycleAnchorDate??null,
-      x.effectiveFrom,x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.tutoringBillingCycles) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO tutoring_billing_cycles(
-         id,workspace_id,student_id,sequence_no,session_limit,price_pence,opening_completed_count,
-         opening_progress_locked_at,status,started_on,completed_on,paid_on,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)`,
-    ).bind(x.id,workspaceId,x.studentId,x.sequenceNo,x.sessionLimit,x.pricePence,x.openingCompletedCount,
-      x.openingProgressLockedAt??null,x.status,x.startedOn??null,x.completedOn??null,x.paidOn??null,
-      x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.tutoringBillingCycleOccurrences) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO tutoring_billing_cycle_occurrences(
-         workspace_id,billing_cycle_id,occurrence_id,position,earned_pence,created_at
-       ) VALUES(?1,?2,?3,?4,?5,?6)`,
-    ).bind(workspaceId,x.billingCycleId,x.occurrenceId,x.position,x.earnedPence??0,x.createdAt??new Date().toISOString()));
-  }
-  for (const raw of s.appointmentsClients) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO appointments_clients(id,workspace_id,name,phone,notes,active,created_at,updated_at,deleted_at)
-       VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)`,
-    ).bind(x.id,workspaceId,x.name,x.phone??null,x.notes??null,x.active===false?0:1,
-      x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString(),x.deletedAt??null));
-  }
-  for (const raw of s.appointmentsItems) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO appointments_items(
-         id,workspace_id,client_id,title,appointment_date,start_time,duration_minutes,travel_minutes,location,
-         price_pence,status,note,completed_at,created_at,updated_at,deleted_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`,
-    ).bind(x.id,workspaceId,x.clientId??null,x.title,x.appointmentDate,x.startTime??null,x.durationMinutes,
-      x.travelMinutes,x.location??null,x.pricePence??0,x.status,x.note??null,x.completedAt??null,
-      x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString(),x.deletedAt??null));
-  }
+  statements.push(...bulkInsert(db, 'tutoring_occurrence_students',
+    ['workspace_id','occurrence_id','student_id','attendance_status'], attendanceRows));
 
-  for (const raw of s.financeReceipts) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO finance_receipts(
-         id,workspace_id,payer_ref_type,payer_ref_id,amount_pence,received_at,payment_method,source_kind,
-         source_module,source_entity_type,source_entity_id,note,deleted_at,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`,
-    ).bind(x.id,workspaceId,x.payerRefType??null,x.payerRefId??null,x.amountPence,x.receivedAt,x.paymentMethod,
-      x.sourceKind,x.sourceModule??null,x.sourceEntityType??null,x.sourceEntityId??null,x.note??null,
-      x.deletedAt??null,x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.financeAllocations) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO finance_receipt_allocations(
-         id,workspace_id,receipt_id,target_module,target_type,target_id,amount_pence,created_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)`,
-    ).bind(x.id,workspaceId,x.receiptId,x.targetModule,x.targetType,x.targetId,x.amountPence,
-      x.createdAt??new Date().toISOString()));
-  }
-  for (const raw of s.financeExpenses) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO finance_expenses(
-         id,workspace_id,expense_date,scope,category,amount_pence,note,deleted_at,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`,
-    ).bind(x.id,workspaceId,x.expenseDate,x.scope,x.category,x.amountPence,x.note??null,x.deletedAt??null,
-      x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.financeOtherIncome) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO finance_other_income(
-         id,workspace_id,income_date,category,amount_pence,note,deleted_at,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)`,
-    ).bind(x.id,workspaceId,x.incomeDate,x.category,x.amountPence,x.note??null,x.deletedAt??null,
-      x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.financeCashChecks) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO finance_cash_checks(
-         id,workspace_id,check_date,expected_balance_pence,actual_balance_pence,difference_pence,
-         note,deleted_at,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`,
-    ).bind(x.id,workspaceId,x.checkDate,x.expectedBalancePence,x.actualBalancePence,x.differencePence,
-      x.note??null,x.deletedAt??null,x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
-  }
-  for (const raw of s.coreActivityEvents) {
-    const x=r(raw); statements.push(db.prepare(
-      `INSERT INTO core_activity_events(
-         id,workspace_id,module_key,entity_type,entity_id,action,title,detail,before_json,after_json,
-         undoable,undone_at,created_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)`,
-    ).bind(x.id,workspaceId,x.moduleKey,x.entityType,x.entityId??null,x.action,x.title,x.detail??null,
-      x.beforeJson??null,x.afterJson??null,x.undoable?1:0,x.undoneAt??null,x.createdAt??new Date().toISOString()));
-  }
+  statements.push(...bulkInsert(db, 'tutoring_billing_plans',
+    ['workspace_id','student_id','billing_mode','package_size','package_price_pence','cycle_anchor_date','effective_from','created_at','updated_at'],
+    s.tutoringBillingPlans.map((raw) => { const x=r(raw); return [
+      workspaceId,String(x.studentId),String(x.billingMode),x.packageSize==null?null:Number(x.packageSize),
+      x.packagePricePence==null?null:Number(x.packagePricePence),x.cycleAnchorDate==null?null:String(x.cycleAnchorDate),
+      String(x.effectiveFrom),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
 
+  statements.push(...bulkInsert(db, 'tutoring_billing_cycles',
+    ['id','workspace_id','student_id','sequence_no','session_limit','price_pence','opening_completed_count',
+     'opening_progress_locked_at','status','started_on','completed_on','paid_on','created_at','updated_at'],
+    s.tutoringBillingCycles.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.studentId),Number(x.sequenceNo),Number(x.sessionLimit),Number(x.pricePence),
+      Number(x.openingCompletedCount),x.openingProgressLockedAt==null?null:String(x.openingProgressLockedAt),
+      String(x.status),x.startedOn==null?null:String(x.startedOn),x.completedOn==null?null:String(x.completedOn),
+      x.paidOn==null?null:String(x.paidOn),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'tutoring_billing_cycle_occurrences',
+    ['workspace_id','billing_cycle_id','occurrence_id','position','earned_pence','created_at'],
+    s.tutoringBillingCycleOccurrences.map((raw) => { const x=r(raw); return [
+      workspaceId,String(x.billingCycleId),String(x.occurrenceId),Number(x.position),Number(x.earnedPence??0),nowFor(x.createdAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'appointments_clients',
+    ['id','workspace_id','name','phone','notes','active','created_at','updated_at','deleted_at'],
+    s.appointmentsClients.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.name),x.phone==null?null:String(x.phone),x.notes==null?null:String(x.notes),
+      asBool(x.active),nowFor(x.createdAt),nowFor(x.updatedAt),x.deletedAt==null?null:String(x.deletedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'appointments_items',
+    ['id','workspace_id','client_id','title','appointment_date','start_time','duration_minutes','travel_minutes','location',
+     'price_pence','status','note','completed_at','created_at','updated_at','deleted_at'],
+    s.appointmentsItems.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,x.clientId==null?null:String(x.clientId),String(x.title),String(x.appointmentDate),
+      x.startTime==null?null:String(x.startTime),Number(x.durationMinutes),Number(x.travelMinutes),
+      x.location==null?null:String(x.location),Number(x.pricePence??0),String(x.status),x.note==null?null:String(x.note),
+      x.completedAt==null?null:String(x.completedAt),nowFor(x.createdAt),nowFor(x.updatedAt),
+      x.deletedAt==null?null:String(x.deletedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'finance_receipts',
+    ['id','workspace_id','payer_ref_type','payer_ref_id','amount_pence','received_at','payment_method','source_kind',
+     'source_module','source_entity_type','source_entity_id','note','deleted_at','created_at','updated_at'],
+    s.financeReceipts.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,x.payerRefType==null?null:String(x.payerRefType),x.payerRefId==null?null:String(x.payerRefId),
+      Number(x.amountPence),String(x.receivedAt),String(x.paymentMethod),String(x.sourceKind),
+      x.sourceModule==null?null:String(x.sourceModule),x.sourceEntityType==null?null:String(x.sourceEntityType),
+      x.sourceEntityId==null?null:String(x.sourceEntityId),x.note==null?null:String(x.note),
+      x.deletedAt==null?null:String(x.deletedAt),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'finance_receipt_allocations',
+    ['id','workspace_id','receipt_id','target_module','target_type','target_id','amount_pence','created_at'],
+    s.financeAllocations.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.receiptId),String(x.targetModule),String(x.targetType),String(x.targetId),
+      Number(x.amountPence),nowFor(x.createdAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'finance_expenses',
+    ['id','workspace_id','expense_date','scope','category','amount_pence','note','deleted_at','created_at','updated_at'],
+    s.financeExpenses.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.expenseDate),String(x.scope),String(x.category),Number(x.amountPence),
+      x.note==null?null:String(x.note),x.deletedAt==null?null:String(x.deletedAt),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'finance_other_income',
+    ['id','workspace_id','income_date','category','amount_pence','note','deleted_at','created_at','updated_at'],
+    s.financeOtherIncome.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.incomeDate),String(x.category),Number(x.amountPence),
+      x.note==null?null:String(x.note),x.deletedAt==null?null:String(x.deletedAt),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'finance_cash_checks',
+    ['id','workspace_id','check_date','expected_balance_pence','actual_balance_pence','difference_pence',
+     'note','deleted_at','created_at','updated_at'],
+    s.financeCashChecks.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.checkDate),Number(x.expectedBalancePence),Number(x.actualBalancePence),
+      Number(x.differencePence),x.note==null?null:String(x.note),x.deletedAt==null?null:String(x.deletedAt),
+      nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'core_activity_events',
+    ['id','workspace_id','module_key','entity_type','entity_id','action','title','detail','before_json','after_json',
+     'undoable','undone_at','created_at'],
+    s.coreActivityEvents.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.moduleKey),String(x.entityType),x.entityId==null?null:String(x.entityId),
+      String(x.action),String(x.title),x.detail==null?null:String(x.detail),x.beforeJson==null?null:String(x.beforeJson),
+      x.afterJson==null?null:String(x.afterJson),asBool(x.undoable),x.undoneAt==null?null:String(x.undoneAt),nowFor(x.createdAt),
+    ]; })));
+
+  // D1 batch is the atomic boundary. Refuse a backup that would exceed the
+  // safe statement budget rather than risk a destructive multi-batch restore.
+  if (statements.length > MAX_ATOMIC_STATEMENTS) throw new Error('BACKUP_TOO_LARGE_FOR_ATOMIC_RESTORE');
   await db.batch(statements);
 }
 
 function routeError(error: unknown): { status: 400 | 401 | 403 | 503; error: string } {
   const access = accessError(error);
   if (access) return access;
+  if (error instanceof Error && error.name === 'ZodError') return { status: 400, error: 'BACKUP_FILE_INVALID' };
   const code = error instanceof Error ? error.message : 'BACKUP_FAILED';
   if (code === 'SYNC_WRITE_IN_PROGRESS' || code === 'SYNC_SNAPSHOT_UNSTABLE') {
     return { status: 503, error: code };
@@ -481,6 +555,23 @@ backupRoutes.get('/:workspaceId/export', async (c) => {
   }
 });
 
+backupRoutes.post('/:workspaceId/validate', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    await requireWorkspaceAccess(c, workspaceId);
+    const backup = workspaceBackupSchema.parse(await c.req.json());
+    assertBackupWorkspaceScope(backup);
+    if (backup.workspace.id !== workspaceId) {
+      return c.json({ ok: false, error: 'BACKUP_WORKSPACE_ID_MISMATCH' }, 400);
+    }
+    const validation = validateWorkspaceBackup(backup);
+    return c.json({ ok: validation.valid, validation });
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ ok: false, error: response.error }, response.status);
+  }
+});
+
 backupRoutes.post('/:workspaceId/restore', async (c) => {
   try {
     const workspaceId = c.req.param('workspaceId');
@@ -497,7 +588,7 @@ backupRoutes.post('/:workspaceId/restore', async (c) => {
     const guarded = await withWorkspaceWrite(
       db,
       workspaceId,
-      () => restoreBackup(db, workspaceId, backup),
+      () => restoreBackupAtomic(db, workspaceId, backup),
     );
     return c.json({
       ok: true,
