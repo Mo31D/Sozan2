@@ -116,27 +116,24 @@ function entry(value: SimpleWorkspaceData, index: number, date: string): Schedul
 }
 
 describe('package lesson number display', () => {
-  it('projects successive lesson numbers across upcoming weekly sessions', () => {
+  it('shows the same current package progress in Today and weekly schedule entries', () => {
     const value = data();
     const today = todayIso();
     const tomorrow = addDays(today, 1);
 
-    expect(packageLessonNumberForEntry(value, entry(value, 0, today), studentId)).toBe('3/8');
-    expect(packageLessonNumberForEntry(value, entry(value, 1, tomorrow), studentId)).toBe('4/8');
-    expect(packageLessonLabelForEntry(value, entry(value, 0, today))).toBe('الحصة 3/8');
+    expect(packageLessonNumberForEntry(value, entry(value, 0, today), studentId)).toBe('2/8');
+    expect(packageLessonNumberForEntry(value, entry(value, 1, tomorrow), studentId)).toBe('2/8');
+    expect(packageLessonLabelForEntry(value, entry(value, 0, today))).toBe('الحصة الحالية 2/8');
   });
 
-  it('wraps the next scheduled lesson into the next package after 8/8', () => {
+  it('updates the visible current lesson number when package progress changes', () => {
     const value = data();
     value.billingCycles[0].openingCompletedCount = 7;
     const today = todayIso();
-    const tomorrow = addDays(today, 1);
-
-    expect(packageLessonNumberForEntry(value, entry(value, 0, today), studentId)).toBe('8/8');
-    expect(packageLessonNumberForEntry(value, entry(value, 1, tomorrow), studentId)).toBe('1/8');
+    expect(packageLessonNumberForEntry(value, entry(value, 0, today), studentId)).toBe('7/8');
   });
 
-  it('shows unknown lesson number when package starting progress is unknown', () => {
+  it('shows unknown current lesson number when package starting progress is unknown', () => {
     const value = data();
     value.billingCycles = [];
     const today = todayIso();
