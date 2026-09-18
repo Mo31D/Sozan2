@@ -24,6 +24,7 @@ export async function completeLocalSession(
   session: RecurringSession,
   displayedDate: string,
   preferredOccurrenceId?: string,
+  participantStudentIds?: string[],
 ): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(
@@ -60,11 +61,21 @@ export async function completeLocalSession(
     return;
   }
 
+  const participants = participantStudentIds
+    ? [...new Set(participantStudentIds)]
+    : [...session.studentIds];
+  if (participants.some((studentId) => !session.studentIds.includes(studentId))) {
+    throw new Error('OCCURRENCE_PARTICIPANT_INVALID');
+  }
+  if (session.studentIds.length > 0 && participants.length === 0) {
+    throw new Error('OCCURRENCE_PARTICIPANT_REQUIRED');
+  }
+
   const originalSessionDate = existing?.sessionDate ?? displayedDate;
   const effectiveDate = existing?.rescheduledToDate ?? displayedDate;
   const { grossPence, centerCutPence, earnedPence } = completedSessionFinancials(
     session,
-    session.studentIds.length,
+    participants.length,
   );
   const completedAt = new Date().toISOString();
   const occurrenceId = existing?.id ?? crypto.randomUUID();
@@ -87,11 +98,15 @@ export async function completeLocalSession(
     earnedPence,
     completedAt,
     note: existing?.note ?? null,
-    studentIds: session.studentIds,
+    studentIds: participants,
+    durationMinutesSnapshot: session.durationMinutes,
+    travelMinutesSnapshot: session.travelMinutes,
+    sessionTypeSnapshot: session.sessionType,
+    locationSnapshot: session.location,
   };
   occurrenceStore.put(completedOccurrence);
 
-  for (const studentId of session.studentIds) {
+  for (const studentId of participants) {
     const plan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId);
     if (!plan || plan.billingMode !== 'package') continue;
 
@@ -176,12 +191,13 @@ export async function completeLocalSession(
       scheduledStart,
       completedAt,
       note: null,
+      participantStudentIds: participants,
     },
   }));
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
 
   await transactionDone(transaction);
-  for (const studentId of session.studentIds) {
+  for (const studentId of participants) {
     await rebalanceStudentLocally(workspaceId, studentId);
   }
 }
