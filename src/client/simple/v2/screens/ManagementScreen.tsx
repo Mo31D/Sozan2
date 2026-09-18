@@ -126,7 +126,7 @@ export function ManagementScreen({
       <SettingsGroup title="الحساب والبرنامج">
         <ManagementRow icon="◉" title="بياناتي" detail={`${presentation.displayName} · ${presentation.currencyCode}`} onClick={() => setView('profile')} />
         <ManagementRow icon="↻" title="الحساب والمزامنة" detail={snapshot.cloudLink ? 'الحساب مرتبط بالسحابة' : 'البرنامج يعمل محليًا'} onClick={() => setView('account')} />
-        <ManagementRow icon="⇅" title="البيانات" detail="السجل، التصدير، والاستيراد القديم" onClick={() => setView('data')} />
+        <ManagementRow icon="⇅" title="البيانات" detail="السجل، النسخ الاحتياطية، والتصدير والاستيراد" onClick={() => setView('data')} />
       </SettingsGroup>
     </section>
   );
