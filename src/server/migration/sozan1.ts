@@ -1,3 +1,5 @@
+import { studentOccurrenceTargetId } from '../../modules/tutoring/domain/finance-target';
+
 type LegacyRow = Record<string, unknown>;
 
 type Sozan1Export = {
