@@ -76,6 +76,17 @@ async function updateCloudLink(
   await transactionDone(transaction);
 }
 
+async function assertCloudInitializationReady(workspaceId: string): Promise<void> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(STORES.coreCloudLinks, 'readonly');
+  const row = await requestResult<LocalCloudLinkRecord | undefined>(
+    transaction.objectStore(STORES.coreCloudLinks).get(workspaceId),
+  );
+  if (row?.initializationState === 'provisioning') {
+    throw new Error('CLOUD_INITIALIZATION_INCOMPLETE');
+  }
+}
+
 async function cloudRevision(workspaceId: string): Promise<number> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(STORES.coreCloudLinks, 'readonly');
@@ -155,6 +166,7 @@ export async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
 export async function runWorkspaceSync(
   workspaceId: string,
 ): Promise<SyncRunResult> {
+  await assertCloudInitializationReady(workspaceId);
   const pending = await listPendingSyncMutations(workspaceId);
   let pushed = 0;
   let failed = 0;
