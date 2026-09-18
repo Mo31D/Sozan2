@@ -45,6 +45,11 @@ export type LocalCloudLinkRecord = {
   lastCloudPushAt: string | null;
   /** Last authoritative workspace revision pulled/acknowledged from cloud. */
   serverRevision: number | null;
+  /**
+   * Missing on pre-upgrade records means ready. "provisioning" blocks normal
+   * sync until the complete local workspace has been restored to cloud.
+   */
+  initializationState?: 'provisioning' | 'ready';
 };
 
 export type LocalPlatformSnapshot = {
@@ -207,6 +212,7 @@ export async function bootstrapLocalPlatform(input: {
 export async function linkLocalPlatformToCloud(
   snapshot: LocalPlatformSnapshot,
   loginName: string,
+  initializationState: 'provisioning' | 'ready' = 'ready',
 ): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(STORES.coreCloudLinks, 'readwrite');
@@ -218,6 +224,27 @@ export async function linkLocalPlatformToCloud(
     lastCloudPullAt: null,
     lastCloudPushAt: null,
     serverRevision: null,
+    initializationState,
+  } satisfies LocalCloudLinkRecord);
+  await transactionDone(transaction);
+}
+
+export async function markLocalCloudLinkReady(
+  workspaceId: string,
+  serverRevision: number,
+): Promise<void> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(STORES.coreCloudLinks, 'readwrite');
+  const store = transaction.objectStore(STORES.coreCloudLinks);
+  const current = await requestResult<LocalCloudLinkRecord | undefined>(store.get(workspaceId));
+  if (!current) {
+    await transactionDone(transaction);
+    throw new Error('CLOUD_LINK_STATE_INVALID');
+  }
+  store.put({
+    ...current,
+    serverRevision,
+    initializationState: 'ready',
   } satisfies LocalCloudLinkRecord);
   await transactionDone(transaction);
 }
@@ -308,6 +335,7 @@ export async function hydrateLocalPlatformFromCloud(
     lastCloudPullAt: now,
     lastCloudPushAt: null,
     serverRevision: null,
+    initializationState: 'ready',
   } satisfies LocalCloudLinkRecord);
 
   await transactionDone(transaction);
