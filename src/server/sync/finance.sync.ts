@@ -250,20 +250,26 @@ export const financeSyncHandler: ModuleSyncHandler = {
       await requireStudent(db, workspaceId, parsed.studentId);
       const existing = await requireReceipt(db, workspaceId, mutation.entityId);
       if (existing.deleted_at) throw new Error('RECEIPT_DELETED');
-      await db.prepare(
-        `UPDATE finance_receipts
-         SET payer_ref_type='tutoring.student', payer_ref_id=?1, amount_pence=?2,
-             received_at=?3, payment_method=?4, note=?5, updated_at=CURRENT_TIMESTAMP
-         WHERE workspace_id=?6 AND id=?7`,
-      ).bind(
-        parsed.studentId,
-        parsed.amountPence,
-        parsed.receivedAt,
-        parsed.paymentMethod,
-        parsed.note,
-        workspaceId,
-        mutation.entityId,
-      ).run();
+      await db.batch([
+        db.prepare(
+          `DELETE FROM finance_receipt_allocations
+           WHERE workspace_id=?1 AND receipt_id=?2`,
+        ).bind(workspaceId, mutation.entityId),
+        db.prepare(
+          `UPDATE finance_receipts
+           SET payer_ref_type='tutoring.student', payer_ref_id=?1, amount_pence=?2,
+               received_at=?3, payment_method=?4, note=?5, updated_at=CURRENT_TIMESTAMP
+           WHERE workspace_id=?6 AND id=?7`,
+        ).bind(
+          parsed.studentId,
+          parsed.amountPence,
+          parsed.receivedAt,
+          parsed.paymentMethod,
+          parsed.note,
+          workspaceId,
+          mutation.entityId,
+        ),
+      ]);
       await rebuildStudents(db, workspaceId, [existing.payer_ref_id, parsed.studentId]);
       return;
     }
