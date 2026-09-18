@@ -168,18 +168,23 @@ export async function importSozan1(
     const safeStatus = scheduleStatus === 'confirmed' && (weekday === null || !startTime) ? 'pending' : scheduleStatus;
     const sessionType = mapSessionType(text(row.session_type, 'online'));
     const centerBps = clamp(Math.round(number(row.center_cut_percent) * 100), 0, 10000);
+    const priceBasis = row.price_basis === 'per_student' ? 'per_student' : 'total_session';
+    const participants = mappedParticipantsForSession(oldId);
+    const payerStudentId = priceBasis === 'total_session' && participants.length === 1
+      ? participants[0]
+      : null;
     statements.push(db.prepare(
       `INSERT OR IGNORE INTO tutoring_recurring_sessions(
          id, workspace_id, title, session_type, schedule_status, weekday, start_time,
          duration_minutes, travel_minutes, location, price_basis, default_price_pence,
-         expected_student_count, center_cut_bps, active, created_at, updated_at
-       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`,
+         expected_student_count, center_cut_bps, active, payer_student_id, created_at, updated_at
+       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)`,
     ).bind(
       id, workspaceId, text(row.title, `Session ${oldId}`), sessionType, safeStatus,
       weekday, startTime, clamp(int(row.duration_minutes, 60), 15, 360), clamp(int(row.travel_minutes, 0), 0, 360),
-      nullableText(row.location), row.price_basis === 'per_student' ? 'per_student' : 'total_session',
+      nullableText(row.location), priceBasis,
       Math.max(0, int(row.price_pence, 0)), clamp(int(row.student_count, 1), 1, 100), centerBps,
-      flag(row.active, 1), timestamp(row.created_at), timestamp(row.updated_at),
+      flag(row.active, 1), payerStudentId, timestamp(row.created_at), timestamp(row.updated_at),
     ));
 
     const oldStudentId = legacyKey(row.student_id);
