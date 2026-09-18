@@ -94,6 +94,7 @@
 .week-grid-scroll{
   width:100%;
   overflow-x:auto;
+  direction:rtl;
   overscroll-behavior-inline:contain;
   border:1px solid var(--ui-border);
   border-radius:var(--ui-radius-md);
