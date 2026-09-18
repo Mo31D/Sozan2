@@ -47,6 +47,7 @@ export type LocalOccurrence = {
 
 export type SimpleWorkspaceData = {
   students: Student[];
+  archivedStudents?: Student[];
   studentBaselines: StudentBaseline[];
   sessions: RecurringSession[];
   occurrences: LocalOccurrence[];
@@ -112,8 +113,10 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
   const activeReceiptIds = new Set(activeReceipts.map((row) => row.id));
   const openingRaw = workspaceSettings.find((row) => row.key === 'finance.opening_balance_pence')?.value ?? '0';
   const openingBalancePence = Number.isFinite(Number(openingRaw)) ? Math.round(Number(openingRaw)) : 0;
+  const workspaceStudents = mine(students);
   return {
-    students: mine(students).filter((row) => row.active),
+    students: workspaceStudents.filter((row) => row.active),
+    archivedStudents: workspaceStudents.filter((row) => !row.active),
     studentBaselines: mine(studentBaselines),
     sessions: mine(sessions).filter((row) => row.active),
     occurrences: mine(occurrences),
