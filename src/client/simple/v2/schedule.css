@@ -333,69 +333,107 @@
 
 @media(max-width:700px){
   .week-grid-view{
-    width:calc(100vw - 16px);
-    gap:8px;
+    width:calc(100vw - 12px);
+    gap:7px;
   }
   .week-grid-meta{align-items:flex-start;flex-direction:column;gap:2px}
-  .week-grid-meta strong{font-size:.94rem}
+  .week-grid-meta strong{font-size:.9rem}
   .week-grid-meta span,
-  .week-grid-meta small{font-size:.72rem}
+  .week-grid-meta small{font-size:.69rem}
   .week-grid-meta small{white-space:normal}
   .week-view-switch{align-self:stretch;grid-template-columns:1fr 1fr}
-  .week-view-switch button{min-height:38px;padding-block:6px}
+  .week-view-switch button{min-height:36px;padding-block:5px}
   .week-grid-scroll{
     border-radius:var(--ui-radius-sm);
     scroll-behavior:smooth;
   }
   .week-grid-board{
-    --week-grid-body-height:480px;
-    grid-template-columns:60px repeat(7,minmax(102px,1fr));
-    grid-template-rows:46px var(--week-grid-body-height);
-    min-width:774px;
+    --week-grid-body-height:432px;
+    grid-template-columns:56px repeat(7,minmax(92px,1fr));
+    grid-template-rows:44px var(--week-grid-body-height);
+    min-width:700px;
   }
-  .week-grid-day-head{padding:5px 2px}
-  .week-grid-day-head strong{font-size:.74rem}
-  .week-grid-day-head small{font-size:.57rem}
-  .week-grid-time-band{padding:5px 2px}
-  .week-grid-time-band strong{font-size:.64rem}
-  .week-grid-time-band span{font-size:.54rem}
+  .week-grid-day-head{padding:4px 2px}
+  .week-grid-day-head strong{font-size:.7rem}
+  .week-grid-day-head small{font-size:.54rem}
+  .week-grid-time-band{padding:4px 2px}
+  .week-grid-time-band strong{font-size:.61rem}
+  .week-grid-time-band span{font-size:.51rem}
   .week-grid-entry{
-    height:max(24px,calc(var(--week-entry-height) - 4px));
+    height:max(22px,calc(var(--week-entry-height) - 4px));
     padding:3px 4px;
-    gap:4px;
-    border-radius:8px;
+    gap:3px;
+    border-radius:7px;
   }
-  .week-grid-entry-accent{width:3px;min-height:16px}
-  .week-grid-entry-copy strong{font-size:.66rem}
-  .week-grid-entry-copy small{font-size:.53rem}
+  .week-grid-entry-accent{width:3px;min-height:14px}
+  .week-grid-entry-copy strong{font-size:.63rem}
+  .week-grid-entry-copy small{font-size:.5rem}
 }
 
 @media(max-width:390px){
-  .week-grid-view{width:calc(100vw - 10px)}
+  .week-grid-view{width:calc(100vw - 8px)}
   .week-grid-board{
-    --week-grid-body-height:468px;
-    grid-template-columns:56px repeat(7,minmax(98px,1fr));
-    min-width:742px;
+    --week-grid-body-height:414px;
+    grid-template-columns:52px repeat(7,minmax(88px,1fr));
+    min-width:668px;
   }
 }
 
-@media(max-width:900px) and (pointer:coarse) and (orientation:landscape){
-  .week-grid-view{width:calc(100vw - 12px)}
+/* Phone landscape needs its own dense timetable. Modern iPhones can be
+   wider than 900 CSS px in landscape, so width alone is not reliable. */
+@media(max-width:1180px) and (max-height:600px) and (pointer:coarse) and (orientation:landscape){
+  .schedule-tabs button{
+    min-height:32px;
+    padding:4px 8px;
+    font-size:.78rem;
+  }
+  .week-grid-view{
+    width:calc(100vw - 8px);
+    gap:5px;
+  }
+  .week-grid-meta{
+    flex-direction:row;
+    align-items:flex-end;
+    gap:6px;
+  }
+  .week-grid-meta>div{gap:1px}
+  .week-grid-meta strong{font-size:.8rem}
+  .week-grid-meta span,
+  .week-grid-meta small{font-size:.61rem}
+  .week-grid-meta small{white-space:nowrap}
+  .week-view-switch{
+    grid-template-columns:repeat(2,minmax(58px,1fr));
+    padding:3px;
+  }
+  .week-view-switch button{
+    min-height:30px;
+    padding:3px 8px;
+    font-size:.76rem;
+  }
+  .week-grid-scroll{border-radius:10px}
   .week-grid-board{
-    --week-grid-body-height:420px;
-    grid-template-columns:54px repeat(7,minmax(98px,1fr));
-    grid-template-rows:44px var(--week-grid-body-height);
-    min-width:740px;
+    --week-grid-body-height:300px;
+    grid-template-columns:46px repeat(7,minmax(86px,1fr));
+    grid-template-rows:38px var(--week-grid-body-height);
+    min-width:648px;
   }
-  .week-grid-day-head strong{font-size:.72rem}
-  .week-grid-day-head small{font-size:.55rem}
-  .week-grid-time-band strong{font-size:.62rem}
-  .week-grid-time-band span{font-size:.52rem}
+  .week-grid-corner{font-size:.61rem}
+  .week-grid-day-head{gap:1px;padding:3px 1px}
+  .week-grid-day-head strong{font-size:.63rem}
+  .week-grid-day-head small{font-size:.47rem}
+  .week-grid-time-band{padding:3px 1px}
+  .week-grid-time-band strong{font-size:.55rem}
+  .week-grid-time-band span{font-size:.44rem}
   .week-grid-entry{
-    height:max(23px,calc(var(--week-entry-height) - 4px));
-    padding:3px 4px;
-    gap:4px;
+    grid-template-columns:2px minmax(0,1fr);
+    height:max(18px,calc(var(--week-entry-height) - 3px));
+    padding:2px 3px;
+    gap:3px;
+    border-radius:6px;
   }
-  .week-grid-entry-copy strong{font-size:.64rem}
-  .week-grid-entry-copy small{font-size:.51rem}
+  .week-grid-entry-accent{width:2px;min-height:12px}
+  .week-grid-entry-copy{gap:1px}
+  .week-grid-entry-copy strong{font-size:.57rem;line-height:1.08}
+  .week-grid-entry-copy small{font-size:.44rem;line-height:1.08}
+  .week-grid-outside>summary{padding:8px 10px;font-size:.7rem}
 }
