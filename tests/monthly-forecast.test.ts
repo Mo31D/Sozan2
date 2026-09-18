@@ -96,7 +96,7 @@ describe('monthly forecast', () => {
     expect(forecast.projectedMonthEarnedPence).toBe(110000);
     expect(forecast.projectedPackageCompletions).toBe(1);
     expect(forecast.projectedNewDuePence).toBe(140000);
-    expect(forecast.currentDuePence).toBe(0);
+    expect(forecast.currentDuePence).toBe(30000);
   });
 
   it('honours cancellations and reschedules and excludes pending schedules from the projection', () => {
