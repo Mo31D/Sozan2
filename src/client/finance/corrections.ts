@@ -312,5 +312,5 @@ export async function restoreLocalExpense(workspaceId: string, expenseId: string
 }
 
 export async function rebuildLocalStudentAllocations(workspaceId: string, studentId: string): Promise<void> {
-  await rebalanceStudentLocally(workspaceId, studentId);
+  await rebuildStudentLocally(workspaceId, studentId);
 }
