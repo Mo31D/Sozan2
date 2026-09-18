@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { LocalPlatformSnapshot } from '../../../../adapters/indexeddb/platform.repository';
 import {
-  createWorkspaceBackup,
+  createLocalWorkspaceBackup,
   downloadWorkspaceBackup,
-  restoreWorkspaceBackup,
+  importWorkspaceBackupLocalFirst,
   validateWorkspaceBackupForImport,
 } from '../../../../backup/workspace-backup';
 import type {
@@ -34,9 +34,9 @@ export function DataTools({
     setBackupBusy(true);
     setBackupMessage('');
     try {
-      const payload = await createWorkspaceBackup(snapshot);
+      const payload = await createLocalWorkspaceBackup(snapshot);
       downloadWorkspaceBackup(payload);
-      setBackupMessage('تم تصدير نسخة كاملة قابلة للاستيراد.');
+      setBackupMessage('تم تصدير نسخة كاملة من البيانات الموجودة على هذا الجهاز.');
     } catch (error) {
       setBackupMessage(importErrorMessage(error instanceof Error ? error.message : 'BACKUP_EXPORT_FAILED'));
     } finally {
@@ -59,7 +59,7 @@ export function DataTools({
       setRestoreFilename(file.name);
       setRestoreBackup(checked.backup);
       setRestoreValidation(checked.validation);
-      setBackupMessage('الملف صالح للاستيراد واجتاز فحص البنية والعلاقات.');
+      setBackupMessage('الملف صالح للاستيراد. الفحص تم على الجهاز ولم يعتمد على الاتصال بالسحابة.');
     } catch (error) {
       setBackupMessage(importErrorMessage(error instanceof Error ? error.message : 'BACKUP_FILE_INVALID'));
     } finally {
@@ -69,22 +69,34 @@ export function DataTools({
 
   const runRestore = async () => {
     if (!restoreBackup || restoreConfirm.trim() !== 'استيراد') return;
+
     setBackupBusy(true);
     try {
-      setBackupMessage('جاري إعادة فحص الملف…');
       const checked = await validateWorkspaceBackupForImport(snapshot, restoreBackup);
       setRestoreValidation(checked.validation);
 
-      setBackupMessage('جاري تنزيل نسخة أمان ثم استيراد البيانات…');
-      const safety = await createWorkspaceBackup(snapshot);
+      setBackupMessage('جاري إنشاء نسخة أمان محلية قبل الاستيراد…');
+      const safety = await createLocalWorkspaceBackup(snapshot);
       downloadWorkspaceBackup(safety, 'قبل-الاستيراد');
 
-      await restoreWorkspaceBackup(snapshot, checked.backup);
+      setBackupMessage('جاري استبدال البيانات على الجهاز…');
+      const outcome = await importWorkspaceBackupLocalFirst(snapshot, checked.backup);
+
       setRestoreBackup(null);
       setRestoreFilename('');
       setRestoreConfirm('');
       setRestoreValidation(null);
-      setBackupMessage('تم الاستيراد بنجاح. النسخة المحلية والسحابية متطابقتان.');
+
+      if (outcome.cloud === 'synced') {
+        setBackupMessage('تم الاستيراد بنجاح على الجهاز والسحابة، وتم توحيد النسختين.');
+      } else if (outcome.cloud === 'pending') {
+        setBackupMessage(
+          'تم استيراد البيانات بنجاح على الجهاز. رفع النسخة للسحابة لم يُؤكد بعد، لذلك تم إيقاف المزامنة مؤقتًا لحماية البيانات المستوردة. يمكنك إكمال الرفع من إعدادات الحساب.',
+        );
+      } else {
+        setBackupMessage('تم الاستيراد بنجاح على هذا الجهاز.');
+      }
+
       await onImported();
     } catch (error) {
       setBackupMessage(importErrorMessage(error instanceof Error ? error.message : 'BACKUP_RESTORE_FAILED'));
@@ -93,9 +105,18 @@ export function DataTools({
     }
   };
 
+  const cloudPending = snapshot.cloudLink?.initializationState === 'provisioning'
+    && snapshot.cloudLink.provisioningReason === 'backup-import';
+
   return (
     <section className="management-subview">
-      <SubHeader title="البيانات" subtitle="نسخة احتياطية كاملة واستيراد آمن لبيانات Sozan2" onBack={onBack} />
+      <SubHeader title="البيانات" subtitle="نسخ محلية كاملة واستيراد Local-first آمن" onBack={onBack} />
+
+      {cloudPending && (
+        <div className="management-helper">
+          النسخة المستوردة محفوظة على الجهاز، والمزامنة السحابية متوقفة مؤقتًا حتى يكتمل رفع النسخة الجديدة من إعدادات الحساب.
+        </div>
+      )}
 
       <div className="management-group">
         <button className="management-row" type="button" onClick={onOpenActivity}>
@@ -106,13 +127,19 @@ export function DataTools({
 
         <button className="management-row" type="button" disabled={backupBusy} onClick={() => void exportBackup()}>
           <span className="management-row-icon">↓</span>
-          <span><strong>تصدير نسخة كاملة</strong><small>كل بيانات العمل في ملف JSON قابل للحفظ والتعديل والاستيراد</small></span>
+          <span>
+            <strong>تصدير نسخة كاملة</strong>
+            <small>نسخة من البيانات الفعلية الموجودة على الجهاز، وتشمل أي تعديلات لم تُرفع للسحابة بعد</small>
+          </span>
           <b>‹</b>
         </button>
 
         <label className="management-row">
           <span className="management-row-icon">↑</span>
-          <span><strong>استيراد نسخة</strong><small>يفحص الملف والعلاقات أولًا، ثم يستبدل البيانات كعملية واحدة آمنة</small></span>
+          <span>
+            <strong>استيراد نسخة</strong>
+            <small>يفحص الملف محليًا، يحفظ نسخة أمان، ثم يستبدل بيانات الجهاز قبل محاولة تحديث السحابة</small>
+          </span>
           <input
             type="file"
             accept="application/json,.json"
@@ -142,7 +169,7 @@ export function DataTools({
           )}
 
           <p className="management-helper">
-            سيتم تنزيل نسخة أمان من الوضع الحالي أولًا. بعدها يتم استبدال البيانات على السحابة كعملية ذرية واحدة ثم تطبيق نفس النسخة محليًا. اكتب «استيراد» للتأكيد.
+            سيتم أولًا تنزيل نسخة أمان من الوضع الحالي. بعد ذلك تُستبدل بيانات الجهاز في معاملة واحدة. لو تعذر الاتصال بالسحابة، تبقى البيانات الجديدة محفوظة محليًا وتُوقف المزامنة القديمة بدل أن تعيد البيانات السابقة. اكتب «استيراد» للتأكيد.
           </p>
 
           <input
@@ -178,14 +205,16 @@ function importErrorMessage(code: string): string {
     BACKUP_BASELINE_STUDENT_MISSING: 'عدد حصص سابق مرتبط بطالب غير موجود.',
     BACKUP_BASELINE_COUNT_INVALID: 'يوجد عدد حصص سابق غير صالح.',
     BACKUP_MANIFEST_COUNT_MISMATCH: 'أعداد محتويات الملف لا تطابق البيانات الفعلية داخله.',
-    BACKUP_TOO_LARGE_FOR_ATOMIC_RESTORE: 'النسخة أكبر من الحد الآمن للاستيراد الذري الحالي. لم يتم تغيير أي بيانات.',
-    BACKUP_NETWORK_ERROR: 'تعذر الاتصال بالخادم. لم يتم اعتبار الاستيراد ناجحًا.',
-    BACKUP_REQUEST_TIMEOUT: 'انتهت مهلة الاتصال أثناء الاستيراد. لم يتم اعتبار العملية ناجحة.',
-    BACKUP_RESPONSE_INVALID: 'الخادم أعاد استجابة غير صالحة للاستيراد.',
-    BACKUP_RESPONSE_EMPTY: 'لم تصل استجابة مكتملة من الخادم.',
+    BACKUP_TOO_LARGE_FOR_ATOMIC_RESTORE: 'النسخة أكبر من الحد الآمن للاستيراد السحابي. تم الاحتفاظ بالنسخة المحلية ويمكن إكمال الرفع لاحقًا.',
+    BACKUP_IMPORT_REVISION_CONFLICT: 'النسخة السحابية تغيرت منذ آخر مزامنة. بيانات الاستيراد المحلية محمية ولن تُستبدل تلقائيًا.',
+    BACKUP_IMPORT_IN_PROGRESS: 'يوجد استيراد آخر قيد التنفيذ.',
+    BACKUP_CLOUD_STATUS_UNKNOWN: 'تم حفظ البيانات على الجهاز، لكن حالة الرفع للسحابة غير مؤكدة حتى يعود الاتصال.',
+    BACKUP_NETWORK_ERROR: 'تعذر الاتصال بالسحابة.',
+    BACKUP_REQUEST_TIMEOUT: 'انتهت مهلة الاتصال بالسحابة.',
     BACKUP_RESTORE_FAILED: 'تعذر استيراد النسخة.',
     BACKUP_EXPORT_FAILED: 'تعذر تصدير النسخة.',
-    SYNC_WRITE_IN_PROGRESS: 'هناك مزامنة أخرى قيد التنفيذ. انتظر قليلًا ثم أعد المحاولة.',
+    WORKSPACE_OPERATION_BUSY: 'هناك عملية مزامنة أو استيراد أخرى قيد التنفيذ. انتظر لحظات ثم أعد المحاولة.',
+    SYNC_WRITE_IN_PROGRESS: 'هناك عملية كتابة سحابية أخرى قيد التنفيذ. انتظر قليلًا ثم أعد المحاولة.',
   };
   return messages[code] ?? `تعذر تنفيذ العملية (${code})`;
 }
