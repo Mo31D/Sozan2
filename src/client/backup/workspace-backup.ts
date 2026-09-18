@@ -424,6 +424,10 @@ export async function resumePendingBackupImport(
             return status.revision;
           }
           if (status.status === 'failed') {
+            if (['SYNC_WRITE_IN_PROGRESS', 'BACKUP_IMPORT_STALE'].includes(status.error)) {
+              importId = crypto.randomUUID();
+              break;
+            }
             throw new Error(status.error);
           }
           await new Promise((resolve) => globalThis.setTimeout(resolve, 500 * (attempt + 1)));
