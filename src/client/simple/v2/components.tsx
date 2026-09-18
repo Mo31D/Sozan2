@@ -45,7 +45,15 @@ export function ScheduleTab({ active, label, onClick }: { active: boolean; label
   return <button type="button" role="tab" aria-selected={active} className={active ? 'active' : ''} onClick={onClick}>{label}</button>;
 }
 
-export function ScheduleRow({ entry, onClick }: { entry: ScheduledEntry; onClick: () => void }) {
+export function ScheduleRow({
+  entry,
+  onClick,
+  lessonLabel,
+}: {
+  entry: ScheduledEntry;
+  onClick: () => void;
+  lessonLabel?: string | null;
+}) {
   const state = entry.status === 'completed'
     ? ' · تمت'
     : entry.status === 'cancelled'
@@ -54,7 +62,10 @@ export function ScheduleRow({ entry, onClick }: { entry: ScheduledEntry; onClick
   return (
     <button type="button" className={`schedule-row schedule-row-button status-${entry.status}`} onClick={onClick}>
       <span className={`session-color type-${entry.session.sessionType}`} />
-      <span><strong>{entry.session.title}</strong><small>{sessionTypeLabel(entry.session.sessionType)}{state}</small></span>
+      <span>
+        <strong>{entry.session.title}</strong>
+        <small>{sessionTypeLabel(entry.session.sessionType)}{lessonLabel ? ` · ${lessonLabel}` : ''}{state}</small>
+      </span>
       <time>{entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}</time>
     </button>
   );

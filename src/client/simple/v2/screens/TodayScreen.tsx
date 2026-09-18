@@ -16,6 +16,7 @@ import {
   formatClockTime,
   greetingForHour,
   money,
+  packageLessonNumbersForEntry,
   packageProgress,
   scheduleEntriesForDate,
   sessionTypeLabel,
@@ -143,6 +144,7 @@ function AttendanceCard({
   );
   const primaryStudent = studentForSession(data, session);
   const plan = primaryStudent ? planFor(data, primaryStudent.id) : null;
+  const lessonNumbers = packageLessonNumbersForEntry(data, entry);
   const done = occurrence?.status === 'completed';
   const cancelled = occurrence?.status === 'cancelled';
   const missed = occurrence?.status === 'missed';
@@ -179,15 +181,25 @@ function AttendanceCard({
               {linkedStudents.map((student) => <button type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>{student.name}</button>)}
             </div>
           )}
-          {plan?.billingMode === 'package' && <small>باقة · {packageProgress(data, primaryStudent?.id ?? '')}</small>}
+          {plan?.billingMode === 'package' && (
+            <small className="lesson-package-line">
+              {lessonNumbers ? `رقم الحصة في الباقة · ${lessonNumbers}` : `باقة · ${packageProgress(data, primaryStudent?.id ?? '')}`}
+            </small>
+          )}
           {linkedStudents.length > 1 && !done && !cancelled && !missed && (
-            <div className="lesson-inline-form attendance-picker" aria-label="اختيار الحضور">
-              <strong>مين حضر؟</strong>
-              <div className="student-context-links">
+            <div className="attendance-picker" aria-label="اختيار الحضور">
+              <div className="attendance-picker-head">
+                <div>
+                  <strong>مين حضر النهارده؟</strong>
+                  <small>حددي الحاضرين قبل تسجيل الحصة.</small>
+                </div>
+                <span>{participantStudentIds.length} من {linkedStudents.length}</span>
+              </div>
+              <div className="attendance-options">
                 {linkedStudents.map((student) => {
                   const checked = participantStudentIds.includes(student.id);
                   return (
-                    <label key={student.id}>
+                    <label className={`attendance-option ${checked ? 'selected' : ''}`} key={student.id}>
                       <input
                         type="checkbox"
                         checked={checked}
@@ -197,24 +209,34 @@ function AttendanceCard({
                             : [...current, student.id],
                         )}
                       />
-                      <span>{student.name}</span>
+                      <span className="attendance-check" aria-hidden="true">{checked ? '✓' : ''}</span>
+                      <strong>{student.name}</strong>
                     </label>
                   );
                 })}
               </div>
-              {completionNeedsParticipant && <small className="lesson-state-note">اختاري طالبًا واحدًا على الأقل، أو استخدمي «إلغاء/فائتة» بدل تسجيل الحصة كمكتملة.</small>}
+              {completionNeedsParticipant && <small className="attendance-warning">اختاري طالبًا واحدًا على الأقل، أو استخدمي «إلغاء/فائتة» بدل تسجيل الحصة كمكتملة.</small>}
             </div>
           )}
           {done && linkedStudents.length > 1 && (
-            <small className="lesson-state-note">
-              الحضور: {attendedStudents.length ? attendedStudents.map((student) => student.name).join('، ') : 'لم يُسجل حضور'}
-            </small>
+            <div className="attendance-summary">
+              <strong>حضر النهارده</strong>
+              {attendedStudents.length ? (
+                <div className="attendance-summary-list">
+                  {attendedStudents.map((student) => <span key={student.id}>✓ {student.name}</span>)}
+                </div>
+              ) : (
+                <small>لم يُسجل حضور لهذه الحصة.</small>
+              )}
+            </div>
           )}
           {future && !done && <small className="lesson-state-note">حصة مستقبلية — يمكن نقلها أو إلغاؤها، والحضور يتسجل في يومها.</small>}
           {cancelled && <small className="lesson-state-note">ملغاة — محفوظة في السجل ويمكن استرجاعها</small>}
           {missed && <small className="lesson-state-note">فائتة — يمكنك استرجاعها أو نقلها</small>}
         </div>
-        {plan?.billingMode === 'package' && <span className="progress-chip">{packageProgress(data, primaryStudent?.id ?? '')}</span>}
+        {plan?.billingMode === 'package' && (
+          <span className="progress-chip">{lessonNumbers ?? packageProgress(data, primaryStudent?.id ?? '')}</span>
+        )}
       </div>
 
       {!done && !cancelled && !missed && (

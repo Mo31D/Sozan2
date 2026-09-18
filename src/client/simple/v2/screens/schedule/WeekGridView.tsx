@@ -3,6 +3,8 @@ import { calendarDateInTimeZone } from '../../../../../platform/time/calendar-da
 import type { SimpleWorkspaceData } from '../../../data';
 import {
   formatClockTime,
+  packageLessonLabelForEntry,
+  packageLessonNumbersForEntry,
   scheduleEntriesForDate,
   todayIso,
   WEEKDAYS,
@@ -180,18 +182,23 @@ export function WeekGridView({
                 {layout.visible.map((item) => {
                   const { entry } = item;
                   const clipped = item.clippedBefore || item.clippedAfter;
+                  const lessonLabel = packageLessonLabelForEntry(data, entry);
+                  const lessonNumbers = packageLessonNumbersForEntry(data, entry);
                   return (
                     <button
                       type="button"
                       className={`week-grid-entry type-${entry.session.sessionType} status-${entry.status}`}
                       style={entryStyle(item)}
                       key={`${entry.session.id}-${date}-${entry.occurrence?.id ?? 'recurring'}`}
-                      title={`${entry.session.title} · ${entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}`}
+                      title={`${entry.session.title} · ${entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}${lessonLabel ? ` · ${lessonLabel}` : ''}`}
                       onClick={() => onEdit(entry.session.id)}
                     >
                       <span className="week-grid-entry-accent" />
                       <span className="week-grid-entry-copy">
-                        <strong>{entry.session.title}</strong>
+                        <strong>
+                          <span>{entry.session.title}</span>
+                          {lessonNumbers && <b>{lessonNumbers}</b>}
+                        </strong>
                         <small>
                           {entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}
                           {clipped ? ' · ممتدة خارج النطاق' : ''}
@@ -216,7 +223,10 @@ export function WeekGridView({
                 key={`${date}-${entry.session.id}-${entry.occurrence?.id ?? 'recurring'}`}
                 onClick={() => onEdit(entry.session.id)}
               >
-                <span>{WEEKDAYS[weekdayForIso(date)]} · {entry.session.title}</span>
+                <span>
+                  {WEEKDAYS[weekdayForIso(date)]} · {entry.session.title}
+                  {packageLessonLabelForEntry(data, entry) ? ` · ${packageLessonLabelForEntry(data, entry)}` : ''}
+                </span>
                 <strong>{entry.startTime ? formatClockTime(entry.startTime) : 'وقت غير محدد'}</strong>
               </button>
             ))}

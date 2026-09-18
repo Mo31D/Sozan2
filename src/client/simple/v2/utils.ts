@@ -87,6 +87,40 @@ export function packageProgress(data: SimpleWorkspaceData, studentId: string): s
   return `${done}/${size}`;
 }
 
+export function packageLessonNumberForEntry(
+  data: SimpleWorkspaceData,
+  entry: ScheduledEntry,
+  studentId: string,
+): string | null {
+  if (!entry.session.studentIds.includes(studentId)) return null;
+  const plan = planFor(data, studentId);
+  if (plan?.billingMode !== 'package') return null;
+  return packageProgress(data, studentId);
+}
+
+export function packageLessonNumbersForEntry(
+  data: SimpleWorkspaceData,
+  entry: ScheduledEntry,
+): string | null {
+  const numbers = [...new Set(
+    entry.session.studentIds
+      .map((studentId) => packageLessonNumberForEntry(data, entry, studentId))
+      .filter((value): value is string => Boolean(value)),
+  )];
+
+  if (!numbers.length) return null;
+  return numbers.join('، ');
+}
+
+export function packageLessonLabelForEntry(
+  data: SimpleWorkspaceData,
+  entry: ScheduledEntry,
+): string | null {
+  const numbers = packageLessonNumbersForEntry(data, entry);
+  if (!numbers) return null;
+  return `الحصة ${numbers}`;
+}
+
 export function compareSessionTime(a: RecurringSession, b: RecurringSession): number {
   return (a.startTime ?? '99:99').localeCompare(b.startTime ?? '99:99') || a.title.localeCompare(b.title, 'ar');
 }
