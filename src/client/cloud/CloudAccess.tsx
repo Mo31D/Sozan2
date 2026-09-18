@@ -137,17 +137,26 @@ export function CloudLinkPanel({
         setBusy(false);
       }
     };
+    const backupImport = snapshot.cloudLink.provisioningReason === 'backup-import';
 
     return (
       <section className="panel cloud-link-panel cloud-register-panel">
         <div className="cloud-register-copy">
-          <span className="panel-label">إكمال ربط الحساب</span>
+          <span className="panel-label">{backupImport ? 'استيراد محفوظ على الجهاز' : 'إكمال ربط الحساب'}</span>
           <strong>{snapshot.cloudLink.loginName}</strong>
-          <small>الحساب اتعمل، لكن نقل نسخة البيانات الكاملة للسحابة لم يكتمل. بيانات الجهاز ما زالت محفوظة.</small>
+          <small>
+            {backupImport
+              ? 'تم تطبيق النسخة المستوردة على هذا الجهاز، لكن رفعها للسحابة لم يكتمل. المزامنة متوقفة مؤقتًا حتى لا تعيد السحابة البيانات القديمة.'
+              : 'الحساب اتعمل، لكن نقل نسخة البيانات الكاملة للسحابة لم يكتمل. بيانات الجهاز ما زالت محفوظة.'}
+          </small>
         </div>
         <div className="cloud-actions">
           <button className="primary-button" type="button" disabled={busy} onClick={() => void resume()}>
-            {busy ? 'جاري إكمال النقل…' : 'إكمال نقل البيانات بأمان'}
+            {busy
+              ? 'جاري إكمال النقل…'
+              : backupImport
+                ? 'رفع النسخة المستوردة للسحابة'
+                : 'إكمال نقل البيانات بأمان'}
           </button>
         </div>
         {error && <div className="status bad">{error}</div>}
