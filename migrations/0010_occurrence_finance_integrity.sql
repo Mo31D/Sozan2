@@ -11,6 +11,9 @@ ALTER TABLE tutoring_occurrences ADD COLUMN duration_minutes_snapshot INTEGER;
 ALTER TABLE tutoring_occurrences ADD COLUMN travel_minutes_snapshot INTEGER;
 ALTER TABLE tutoring_occurrences ADD COLUMN session_type_snapshot TEXT;
 ALTER TABLE tutoring_occurrences ADD COLUMN location_snapshot TEXT;
+ALTER TABLE tutoring_occurrences ADD COLUMN price_basis_snapshot TEXT;
+ALTER TABLE tutoring_occurrences ADD COLUMN default_price_pence_snapshot INTEGER;
+ALTER TABLE tutoring_occurrences ADD COLUMN payer_student_id_snapshot TEXT;
 
 CREATE TABLE tutoring_occurrence_students (
   workspace_id TEXT NOT NULL,
@@ -62,6 +65,18 @@ SET duration_minutes_snapshot = (
     ),
     location_snapshot = (
       SELECT s.location
+      FROM tutoring_recurring_sessions s
+      WHERE s.workspace_id=tutoring_occurrences.workspace_id
+        AND s.id=tutoring_occurrences.recurring_session_id
+    ),
+    price_basis_snapshot = (
+      SELECT s.price_basis
+      FROM tutoring_recurring_sessions s
+      WHERE s.workspace_id=tutoring_occurrences.workspace_id
+        AND s.id=tutoring_occurrences.recurring_session_id
+    ),
+    default_price_pence_snapshot = (
+      SELECT s.default_price_pence
       FROM tutoring_recurring_sessions s
       WHERE s.workspace_id=tutoring_occurrences.workspace_id
         AND s.id=tutoring_occurrences.recurring_session_id
@@ -128,7 +143,7 @@ END;
 INSERT OR REPLACE INTO core_schema_meta(key, value, updated_at)
 VALUES
   ('tutoring_occurrence_attendance', '1', CURRENT_TIMESTAMP),
-  ('tutoring_occurrence_work_snapshot', '1', CURRENT_TIMESTAMP),
+  ('tutoring_occurrence_work_snapshot', '2', CURRENT_TIMESTAMP),
   ('tutoring_session_payer', '1', CURRENT_TIMESTAMP),
   ('tutoring_student_occurrence_targets', '1', CURRENT_TIMESTAMP),
   ('finance_receipt_update_guard', '1', CURRENT_TIMESTAMP);
