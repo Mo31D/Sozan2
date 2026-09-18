@@ -9,6 +9,7 @@ export const rescheduleOccurrenceSchema = z.object({
 export const completeOccurrenceSchema = z.object({
   completedAt: z.string().min(10).max(40).optional(),
   note: z.string().trim().max(500).nullable().optional().default(null),
+  participantStudentIds: z.array(z.string().uuid()).max(100).optional(),
 });
 
 export type OccurrenceStatus = 'scheduled' | 'completed' | 'cancelled' | 'missed';
@@ -27,7 +28,12 @@ export type TutoringOccurrence = {
   earnedPence: number;
   completedAt: string | null;
   note: string | null;
+  /** Students who actually attended this occurrence. */
   studentIds: string[];
+  durationMinutesSnapshot: number | null;
+  travelMinutesSnapshot: number | null;
+  sessionTypeSnapshot: string | null;
+  locationSnapshot: string | null;
 };
 
 export function datesForWeekday(from: string, to: string, weekday: number): string[] {
