@@ -15,15 +15,18 @@ import {
   todayIso,
 } from '../utils';
 
+export type MoneyList = 'receipts' | 'expenses' | 'other' | 'due';
+
 type MoneyView =
   | { kind: 'overview' }
-  | { kind: 'list'; list: 'receipts' | 'expenses' | 'other' | 'due' }
+  | { kind: 'list'; list: MoneyList }
   | { kind: 'movement'; movement: 'receipt' | 'expense' | 'other'; id: string };
 
 export function MoneyScreen({
   snapshot,
   data,
   mode,
+  initialList = null,
   busy,
   assistantLabel,
   onMode,
@@ -35,6 +38,7 @@ export function MoneyScreen({
   snapshot: LocalPlatformSnapshot;
   data: SimpleWorkspaceData;
   mode: MoneyMode;
+  initialList?: MoneyList | null;
   busy: boolean;
   assistantLabel: string;
   onMode: (mode: MoneyMode) => void;
@@ -43,7 +47,7 @@ export function MoneyScreen({
   onOpenStudent: (studentId: string) => void;
   onOpenAdvanced: (tab: ControlTab) => void;
 }) {
-  const [view, setView] = useState<MoneyView>({ kind: 'overview' });
+  const [view, setView] = useState<MoneyView>(() => initialList ? { kind: 'list', list: initialList } : { kind: 'overview' });
   const [receiptStudentId, setReceiptStudentId] = useState('');
   const currency = snapshot.workspace.currencyLabel;
   const month = todayIso().slice(0, 7);
@@ -59,7 +63,7 @@ export function MoneyScreen({
     setView({ kind: 'overview' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  const openList = (list: Extract<MoneyView, { kind: 'list' }>['list']) => {
+  const openList = (list: MoneyList) => {
     setView({ kind: 'list', list });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
