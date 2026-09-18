@@ -23,6 +23,7 @@ type SessionRow = {
   expected_student_count: number;
   center_cut_bps: number;
   active: number;
+  payer_student_id: string | null;
   student_id: string | null;
 };
 
@@ -48,6 +49,7 @@ function rowsToSessions(rows: SessionRow[]): RecurringSession[] {
         centerCutBps: row.center_cut_bps,
         active: row.active === 1,
         studentIds: [],
+        payerStudentId: row.payer_student_id,
       };
       byId.set(row.id, session);
     }
@@ -61,7 +63,7 @@ const SELECT_SESSIONS = `
          s.weekday, s.start_time, s.duration_minutes, s.travel_minutes,
          s.location, s.price_basis, s.default_price_pence,
          s.expected_student_count, s.center_cut_bps, s.active,
-         p.student_id
+         s.payer_student_id, p.student_id
   FROM tutoring_recurring_sessions s
   LEFT JOIN tutoring_session_students p
     ON p.workspace_id = s.workspace_id AND p.recurring_session_id = s.id
@@ -96,8 +98,8 @@ export class D1SessionRepository implements SessionRepository {
         `INSERT INTO tutoring_recurring_sessions(
            id, workspace_id, title, session_type, schedule_status, weekday, start_time,
            duration_minutes, travel_minutes, location, price_basis, default_price_pence,
-           expected_student_count, center_cut_bps
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`,
+           expected_student_count, center_cut_bps, payer_student_id
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
       ).bind(
         input.id,
         input.workspaceId,
@@ -113,6 +115,7 @@ export class D1SessionRepository implements SessionRepository {
         input.defaultPricePence,
         input.expectedStudentCount,
         input.centerCutBps,
+        input.payerStudentId,
       ),
     ];
 
@@ -162,7 +165,7 @@ export class D1SessionRepository implements SessionRepository {
          SET title=?3, session_type=?4, schedule_status=?5, weekday=?6, start_time=?7,
              duration_minutes=?8, travel_minutes=?9, location=?10, price_basis=?11,
              default_price_pence=?12, expected_student_count=?13, center_cut_bps=?14,
-             updated_at=CURRENT_TIMESTAMP
+             payer_student_id=?15, updated_at=CURRENT_TIMESTAMP
          WHERE workspace_id=?1 AND id=?2 AND active=1 AND deleted_at IS NULL`,
       ).bind(
         input.workspaceId,
@@ -179,6 +182,7 @@ export class D1SessionRepository implements SessionRepository {
         d.defaultPricePence,
         d.expectedStudentCount,
         d.centerCutBps,
+        d.payerStudentId,
       ),
       this.db.prepare(
         `DELETE FROM tutoring_session_students
