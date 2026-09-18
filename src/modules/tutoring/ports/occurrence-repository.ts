@@ -14,6 +14,12 @@ export type CompletionSnapshot = {
   earnedPence: number;
   completedAt: string;
   note: string | null;
+  participantStudentIds: string[];
+  sessionStudentIds: string[];
+  durationMinutes: number;
+  travelMinutes: number;
+  sessionType: string;
+  location: string | null;
 };
 
 export interface OccurrenceRepository {
