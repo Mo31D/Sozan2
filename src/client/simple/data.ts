@@ -40,6 +40,9 @@ export type LocalOccurrence = {
   travelMinutesSnapshot: number | null;
   sessionTypeSnapshot: string | null;
   locationSnapshot: string | null;
+  priceBasisSnapshot: 'total_session' | 'per_student' | null;
+  defaultPricePenceSnapshot: number | null;
+  payerStudentIdSnapshot: string | null;
 };
 
 export type SimpleWorkspaceData = {
