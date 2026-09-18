@@ -17,16 +17,14 @@ import {
 } from '../adapters/indexeddb/platform.repository';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { withWorkspaceOperationWhenFree } from '../sync/workspace-operation';
+import {
+  executeLocalFirstImport,
+  type LocalFirstImportOutcome as WorkspaceBackupImportOutcome,
+} from './import-workflow';
 
 type Row = Record<string, any>;
 
-export type WorkspaceBackupImportOutcome = {
-  importId: string | null;
-  localApplied: true;
-  cloud: 'not-linked' | 'synced' | 'pending';
-  revision: number | null;
-  cloudError: string | null;
-};
+export type { WorkspaceBackupImportOutcome };
 
 const STORE_MAP = {
   coreWorkspaceModules: STORES.coreWorkspaceModules,
@@ -369,53 +367,30 @@ export async function importWorkspaceBackupLocalFirst(
     const importId = cloudLink ? crypto.randomUUID() : null;
     const expectedRevision = Math.max(0, Number(cloudLink?.serverRevision ?? 0));
 
-    if (cloudLink && importId) {
-      await markLocalCloudLinkProvisioning(workspaceId, 'backup-import', importId);
-    }
-
-    try {
-      await restoreLocalWorkspaceBackup(snapshot, backup);
-    } catch (error) {
-      if (cloudLink) await markLocalCloudLinkReady(workspaceId, expectedRevision);
-      throw error;
-    }
-
-    if (!cloudLink || !importId) {
-      return {
-        importId: null,
-        localApplied: true,
-        cloud: 'not-linked',
-        revision: null,
-        cloudError: null,
-      };
-    }
-
-    try {
-      const revision = await publishBackupImportToCloud(
-        snapshot,
-        backup,
-        importId,
+    return executeLocalFirstImport(
+      {
+        cloudLinked: Boolean(cloudLink),
         expectedRevision,
-      );
-      await markLocalCloudLinkReady(workspaceId, revision);
-      return {
         importId,
-        localApplied: true,
-        cloud: 'synced',
-        revision,
-        cloudError: null,
-      };
-    } catch (error) {
-      // Local corrected data is already authoritative on this device. Leaving
-      // provisioningState in place prevents an old cloud snapshot overwriting it.
-      return {
-        importId,
-        localApplied: true,
-        cloud: 'pending',
-        revision: null,
-        cloudError: error instanceof Error ? error.message : 'BACKUP_CLOUD_IMPORT_FAILED',
-      };
-    }
+      },
+      {
+        markProvisioning: async (id) => {
+          await markLocalCloudLinkProvisioning(workspaceId, 'backup-import', id);
+        },
+        restoreLocal: async () => {
+          await restoreLocalWorkspaceBackup(snapshot, backup);
+        },
+        publishCloud: async (id, revision) => publishBackupImportToCloud(
+          snapshot,
+          backup,
+          id,
+          revision,
+        ),
+        markReady: async (revision) => {
+          await markLocalCloudLinkReady(workspaceId, revision);
+        },
+      },
+    );
   });
 }
 
