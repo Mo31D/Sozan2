@@ -34,6 +34,26 @@ function validateScheduleShape(
   }
 }
 
+function validateSessionShape(
+  value: {
+    scheduleStatus: 'confirmed' | 'pending';
+    weekday: number | null;
+    startTime: string | null;
+    studentIds: string[];
+    payerStudentId: string | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  validateScheduleShape(value, ctx);
+  if (value.payerStudentId && !value.studentIds.includes(value.payerStudentId)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'SESSION_PAYER_MUST_BE_LINKED_STUDENT',
+      path: ['payerStudentId'],
+    });
+  }
+}
+
 export const createRecurringSessionSchema = z.object({
   title: z.string().trim().min(1).max(120),
   sessionType: sessionTypeSchema,
@@ -48,7 +68,8 @@ export const createRecurringSessionSchema = z.object({
   expectedStudentCount: z.number().int().min(1).max(100).default(1),
   centerCutBps: z.number().int().min(0).max(10_000).default(0),
   studentIds: z.array(z.string().uuid()).max(100).default([]),
-}).superRefine(validateScheduleShape);
+  payerStudentId: z.string().uuid().nullable().optional().default(null),
+}).superRefine(validateSessionShape);
 
 /**
  * Complete editable session shape. Validation belongs to the tutoring domain
@@ -66,7 +87,8 @@ export const updateRecurringSessionDetailsSchema = z.object({
   expectedStudentCount: z.number().int().min(1).max(100),
   centerCutBps: z.number().int().min(0).max(10_000),
   studentIds: z.array(z.string().uuid()).max(100).transform((ids) => [...new Set(ids)]),
-}).superRefine(validateScheduleShape);
+  payerStudentId: z.string().uuid().nullable(),
+}).superRefine(validateSessionShape);
 
 export const updateRecurringScheduleSchema = z.object(scheduleFields).superRefine(validateScheduleShape);
 
@@ -90,4 +112,6 @@ export type RecurringSession = {
   centerCutBps: number;
   active: boolean;
   studentIds: string[];
+  /** Student/household account responsible for a total-session group charge. */
+  payerStudentId: string | null;
 };
