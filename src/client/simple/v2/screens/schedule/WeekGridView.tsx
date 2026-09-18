@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { calendarDateInTimeZone } from '../../../../../platform/time/calendar-date';
 import type { SimpleWorkspaceData } from '../../../data';
 import {
@@ -64,6 +64,7 @@ export function WeekGridView({
   onEdit: (sessionId: string) => void;
 }) {
   const [now, setNow] = useState(() => new Date());
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -78,6 +79,16 @@ export function WeekGridView({
   }
 
   const dates = useMemo(() => saturdayWeekDates(currentIso), [currentIso]);
+
+  useEffect(() => {
+    if (!window.matchMedia('(max-width: 700px)').matches) return;
+    const frame = window.requestAnimationFrame(() => {
+      const activeHeader = scrollRef.current?.querySelector<HTMLElement>('[data-active-day="true"]');
+      activeHeader?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentIso]);
+
   const minuteOfDay = clockMinuteInTimeZone(timeZone, now);
   const currentBand = activeBandIndex(minuteOfDay);
   const currentTimeTop = minuteOfDay >= WEEK_GRID_START_MINUTE && minuteOfDay < WEEK_GRID_END_MINUTE
@@ -107,7 +118,7 @@ export function WeekGridView({
         <small>٨ ص — ٨ م · كل صف ٣ ساعات</small>
       </div>
 
-      <div className="week-grid-scroll" tabIndex={0} aria-label="مرر أفقيًا لرؤية أيام الأسبوع">
+      <div ref={scrollRef} className="week-grid-scroll" tabIndex={0} aria-label="مرر أفقيًا لرؤية أيام الأسبوع">
         <div className="week-grid-board" role="grid" aria-rowcount={5} aria-colcount={8}>
           <div className="week-grid-corner" role="columnheader">الوقت</div>
 
@@ -119,6 +130,7 @@ export function WeekGridView({
                 className={`week-grid-day-head ${active ? 'active' : ''}`}
                 role="columnheader"
                 aria-current={active ? 'date' : undefined}
+                data-active-day={active ? 'true' : undefined}
                 key={`head-${date}`}
               >
                 <strong>{WEEKDAYS[weekday]}</strong>
