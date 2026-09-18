@@ -121,7 +121,18 @@ export async function updateAppointment(workspaceId: string, appointmentId: stri
     startTime: input.startTime !== undefined ? validateAppointmentTime(input.startTime) : current.startTime,
     updatedAt: now(),
   };
-  if (next.durationMinutes < 5 || next.durationMinutes > 1440) throw new Error('APPOINTMENT_DURATION_INVALID');
+  if (current.status === 'completed' && next.status === 'completed') {
+    const historicalChanged = next.clientId !== current.clientId
+      || next.title !== current.title
+      || next.appointmentDate !== current.appointmentDate
+      || next.startTime !== current.startTime
+      || next.durationMinutes !== current.durationMinutes
+      || next.travelMinutes !== current.travelMinutes
+      || next.location !== current.location
+      || next.pricePence !== current.pricePence;
+    if (historicalChanged) throw new Error('COMPLETED_APPOINTMENT_REQUIRES_REOPEN');
+  }
+    if (next.durationMinutes < 5 || next.durationMinutes > 1440) throw new Error('APPOINTMENT_DURATION_INVALID');
   if (next.travelMinutes < 0 || next.travelMinutes > 1440) throw new Error('APPOINTMENT_TRAVEL_INVALID');
   if (next.pricePence < 0 || !Number.isSafeInteger(next.pricePence)) throw new Error('AMOUNT_INVALID');
   if (next.status === 'completed' && !canCompleteAppointment(next.appointmentDate, localToday())) {
