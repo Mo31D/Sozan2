@@ -48,14 +48,6 @@ const STORE_MAP = {
   financeCashChecks: STORES.financeCashChecks,
 } as const;
 
-async function workspaceRows(storeName: string, workspaceId: string): Promise<Row[]> {
-  const db = await openLocalDatabase();
-  const rows = await requestResult<Row[]>(
-    db.transaction(storeName, 'readonly').objectStore(storeName).getAll(),
-  );
-  return rows.filter((row) => row.workspaceId === workspaceId);
-}
-
 function enrichLocalAttendance(stores: WorkspaceBackup['stores']): void {
   const sessions = new Map(
     stores.tutoringSessions.map((row) => [String(row.id), row as Row]),
@@ -81,12 +73,17 @@ export async function createLocalWorkspaceBackup(
   snapshot: LocalPlatformSnapshot,
 ): Promise<WorkspaceBackup> {
   const workspaceId = snapshot.workspace.id;
+  const db = await openLocalDatabase();
+  const storeNames = [...new Set(Object.values(STORE_MAP))];
+  const transaction = db.transaction(storeNames, 'readonly');
+  const done = transactionDone(transaction);
   const entries = await Promise.all(
-    Object.entries(STORE_MAP).map(async ([key, storeName]) => [
-      key,
-      await workspaceRows(storeName, workspaceId),
-    ] as const),
+    Object.entries(STORE_MAP).map(async ([key, storeName]) => {
+      const rows = await requestResult<Row[]>(transaction.objectStore(storeName).getAll());
+      return [key, rows.filter((row) => row.workspaceId === workspaceId)] as const;
+    }),
   );
+  await done;
   const stores = Object.fromEntries(entries) as WorkspaceBackup['stores'];
   enrichLocalAttendance(stores);
 
@@ -358,11 +355,17 @@ async function publishBackupImportToCloud(
 export async function importWorkspaceBackupLocalFirst(
   snapshot: LocalPlatformSnapshot,
   input: unknown,
+  options: { onSafetyBackup?: (backup: WorkspaceBackup) => void | Promise<void> } = {},
 ): Promise<WorkspaceBackupImportOutcome> {
   const { backup } = await validateWorkspaceBackupForImport(snapshot, input);
   const workspaceId = snapshot.workspace.id;
 
   return withWorkspaceOperationWhenFree(workspaceId, 'backup-import', async () => {
+    if (options.onSafetyBackup) {
+      const safety = await createLocalWorkspaceBackup(snapshot);
+      await options.onSafetyBackup(safety);
+    }
+
     const cloudLink = snapshot.cloudLink;
     const importId = cloudLink ? crypto.randomUUID() : null;
     const expectedRevision = Math.max(0, Number(cloudLink?.serverRevision ?? 0));
