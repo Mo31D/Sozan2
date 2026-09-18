@@ -3,6 +3,10 @@ import type {
   ObligationProvider,
 } from '../../modules/finance/allocation.service';
 import type { PayerReference } from '../../modules/finance/contracts';
+import {
+  STUDENT_OCCURRENCE_TARGET_TYPE,
+  studentOccurrenceTargetId,
+} from '../../modules/tutoring/domain/finance-target';
 
 export class TutoringObligationProvider implements ObligationProvider {
   constructor(private readonly db: D1Database) {}
@@ -28,22 +32,38 @@ export class TutoringObligationProvider implements ObligationProvider {
       `SELECT o.id,
               COALESCE(o.completed_at, o.session_date) AS due_at,
               CASE
-                WHEN s.price_basis = 'per_student' THEN s.default_price_pence
-                ELSE o.gross_pence
+                WHEN o.price_basis_snapshot='per_student'
+                  THEN COALESCE(o.default_price_pence_snapshot, 0)
+                WHEN o.price_basis_snapshot='total_session'
+                  THEN o.gross_pence
+                ELSE 0
               END AS amount_pence
        FROM tutoring_occurrences o
-       JOIN tutoring_recurring_sessions s
-         ON s.workspace_id = o.workspace_id AND s.id = o.recurring_session_id
-       JOIN tutoring_session_students ss
-         ON ss.workspace_id = o.workspace_id AND ss.recurring_session_id = o.recurring_session_id
        JOIN tutoring_billing_plans bp
-         ON bp.workspace_id = ss.workspace_id AND bp.student_id = ss.student_id
-       WHERE o.workspace_id = ?1
-         AND ss.student_id = ?2
-         AND o.status = 'completed'
-         AND bp.billing_mode = 'per_session'
-         AND (s.price_basis = 'per_student' OR s.expected_student_count = 1)
-       ORDER BY o.session_date, o.id`,
+         ON bp.workspace_id=o.workspace_id
+        AND bp.student_id=?2
+        AND bp.billing_mode='per_session'
+       WHERE o.workspace_id=?1
+         AND o.status='completed'
+         AND (
+           (
+             o.price_basis_snapshot='per_student'
+             AND EXISTS (
+               SELECT 1
+               FROM tutoring_occurrence_students os
+               WHERE os.workspace_id=o.workspace_id
+                 AND os.occurrence_id=o.id
+                 AND os.student_id=?2
+                 AND os.attendance_status='attended'
+             )
+           )
+           OR
+           (
+             o.price_basis_snapshot='total_session'
+             AND o.payer_student_id_snapshot=?2
+           )
+         )
+       ORDER BY COALESCE(o.rescheduled_to_date,o.session_date), o.id`,
     ).bind(workspaceId, payer.id).all<{
       id: string;
       due_at: string;
@@ -59,7 +79,11 @@ export class TutoringObligationProvider implements ObligationProvider {
       ...(perSession.results ?? [])
         .filter((row) => row.amount_pence > 0)
         .map((row) => ({
-          target: { module: 'tutoring', type: 'occurrence', id: row.id },
+          target: {
+            module: 'tutoring',
+            type: STUDENT_OCCURRENCE_TARGET_TYPE,
+            id: studentOccurrenceTargetId(row.id, payer.id),
+          },
           dueAt: row.due_at,
           amountDuePence: row.amount_pence,
         })),
