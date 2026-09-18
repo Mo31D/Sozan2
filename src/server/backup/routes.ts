@@ -115,12 +115,20 @@ async function exportBackup(db: D1Database, workspaceId: string): Promise<Worksp
                     package_price_pence AS packagePricePence,cycle_anchor_date AS cycleAnchorDate,
                     effective_from AS effectiveFrom,created_at AS createdAt,updated_at AS updatedAt
              FROM tutoring_billing_plans WHERE workspace_id=?1 ORDER BY student_id`, workspaceId),
-    all(db, `SELECT id,workspace_id AS workspaceId,student_id AS studentId,sequence_no AS sequenceNo,
-                    session_limit AS sessionLimit,price_pence AS pricePence,
-                    opening_completed_count AS openingCompletedCount,
-                    opening_progress_locked_at AS openingProgressLockedAt,status,started_on AS startedOn,
-                    completed_on AS completedOn,paid_on AS paidOn,created_at AS createdAt,updated_at AS updatedAt
-             FROM tutoring_billing_cycles WHERE workspace_id=?1 ORDER BY student_id,sequence_no`, workspaceId),
+    all(db, `SELECT c.id,c.workspace_id AS workspaceId,c.student_id AS studentId,c.sequence_no AS sequenceNo,
+                    c.session_limit AS sessionLimit,c.price_pence AS pricePence,
+                    c.opening_completed_count AS openingCompletedCount,
+                    c.opening_progress_locked_at AS openingProgressLockedAt,
+                    (SELECT COUNT(*) FROM tutoring_billing_cycle_occurrences co
+                     JOIN tutoring_occurrences o
+                       ON o.workspace_id=co.workspace_id AND o.id=co.occurrence_id
+                     WHERE co.workspace_id=c.workspace_id
+                       AND co.billing_cycle_id=c.id
+                       AND o.status='completed') AS realCompletedCount,
+                    c.status,c.started_on AS startedOn,c.completed_on AS completedOn,c.paid_on AS paidOn,
+                    c.created_at AS createdAt,c.updated_at AS updatedAt
+             FROM tutoring_billing_cycles c WHERE c.workspace_id=?1
+             ORDER BY c.student_id,c.sequence_no`, workspaceId),
     all(db, `SELECT billing_cycle_id || ':' || occurrence_id AS id,workspace_id AS workspaceId,
                     billing_cycle_id AS billingCycleId,occurrence_id AS occurrenceId,
                     position,earned_pence AS earnedPence,created_at AS createdAt
