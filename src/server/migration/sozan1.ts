@@ -1,3 +1,9 @@
+import {
+  legacyOccurrenceAllocationTarget,
+  legacyTotalSessionPayer,
+  uniqueLegacyParticipants,
+} from './legacy-tutoring-policy';
+
 type LegacyRow = Record<string, unknown>;
 
 type Sozan1Export = {
@@ -83,7 +89,16 @@ export async function importSozan1(
   const monthlyDues = table('monthly_dues_v5');
 
   const shadowSessionIds = new Set(openingProgress.map((row) => legacyKey(row.shadow_session_id)).filter(Boolean));
-  const sessionById = new Map(sessions.map((row) => [legacyKey(row.id), row]));
+  const sessionRowsById = new Map<string, LegacyRow[]>();
+  const sessionById = new Map<string, LegacyRow>();
+  for (const row of sessions) {
+    const key = legacyKey(row.id);
+    if (!key) continue;
+    const grouped = sessionRowsById.get(key) ?? [];
+    grouped.push(row);
+    sessionRowsById.set(key, grouped);
+    if (!sessionById.has(key)) sessionById.set(key, row);
+  }
   const occurrenceById = new Map(occurrences.map((row) => [legacyKey(row.id), row]));
   const shadowOccurrenceIds = new Set(
     occurrences
@@ -113,6 +128,22 @@ export async function importSozan1(
   const cashCheckIds = await ids.mapRows('cash-check', cashChecks);
   const activityIds = await ids.mapRows('activity', activities);
 
+  const mappedParticipantsForSession = (legacySessionId: string): string[] => {
+    const participants = (sessionRowsById.get(legacySessionId) ?? [])
+      .map((sessionRow) => studentIds.get(legacyKey(sessionRow.student_id)))
+      .filter((value): value is string => Boolean(value));
+    return uniqueLegacyParticipants(participants);
+  };
+
+  const receiptStudentIds = new Map<string, string>();
+  for (const row of receipts) {
+    const mapped = studentIds.get(legacyKey(row.student_id));
+    if (mapped) receiptStudentIds.set(legacyKey(row.id), mapped);
+  }
+
+  const paymentStudentIds = new Map<string, string>();
+  let ambiguousGroupPaymentCount = 0;
+  let skippedOccurrenceAllocationCount = 0;
   const statements: D1PreparedStatement[] = [];
 
   for (const row of students) {
@@ -144,18 +175,21 @@ export async function importSozan1(
     const safeStatus = scheduleStatus === 'confirmed' && (weekday === null || !startTime) ? 'pending' : scheduleStatus;
     const sessionType = mapSessionType(text(row.session_type, 'online'));
     const centerBps = clamp(Math.round(number(row.center_cut_percent) * 100), 0, 10000);
+    const priceBasis = row.price_basis === 'per_student' ? 'per_student' : 'total_session';
+    const participants = mappedParticipantsForSession(oldId);
+    const payerStudentId = legacyTotalSessionPayer(priceBasis, participants);
     statements.push(db.prepare(
       `INSERT OR IGNORE INTO tutoring_recurring_sessions(
          id, workspace_id, title, session_type, schedule_status, weekday, start_time,
          duration_minutes, travel_minutes, location, price_basis, default_price_pence,
-         expected_student_count, center_cut_bps, active, created_at, updated_at
-       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`,
+         expected_student_count, center_cut_bps, active, payer_student_id, created_at, updated_at
+       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)`,
     ).bind(
       id, workspaceId, text(row.title, `Session ${oldId}`), sessionType, safeStatus,
       weekday, startTime, clamp(int(row.duration_minutes, 60), 15, 360), clamp(int(row.travel_minutes, 0), 0, 360),
-      nullableText(row.location), row.price_basis === 'per_student' ? 'per_student' : 'total_session',
+      nullableText(row.location), priceBasis,
       Math.max(0, int(row.price_pence, 0)), clamp(int(row.student_count, 1), 1, 100), centerBps,
-      flag(row.active, 1), timestamp(row.created_at), timestamp(row.updated_at),
+      flag(row.active, 1), payerStudentId, timestamp(row.created_at), timestamp(row.updated_at),
     ));
 
     const oldStudentId = legacyKey(row.student_id);
@@ -172,21 +206,73 @@ export async function importSozan1(
     const oldId = legacyKey(row.id);
     if (shadowOccurrenceIds.has(oldId)) continue;
     const id = occurrenceIds.get(oldId);
-    const sessionId = sessionIds.get(legacyKey(row.recurring_session_id));
-    if (!id || !sessionId) continue;
+    const legacySessionId = legacyKey(row.recurring_session_id);
+    const sessionId = sessionIds.get(legacySessionId);
+    const sessionRow = sessionById.get(legacySessionId);
+    if (!id || !sessionId || !sessionRow) continue;
+
+    const status = mapOccurrenceStatus(row.status);
+    const completed = status === 'completed';
+    const participants = mappedParticipantsForSession(legacySessionId);
+    const priceBasis = sessionRow.price_basis === 'per_student' ? 'per_student' : 'total_session';
+    const payerStudentId = completed
+      ? legacyTotalSessionPayer(priceBasis, participants)
+      : null;
+
     statements.push(db.prepare(
       `INSERT OR IGNORE INTO tutoring_occurrences(
          id, workspace_id, recurring_session_id, session_date, scheduled_start,
          rescheduled_to_date, rescheduled_to_start, rescheduled_at, reschedule_note,
          status, gross_pence, center_cut_pence, earned_pence, completed_at, note,
-         created_from, created_at, updated_at
-       ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'migration',?16,?17)`,
+         duration_minutes_snapshot, travel_minutes_snapshot, session_type_snapshot,
+         location_snapshot, price_basis_snapshot, default_price_pence_snapshot,
+         payer_student_id_snapshot, created_from, created_at, updated_at
+       ) VALUES (
+         ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
+         ?16,?17,?18,?19,?20,?21,?22,'migration',?23,?24
+       )`,
     ).bind(
-      id, workspaceId, sessionId, text(row.session_date), nullableText(row.scheduled_start),
-      nullableText(row.rescheduled_to_date), nullableText(row.rescheduled_to_start), nullableText(row.rescheduled_at), nullableText(row.reschedule_note),
-      mapOccurrenceStatus(row.status), Math.max(0, int(row.gross_pence)), Math.max(0, int(row.center_cut_pence)), Math.max(0, int(row.earned_pence)),
-      nullableText(row.completed_at), nullableText(row.note), timestamp(row.created_at), timestamp(row.updated_at),
+      id,
+      workspaceId,
+      sessionId,
+      text(row.session_date),
+      nullableText(row.scheduled_start),
+      nullableText(row.rescheduled_to_date),
+      nullableText(row.rescheduled_to_start),
+      nullableText(row.rescheduled_at),
+      nullableText(row.reschedule_note),
+      status,
+      Math.max(0, int(row.gross_pence)),
+      Math.max(0, int(row.center_cut_pence)),
+      Math.max(0, int(row.earned_pence)),
+      nullableText(row.completed_at),
+      nullableText(row.note),
+      completed ? clamp(int(sessionRow.duration_minutes, 60), 15, 360) : null,
+      completed ? clamp(int(sessionRow.travel_minutes, 0), 0, 360) : null,
+      completed ? mapSessionType(text(sessionRow.session_type, 'online')) : null,
+      completed ? nullableText(sessionRow.location) : null,
+      completed ? priceBasis : null,
+      completed ? Math.max(0, int(sessionRow.price_pence, 0)) : null,
+      payerStudentId,
+      timestamp(row.created_at),
+      timestamp(row.updated_at),
     ));
+
+    if (completed) {
+      for (const studentId of participants) {
+        statements.push(db.prepare(
+          `INSERT OR IGNORE INTO tutoring_occurrence_students(
+             workspace_id, occurrence_id, student_id, attendance_status, created_at, updated_at
+           ) VALUES (?1,?2,?3,'attended',?4,?5)`,
+        ).bind(
+          workspaceId,
+          id,
+          studentId,
+          timestamp(row.created_at),
+          timestamp(row.updated_at),
+        ));
+      }
+    }
   }
 
   for (const row of billingPlans) {
@@ -269,9 +355,14 @@ export async function importSozan1(
     const occurrenceOldId = legacyKey(row.occurrence_id);
     const occurrenceId = occurrenceIds.get(occurrenceOldId);
     if (!id || !occurrenceId || int(row.amount_pence) <= 0) continue;
+
     const occurrence = occurrenceById.get(occurrenceOldId);
-    const session = occurrence ? sessionById.get(legacyKey(occurrence.recurring_session_id)) : undefined;
-    const studentId = session ? studentIds.get(legacyKey(session.student_id)) : undefined;
+    const legacySessionId = occurrence ? legacyKey(occurrence.recurring_session_id) : '';
+    const participants = legacySessionId ? mappedParticipantsForSession(legacySessionId) : [];
+    const studentId = participants.length === 1 ? participants[0] : undefined;
+    if (studentId) paymentStudentIds.set(oldId, studentId);
+    else if (participants.length > 1) ambiguousGroupPaymentCount += 1;
+
     const note = [nullableText(row.note), nullableText(row.reversal_reason)].filter(Boolean).join(' · ') || null;
     statements.push(db.prepare(
       `INSERT OR IGNORE INTO finance_receipts(
@@ -288,10 +379,35 @@ export async function importSozan1(
 
   const allocationMap = new Map<string, { idSeed: string; receiptId: string; targetType: string; targetId: string; amount: number; createdAt: string }>();
   for (const row of receiptAllocations) {
-    const receiptId = receiptIds.get(legacyKey(row.receipt_id));
-    const occurrenceId = occurrenceIds.get(legacyKey(row.occurrence_id));
+    const oldReceiptId = legacyKey(row.receipt_id);
+    const oldOccurrenceId = legacyKey(row.occurrence_id);
+    const receiptId = receiptIds.get(oldReceiptId);
+    const occurrenceId = occurrenceIds.get(oldOccurrenceId);
+    const studentId = receiptStudentIds.get(oldReceiptId);
+    const legacyOccurrence = occurrenceById.get(oldOccurrenceId);
+    const legacySessionId = legacyOccurrence ? legacyKey(legacyOccurrence.recurring_session_id) : '';
+    const participants = legacySessionId ? mappedParticipantsForSession(legacySessionId) : [];
+
     if (!receiptId || !occurrenceId || int(row.amount_pence) <= 0) continue;
-    addAllocation(allocationMap, `receipt:${legacyKey(row.receipt_id)}:occurrence:${legacyKey(row.occurrence_id)}`, receiptId, 'occurrence', occurrenceId, int(row.amount_pence), timestamp(row.created_at));
+    const target = legacyOccurrenceAllocationTarget(
+      occurrenceId,
+      studentId,
+      participants,
+    );
+    if (!target) {
+      skippedOccurrenceAllocationCount += 1;
+      continue;
+    }
+
+    addAllocation(
+      allocationMap,
+      `receipt:${oldReceiptId}:student-occurrence:${oldOccurrenceId}:${studentId ?? 'unknown'}`,
+      receiptId,
+      target.type,
+      target.id,
+      int(row.amount_pence),
+      timestamp(row.created_at),
+    );
   }
   for (const row of packageAllocations) {
     const receiptId = receiptIds.get(legacyKey(row.receipt_id));
@@ -300,10 +416,32 @@ export async function importSozan1(
     addAllocation(allocationMap, `receipt:${legacyKey(row.receipt_id)}:cycle:${legacyKey(row.cycle_id)}`, receiptId, 'package_cycle', cycleId, int(row.amount_pence), timestamp(row.created_at));
   }
   for (const row of payments) {
-    const receiptId = paymentReceiptIds.get(legacyKey(row.id));
+    const oldPaymentId = legacyKey(row.id);
+    const receiptId = paymentReceiptIds.get(oldPaymentId);
     const occurrenceId = occurrenceIds.get(legacyKey(row.occurrence_id));
+    const studentId = paymentStudentIds.get(oldPaymentId);
     if (!receiptId || !occurrenceId || int(row.amount_pence) <= 0) continue;
-    addAllocation(allocationMap, `payment:${legacyKey(row.id)}:occurrence:${legacyKey(row.occurrence_id)}`, receiptId, 'occurrence', occurrenceId, int(row.amount_pence), timestamp(row.created_at));
+    const legacyOccurrence = occurrenceById.get(legacyKey(row.occurrence_id));
+    const legacySessionId = legacyOccurrence ? legacyKey(legacyOccurrence.recurring_session_id) : '';
+    const participants = legacySessionId ? mappedParticipantsForSession(legacySessionId) : [];
+    const target = legacyOccurrenceAllocationTarget(
+      occurrenceId,
+      studentId,
+      participants,
+    );
+    if (!target) {
+      skippedOccurrenceAllocationCount += 1;
+      continue;
+    }
+    addAllocation(
+      allocationMap,
+      `payment:${oldPaymentId}:student-occurrence:${legacyKey(row.occurrence_id)}:${studentId ?? 'unknown'}`,
+      receiptId,
+      target.type,
+      target.id,
+      int(row.amount_pence),
+      timestamp(row.created_at),
+    );
   }
   for (const allocation of allocationMap.values()) {
     const id = await ids.id('allocation', allocation.idSeed);
@@ -411,6 +549,24 @@ export async function importSozan1(
   if (monthlyDues.length > 0) {
     warnings.push('LEGACY_MONTHLY_DUES_PRESERVED_AS_LEGACY_ONLY');
     await upsertSetting(db, workspaceId, 'migration.sozan1.monthly_dues_count', String(monthlyDues.length));
+  }
+  if (ambiguousGroupPaymentCount > 0) {
+    warnings.push('LEGACY_GROUP_PAYMENTS_REQUIRE_PAYER_REVIEW');
+    await upsertSetting(
+      db,
+      workspaceId,
+      'migration.sozan1.ambiguous_group_payments_count',
+      String(ambiguousGroupPaymentCount),
+    );
+  }
+  if (skippedOccurrenceAllocationCount > 0) {
+    warnings.push('LEGACY_OCCURRENCE_ALLOCATIONS_REQUIRE_REVIEW');
+    await upsertSetting(
+      db,
+      workspaceId,
+      'migration.sozan1.skipped_occurrence_allocations_count',
+      String(skippedOccurrenceAllocationCount),
+    );
   }
   await upsertSetting(db, workspaceId, 'migration.sozan1.source_exported_at', payload.exportedAt ?? 'unknown');
   await upsertSetting(db, workspaceId, 'migration.sozan1.summary', JSON.stringify(summary));

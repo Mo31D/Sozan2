@@ -11,6 +11,7 @@ import { D1OccurrenceRepository } from '../adapters/d1/tutoring-occurrences.repo
 import { D1SessionRepository } from '../adapters/d1/tutoring-sessions.repository';
 import { D1StudentRepository } from '../adapters/d1/tutoring-students.repository';
 import { TutoringObligationProvider } from '../integrations/tutoring-obligations.provider';
+import { workspaceToday } from '../workspaces/time';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
 
 const clockSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u);
@@ -313,9 +314,18 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
 
       const occurrences = new D1OccurrenceRepository(db);
       const existing = await db.prepare(
-        `SELECT id FROM tutoring_occurrences
+        `SELECT id, session_date, rescheduled_to_date
+         FROM tutoring_occurrences
          WHERE workspace_id=?1 AND recurring_session_id=?2 AND session_date=?3 LIMIT 1`,
-      ).bind(workspaceId, parsed.recurringSessionId, parsed.sessionDate).first<{ id: string }>();
+      ).bind(workspaceId, parsed.recurringSessionId, parsed.sessionDate).first<{
+        id: string;
+        session_date: string;
+        rescheduled_to_date: string | null;
+      }>();
+      const effectiveDate = existing?.rescheduled_to_date ?? existing?.session_date ?? parsed.sessionDate;
+      if (effectiveDate > await workspaceToday(db, workspaceId)) {
+        throw new Error('FUTURE_ATTENDANCE_NOT_ALLOWED');
+      }
       const occurrenceId = existing?.id ?? mutation.entityId;
       if (!existing) {
         await occurrences.insertScheduled([{

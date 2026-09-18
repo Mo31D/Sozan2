@@ -5,7 +5,6 @@ import type { Env } from './env';
 import { migrationRoutes } from './migration/routes';
 import { plannerRoutes } from './planner/routes';
 import { syncRoutes } from './sync/routes';
-import { tutoringRoutes } from './tutoring/routes';
 import { workspaceRoutes } from './workspaces/routes';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -26,7 +25,8 @@ app.get('/api/health', (c) => {
 app.route('/api/auth', authRoutes);
 app.route('/api/backup', backupRoutes);
 app.route('/api/workspaces', workspaceRoutes);
-app.route('/api/tutoring', tutoringRoutes);
+// Canonical business writes flow through /api/sync so workspace revision,
+// idempotency and cross-module hooks cannot be bypassed by a second write API.
 app.route('/api/planner', plannerRoutes);
 app.route('/api/sync', syncRoutes);
 app.route('/api/migration', migrationRoutes);

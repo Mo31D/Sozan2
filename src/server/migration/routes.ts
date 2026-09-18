@@ -5,6 +5,7 @@ import { requireDatabase } from '../env';
 import { normalizeSozan1PayloadForImport } from './normalize';
 import { markMigrationUnverified, reconcileSozan1Migration } from './reconcile';
 import { importSozan1, parseSozan1Export } from './sozan1';
+import { withWorkspaceWrite } from '../sync/workspace-revision';
 
 export const migrationRoutes = new Hono<{ Bindings: Env }>();
 
@@ -20,16 +21,23 @@ migrationRoutes.post('/:workspaceId/sozan1', async (c) => {
     const normalizedPayload = normalizeSozan1PayloadForImport(rawPayload);
     const payload = parseSozan1Export(normalizedPayload);
     const db = requireDatabase(c.env);
-    const result = await importSozan1(
-      db,
-      workspaceId,
-      access.userId,
-      payload,
-    );
+    const guarded = await withWorkspaceWrite(db, workspaceId, async () => {
+      const result = await importSozan1(
+        db,
+        workspaceId,
+        access.userId,
+        payload,
+      );
 
-    const reconciliation = await reconcileSozan1Migration(db, workspaceId, normalizedPayload);
+      const reconciliation = await reconcileSozan1Migration(db, workspaceId, normalizedPayload);
+      if (!reconciliation.ok) {
+        await markMigrationUnverified(db, workspaceId);
+      }
+      return { result, reconciliation };
+    });
+
+    const { result, reconciliation } = guarded.value;
     if (!reconciliation.ok) {
-      await markMigrationUnverified(db, workspaceId);
       console.error('Sozan1 migration reconciliation failed', reconciliation.mismatches);
       return c.json({
         error: 'MIGRATION_RECONCILIATION_FAILED',
@@ -51,6 +59,9 @@ migrationRoutes.post('/:workspaceId/sozan1', async (c) => {
     }
     if (code === 'MIGRATION_FILE_INVALID' || code === 'MIGRATION_FILE_VERSION_UNSUPPORTED') {
       return c.json({ error: code }, 400);
+    }
+    if (code === 'SYNC_WRITE_IN_PROGRESS') {
+      return c.json({ error: code }, 503);
     }
     console.error('Sozan1 migration failed', error);
     return c.json({ error: code || 'MIGRATION_FAILED' }, 500);

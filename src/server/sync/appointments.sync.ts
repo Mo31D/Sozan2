@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { validateAppointmentDate, validateAppointmentTime } from '../../modules/appointments/domain';
+import {
+  canCompleteAppointment,
+  validateAppointmentDate,
+  validateAppointmentTime,
+} from '../../modules/appointments/domain';
+import { workspaceToday } from '../workspaces/time';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
 
 const clientSchema = z.object({
@@ -40,6 +45,12 @@ export const appointmentsSyncHandler: ModuleSyncHandler = {
       validateAppointmentTime(row.startTime);
       if (row.status === 'completed' && !row.completedAt) throw new Error('APPOINTMENT_COMPLETED_AT_REQUIRED');
       if (row.status !== 'completed' && row.completedAt) throw new Error('APPOINTMENT_COMPLETED_AT_INVALID');
+      if (
+        row.status === 'completed'
+        && !canCompleteAppointment(row.appointmentDate, await workspaceToday(db, workspaceId))
+      ) {
+        throw new Error('FUTURE_APPOINTMENT_COMPLETION_NOT_ALLOWED');
+      }
       if (row.clientId) {
         const client = await db.prepare(`SELECT 1 AS found FROM appointments_clients WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`).bind(workspaceId,row.clientId).first<{found:number}>();
         if (!client) throw new Error('CLIENT_NOT_FOUND');

@@ -2,11 +2,10 @@ import { FormEvent, useEffect, useState } from 'react';
 import {
   getWorkspaceBootstrap,
   loginCloudAccount,
-  registerCloudAccount,
 } from './account-api';
+import { linkExistingLocalWorkspaceToCloud, resumeCloudWorkspacePromotion } from './link-workflow';
 import {
   hydrateLocalPlatformFromCloud,
-  linkLocalPlatformToCloud,
   loadLocalPlatform,
   type LocalPlatformSnapshot,
 } from '../adapters/indexeddb/platform.repository';
@@ -109,11 +108,11 @@ export function CloudLinkPanel({
     return () => { active = false; };
   }, [snapshot.cloudLink, snapshot.workspace.id]);
 
-  const syncNow = async (seedInitialState = false) => {
+  const syncNow = async () => {
     setBusy(true);
     setError('');
     try {
-      const result = await runWorkspaceSync(snapshot.workspace.id, { seedInitialState });
+      const result = await runWorkspaceSync(snapshot.workspace.id);
       setSyncResult(result);
       setDeadLetters(await listDeadLetterSyncMutations(snapshot.workspace.id));
       await onLinked();
@@ -123,6 +122,38 @@ export function CloudLinkPanel({
       setBusy(false);
     }
   };
+
+  if (snapshot.cloudLink?.initializationState === 'provisioning') {
+    const resume = async () => {
+      setBusy(true);
+      setError('');
+      try {
+        const sync = await resumeCloudWorkspacePromotion(snapshot);
+        setSyncResult(sync);
+        await onLinked();
+      } catch (cause) {
+        setError(messageFor(cause));
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    return (
+      <section className="panel cloud-link-panel cloud-register-panel">
+        <div className="cloud-register-copy">
+          <span className="panel-label">إكمال ربط الحساب</span>
+          <strong>{snapshot.cloudLink.loginName}</strong>
+          <small>الحساب اتعمل، لكن نقل نسخة البيانات الكاملة للسحابة لم يكتمل. بيانات الجهاز ما زالت محفوظة.</small>
+        </div>
+        <div className="cloud-actions">
+          <button className="primary-button" type="button" disabled={busy} onClick={() => void resume()}>
+            {busy ? 'جاري إكمال النقل…' : 'إكمال نقل البيانات بأمان'}
+          </button>
+        </div>
+        {error && <div className="status bad">{error}</div>}
+      </section>
+    );
+  }
 
   if (snapshot.cloudLink) {
     return (
@@ -139,7 +170,7 @@ export function CloudLinkPanel({
         </div>
         <div className="cloud-actions">
           <span className="cloud-linked-mark">متصل</span>
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => void syncNow(false)}>
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => void syncNow()}>
             {busy ? 'جاري المزامنة…' : 'زامن الآن'}
           </button>
         </div>
@@ -156,7 +187,7 @@ export function CloudLinkPanel({
                     <div>
                       <button type="button" disabled={busy} onClick={() => void (async () => {
                         await retryDeadLetterSyncMutation(row.id);
-                        await syncNow(false);
+                        await syncNow();
                       })()}>إعادة المحاولة</button>
                       <button type="button" disabled={busy} onClick={() => void (async () => {
                         await removeSyncMutation(row.id);
@@ -199,16 +230,17 @@ export function CloudLinkPanel({
     setError('');
     const form = new FormData(event.currentTarget);
     try {
-      const loginName = String(form.get('loginName') ?? '');
-      const result = await registerCloudAccount(
+      const result = await linkExistingLocalWorkspaceToCloud(
         snapshot,
-        loginName,
-        String(form.get('password') ?? ''),
+        {
+          loginName: String(form.get('loginName') ?? ''),
+          password: String(form.get('password') ?? ''),
+        },
+        undefined,
+        setRecoveryCode,
       );
-      await linkLocalPlatformToCloud(snapshot, result.account.user.loginName);
       setRecoveryCode(result.recoveryCode);
-      const sync = await runWorkspaceSync(snapshot.workspace.id, { seedInitialState: true });
-      setSyncResult(sync);
+      setSyncResult(result.sync);
       await onLinked();
     } catch (cause) {
       setError(messageFor(cause));
@@ -258,6 +290,8 @@ function messageFor(cause: unknown): string {
     UNAUTHENTICATED: 'الجلسة انتهت. سجلي الدخول مرة أخرى.',
     WORKSPACE_FORBIDDEN: 'هذا الحساب لا يملك صلاحية لهذه البيانات.',
     SYNC_MODULE_UNSUPPORTED: 'يوجد جزء من البرنامج لم يُجهز للمزامنة بعد.',
+    CLOUD_INITIALIZATION_INCOMPLETE: 'ربط الحساب لم يكتمل بعد. استخدمي «إكمال نقل البيانات بأمان».',
+    CLOUD_PROMOTION_NOT_PENDING: 'لا توجد عملية ربط معلقة تحتاج إلى استكمال.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
 }

@@ -2,7 +2,10 @@ import { canChangeOpeningProgress } from '../../modules/tutoring/domain/billing'
 import { configureBillingSchema, type ConfigureBillingInput } from '../../modules/tutoring/domain/billing-plan';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
-import { rebalanceStudentLocally } from '../finance/local-rebalance';
+import {
+  rebalanceStudentLocally,
+  rebuildStudentLocally,
+} from '../finance/local-rebalance';
 import { newSyncOutboxRecord } from '../sync/outbox';
 
 export type LocalBillingPlan = {
@@ -224,7 +227,11 @@ export async function configureLocalStudentBilling(
     transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(progressActivity));
   }
   await transactionDone(transaction);
-  await rebalanceStudentLocally(workspaceId, studentId);
+  if (correctedCycle) {
+    await rebuildStudentLocally(workspaceId, studentId);
+  } else {
+    await rebalanceStudentLocally(workspaceId, studentId);
+  }
 }
 
 export async function collectLocalStudentPayment(input: {

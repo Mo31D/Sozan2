@@ -5,9 +5,7 @@ import {
   failSyncMutation,
   listDeadLetterSyncMutations,
   listPendingSyncMutations,
-  newSyncOutboxRecord,
   removeSyncMutation,
-  type SyncOutboxRecord,
 } from './outbox';
 
 export type SyncRunResult = {
@@ -78,6 +76,17 @@ async function updateCloudLink(
   await transactionDone(transaction);
 }
 
+async function assertCloudInitializationReady(workspaceId: string): Promise<void> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(STORES.coreCloudLinks, 'readonly');
+  const row = await requestResult<LocalCloudLinkRecord | undefined>(
+    transaction.objectStore(STORES.coreCloudLinks).get(workspaceId),
+  );
+  if (row?.initializationState === 'provisioning') {
+    throw new Error('CLOUD_INITIALIZATION_INCOMPLETE');
+  }
+}
+
 async function cloudRevision(workspaceId: string): Promise<number> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(STORES.coreCloudLinks, 'readonly');
@@ -87,45 +96,14 @@ async function cloudRevision(workspaceId: string): Promise<number> {
   return Math.max(0, Number(row?.serverRevision ?? 0));
 }
 
-async function seedInitialLocalState(workspaceId: string): Promise<void> {
-  const db = await openLocalDatabase();
-  const read = db.transaction([
-    STORES.tutoringStudents,
-    STORES.tutoringSessions,
-    STORES.appointmentsClients,
-    STORES.appointmentsItems,
-    STORES.syncOutbox,
-  ], 'readonly');
-  const [students, sessions, clients, appointments, existing] = await Promise.all([
-    requestResult<EntitySyncRow[]>(read.objectStore(STORES.tutoringStudents).getAll()),
-    requestResult<EntitySyncRow[]>(read.objectStore(STORES.tutoringSessions).getAll()),
-    requestResult<EntitySyncRow[]>(read.objectStore(STORES.appointmentsClients).getAll()),
-    requestResult<EntitySyncRow[]>(read.objectStore(STORES.appointmentsItems).getAll()),
-    requestResult<SyncOutboxRecord[]>(read.objectStore(STORES.syncOutbox).getAll()),
-  ]);
-  const queued = new Set(existing.map((row) => `${row.operation}:${row.entityId}`));
-  const additions: SyncOutboxRecord[] = [];
-  for (const student of students.filter((r) => r.workspaceId === workspaceId)) {
-    const key = `student.create:${student.id}`;
-    if (!queued.has(key)) additions.push(newSyncOutboxRecord({ workspaceId, moduleKey: 'tutoring', operation: 'student.create', entityType: 'student', entityId: student.id, payload: student }));
+async function mergeWorkspaceRows(
+  store: IDBObjectStore,
+  workspaceId: string,
+  rows: WorkspaceRow[],
+): Promise<void> {
+  for (const row of rows) {
+    if (row.workspaceId === workspaceId) store.put(row);
   }
-  for (const session of sessions.filter((r) => r.workspaceId === workspaceId)) {
-    const key = `session.create:${session.id}`;
-    if (!queued.has(key)) additions.push(newSyncOutboxRecord({ workspaceId, moduleKey: 'tutoring', operation: 'session.create', entityType: 'session', entityId: session.id, payload: session }));
-  }
-  for (const client of clients.filter((r) => r.workspaceId === workspaceId)) {
-    const key = `client.upsert:${client.id}`;
-    if (!queued.has(key)) additions.push(newSyncOutboxRecord({ workspaceId, moduleKey: 'appointments', operation: 'client.upsert', entityType: 'client', entityId: client.id, payload: client }));
-  }
-  for (const appointment of appointments.filter((r) => r.workspaceId === workspaceId)) {
-    const key = `appointment.upsert:${appointment.id}`;
-    if (!queued.has(key)) additions.push(newSyncOutboxRecord({ workspaceId, moduleKey: 'appointments', operation: 'appointment.upsert', entityType: 'appointment', entityId: appointment.id, payload: appointment }));
-  }
-  if (!additions.length) return;
-  const write = db.transaction(STORES.syncOutbox, 'readwrite');
-  const store = write.objectStore(STORES.syncOutbox);
-  for (const item of additions) store.add(item);
-  await transactionDone(write);
 }
 
 async function replaceWorkspaceRows(
@@ -169,7 +147,10 @@ export async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(stores, 'readwrite');
   if (core) {
-    await replaceWorkspaceRows(transaction.objectStore(STORES.coreActivityEvents), snapshot.workspaceId, core.activityEvents);
+    // Activity is append-mostly audit history. The server intentionally sends
+    // a bounded recent window; replacing the store would silently erase older
+    // local history on every pull. Merge authoritative recent rows instead.
+    await mergeWorkspaceRows(transaction.objectStore(STORES.coreActivityEvents), snapshot.workspaceId, core.activityEvents);
     await replaceWorkspaceRows(transaction.objectStore(STORES.coreWorkspaceSettings), snapshot.workspaceId, core.workspaceSettings ?? []);
   }
   if (tutoring) {
@@ -197,10 +178,8 @@ export async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
 
 export async function runWorkspaceSync(
   workspaceId: string,
-  options: { seedInitialState?: boolean } = {},
 ): Promise<SyncRunResult> {
-  if (options.seedInitialState) await seedInitialLocalState(workspaceId);
-
+  await assertCloudInitializationReady(workspaceId);
   const pending = await listPendingSyncMutations(workspaceId);
   let pushed = 0;
   let failed = 0;

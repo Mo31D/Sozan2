@@ -5,6 +5,16 @@ import type { Env } from '../env';
 import { requireDatabase } from '../env';
 import { getSyncHandler, type SyncMutation } from './contracts';
 import { syncHandlers, syncPostApplyHooks } from './registry';
+import {
+  partitionByCompletedIdempotency,
+  requiresRevisionReservation,
+} from './revision-policy';
+import {
+  finalizeWorkspaceWrite,
+  readStableWorkspaceRevision,
+  reserveWorkspaceWrite,
+  withStableWorkspaceRead,
+} from './workspace-revision';
 
 const mutationSchema = z.object({
   id: z.string().uuid(),
@@ -52,6 +62,9 @@ const TERMINAL_MUTATION_ERRORS = new Set([
   'ALLOCATION_CONFLICT',
   'ALLOCATION_AMOUNT_INVALID',
   'COMPLETED_APPOINTMENT_REQUIRES_REOPEN',
+  'FUTURE_ATTENDANCE_NOT_ALLOWED',
+  'FUTURE_APPOINTMENT_COMPLETION_NOT_ALLOWED',
+  'WORKSPACE_TIMEZONE_INVALID',
 ]);
 
 function classifyMutationError(error: unknown): { error: string; retryable: boolean } {
@@ -98,44 +111,31 @@ async function applyMutation(
   }
 }
 
-async function currentWorkspaceRevision(db: D1Database, workspaceId: string): Promise<number> {
-  await db.prepare(
-    `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id, revision)
-     VALUES(?1, 0)`,
-  ).bind(workspaceId).run();
-  const row = await db.prepare(
-    `SELECT revision FROM core_workspace_sync_revisions WHERE workspace_id=?1`,
-  ).bind(workspaceId).first<{ revision: number }>();
-  return Math.max(0, Number(row?.revision ?? 0));
-}
-
-async function reserveWorkspaceRevision(
+async function completedMutationIds(
   db: D1Database,
   workspaceId: string,
-  expectedRevision: number,
-): Promise<{ ok: true; revision: number } | { ok: false; revision: number }> {
-  await db.prepare(
-    `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id, revision)
-     VALUES(?1, 0)`,
-  ).bind(workspaceId).run();
-
-  const result = await db.prepare(
-    `UPDATE core_workspace_sync_revisions
-     SET revision=revision+1, updated_at=CURRENT_TIMESTAMP
-     WHERE workspace_id=?1 AND revision=?2`,
-  ).bind(workspaceId, expectedRevision).run();
-
-  if ((result.meta?.changes ?? 0) === 0) {
-    return { ok: false, revision: await currentWorkspaceRevision(db, workspaceId) };
+  mutations: readonly SyncMutation[],
+): Promise<Set<string>> {
+  const completed = new Set<string>();
+  for (const mutation of mutations) {
+    const row = await db.prepare(
+      `SELECT status FROM core_idempotency_keys
+       WHERE workspace_id=?1 AND idempotency_key=?2`,
+    ).bind(workspaceId, mutation.id).first<{ status: 'pending' | 'done' }>();
+    if (row?.status === 'done') completed.add(mutation.id);
   }
-  return { ok: true, revision: expectedRevision + 1 };
+  return completed;
 }
 
 function routeError(error: unknown): { status: 400 | 401 | 403 | 503; error: string } {
   const access = accessError(error);
   if (access) return access;
   if (error instanceof z.ZodError) return { status: 400, error: 'INVALID_SYNC_PAYLOAD' };
-  return { status: 400, error: error instanceof Error ? error.message : 'SYNC_FAILED' };
+  const code = error instanceof Error ? error.message : 'SYNC_FAILED';
+  if (code === 'SYNC_WRITE_IN_PROGRESS' || code === 'SYNC_SNAPSHOT_UNSTABLE') {
+    return { status: 503, error: code };
+  }
+  return { status: 400, error: code };
 }
 
 export const syncRoutes = new Hono<{ Bindings: Env }>();
@@ -147,14 +147,38 @@ syncRoutes.post('/:workspaceId/push', async (c) => {
     const parsed = pushSchema.parse(await c.req.json());
     const db = requireDatabase(c.env);
 
-    const reserved = await reserveWorkspaceRevision(db, workspaceId, parsed.baseRevision);
+    // Idempotency is checked before optimistic concurrency. This is essential
+    // for the "server committed, response was lost" case: a retry from the old
+    // revision must be acknowledged as duplicate, not turned into a false
+    // conflict/dead-letter.
+    const doneIds = await completedMutationIds(db, workspaceId, parsed.mutations);
+    const partition = partitionByCompletedIdempotency(parsed.mutations, doneIds);
+
+    if (!requiresRevisionReservation(partition)) {
+      return c.json({
+        results: parsed.mutations.map((mutation): MutationResult => ({
+          mutationId: mutation.id,
+          status: 'duplicate',
+        })),
+        serverTime: new Date().toISOString(),
+        revision: await readStableWorkspaceRevision(db, workspaceId),
+      });
+    }
+
+    const reserved = await reserveWorkspaceWrite(db, workspaceId, parsed.baseRevision);
     if (!reserved.ok) {
-      const results: MutationResult[] = parsed.mutations.map((mutation) => ({
-        mutationId: mutation.id,
-        status: 'failed',
-        error: 'SYNC_REVISION_CONFLICT',
-        retryable: false,
-      }));
+      const errorCode = reserved.busy ? 'SYNC_WRITE_IN_PROGRESS' : 'SYNC_REVISION_CONFLICT';
+      const retryable = reserved.busy;
+      const results: MutationResult[] = parsed.mutations.map((mutation) =>
+        doneIds.has(mutation.id)
+          ? { mutationId: mutation.id, status: 'duplicate' }
+          : {
+              mutationId: mutation.id,
+              status: 'failed',
+              error: errorCode,
+              retryable,
+            },
+      );
       return c.json({
         results,
         serverTime: new Date().toISOString(),
@@ -163,13 +187,22 @@ syncRoutes.post('/:workspaceId/push', async (c) => {
     }
 
     const results: MutationResult[] = [];
-    for (const mutation of parsed.mutations) {
-      results.push(await applyMutation(db, workspaceId, mutation));
+    let revision: number;
+    try {
+      for (const mutation of parsed.mutations) {
+        if (doneIds.has(mutation.id)) {
+          results.push({ mutationId: mutation.id, status: 'duplicate' });
+        } else {
+          results.push(await applyMutation(db, workspaceId, mutation));
+        }
+      }
+    } finally {
+      revision = await finalizeWorkspaceWrite(db, workspaceId, reserved.token);
     }
     return c.json({
       results,
       serverTime: new Date().toISOString(),
-      revision: reserved.revision,
+      revision,
     });
   } catch (error) {
     const response = routeError(error);
@@ -182,15 +215,16 @@ syncRoutes.get('/:workspaceId/snapshot', async (c) => {
     const workspaceId = c.req.param('workspaceId');
     await requireWorkspaceAccess(c, workspaceId);
     const db = requireDatabase(c.env);
-    const [modules, revision] = await Promise.all([
-      Promise.all(syncHandlers.map((handler) => handler.snapshot(db, workspaceId))),
-      currentWorkspaceRevision(db, workspaceId),
-    ]);
+    const stable = await withStableWorkspaceRead(
+      db,
+      workspaceId,
+      () => Promise.all(syncHandlers.map((handler) => handler.snapshot(db, workspaceId))),
+    );
     return c.json({
       workspaceId,
       generatedAt: new Date().toISOString(),
-      revision,
-      modules,
+      revision: stable.revision,
+      modules: stable.value,
     });
   } catch (error) {
     const response = routeError(error);
