@@ -712,6 +712,7 @@ backupRoutes.post('/:workspaceId/import', async (c) => {
   let importId = '';
   let leaseToken: string | null = null;
   let dataApplied = false;
+  let ownsImportJob = false;
 
   try {
     const access = await requireWorkspaceAccess(c, workspaceId, true);
@@ -743,6 +744,7 @@ backupRoutes.post('/:workspaceId/import', async (c) => {
       parsed.expectedRevision,
     );
     const existing = started.row;
+    ownsImportJob = started.created;
 
     if (!started.created) {
       if (existing.status === 'completed') {
@@ -797,7 +799,7 @@ backupRoutes.post('/:workspaceId/import', async (c) => {
         // advance the revision. The import journal remains the recovery anchor.
       }
     }
-    if (db && importId && !dataApplied) {
+    if (db && importId && ownsImportJob && !dataApplied) {
       try { await failImportJob(db, workspaceId, importId, code); } catch {}
     }
 
