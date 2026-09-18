@@ -8,22 +8,16 @@ import {
 import { accessError, requireWorkspaceAccess } from '../auth/guard';
 import type { Env } from '../env';
 import { requireDatabase } from '../env';
+import {
+  withStableWorkspaceRead,
+  withWorkspaceWrite,
+} from '../sync/workspace-revision';
 
 type Row = Record<string, any>;
 
 async function all(db: D1Database, sql: string, workspaceId: string): Promise<Row[]> {
   const result = await db.prepare(sql).bind(workspaceId).all<Row>();
   return result.results ?? [];
-}
-
-async function currentRevision(db: D1Database, workspaceId: string): Promise<number> {
-  await db.prepare(
-    `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id,revision) VALUES(?1,0)`,
-  ).bind(workspaceId).run();
-  const row = await db.prepare(
-    `SELECT revision FROM core_workspace_sync_revisions WHERE workspace_id=?1`,
-  ).bind(workspaceId).first<{ revision: number }>();
-  return Number(row?.revision ?? 0);
 }
 
 async function exportBackup(db: D1Database, workspaceId: string): Promise<WorkspaceBackup> {
@@ -239,7 +233,7 @@ function r(row: Record<string, unknown>): Row {
   return row as Row;
 }
 
-async function restoreBackup(db: D1Database, workspaceId: string, backup: WorkspaceBackup): Promise<number> {
+async function restoreBackup(db: D1Database, workspaceId: string, backup: WorkspaceBackup): Promise<void> {
   const s = backup.stores;
   const statements: D1PreparedStatement[] = [
     // Delete children before parents. Workspace identity/auth membership stays intact.
@@ -455,20 +449,17 @@ async function restoreBackup(db: D1Database, workspaceId: string, backup: Worksp
       x.beforeJson??null,x.afterJson??null,x.undoable?1:0,x.undoneAt??null,x.createdAt??new Date().toISOString()));
   }
 
-  const nextRevision = (await currentRevision(db, workspaceId)) + 1;
-  statements.push(db.prepare(
-    `UPDATE core_workspace_sync_revisions
-     SET revision=?2,updated_at=CURRENT_TIMESTAMP WHERE workspace_id=?1`,
-  ).bind(workspaceId,nextRevision));
-
   await db.batch(statements);
-  return nextRevision;
 }
 
 function routeError(error: unknown): { status: 400 | 401 | 403 | 503; error: string } {
   const access = accessError(error);
   if (access) return access;
-  return { status: 400, error: error instanceof Error ? error.message : 'BACKUP_FAILED' };
+  const code = error instanceof Error ? error.message : 'BACKUP_FAILED';
+  if (code === 'SYNC_WRITE_IN_PROGRESS' || code === 'SYNC_SNAPSHOT_UNSTABLE') {
+    return { status: 503, error: code };
+  }
+  return { status: 400, error: code };
 }
 
 export const backupRoutes = new Hono<{ Bindings: Env }>();
@@ -478,7 +469,12 @@ backupRoutes.get('/:workspaceId/export', async (c) => {
     const workspaceId = c.req.param('workspaceId');
     await requireWorkspaceAccess(c, workspaceId);
     const db = requireDatabase(c.env);
-    return c.json(await exportBackup(db, workspaceId));
+    const stable = await withStableWorkspaceRead(
+      db,
+      workspaceId,
+      () => exportBackup(db, workspaceId),
+    );
+    return c.json(stable.value);
   } catch (error) {
     const response = routeError(error);
     return c.json({ error: response.error }, response.status);
@@ -498,10 +494,14 @@ backupRoutes.post('/:workspaceId/restore', async (c) => {
       return c.json({ error: 'BACKUP_WORKSPACE_ID_MISMATCH' }, 400);
     }
     const db = requireDatabase(c.env);
-    const revision = await restoreBackup(db, workspaceId, backup);
+    const guarded = await withWorkspaceWrite(
+      db,
+      workspaceId,
+      () => restoreBackup(db, workspaceId, backup),
+    );
     return c.json({
       ok: true,
-      revision,
+      revision: guarded.revision,
       restoredAt: new Date().toISOString(),
     });
   } catch (error) {
