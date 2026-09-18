@@ -54,6 +54,7 @@ export class IndexedDbSessionRepository implements SessionRepository {
       centerCutBps: input.centerCutBps,
       active: true,
       studentIds: input.studentIds,
+      payerStudentId: input.payerStudentId,
     };
     const activity = makeActivityEvent({
       workspaceId: input.workspaceId,
@@ -92,6 +93,7 @@ export class IndexedDbSessionRepository implements SessionRepository {
         expectedStudentCount: input.expectedStudentCount,
         centerCutBps: input.centerCutBps,
         studentIds: input.studentIds,
+        payerStudentId: input.payerStudentId,
       },
     }));
     transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
