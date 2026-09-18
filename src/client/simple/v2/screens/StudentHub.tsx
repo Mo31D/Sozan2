@@ -2,7 +2,13 @@ import { useState } from 'react';
 import { buildStudentFinancialSummary } from '../../../../modules/reports/student-finance';
 import type { LocalPlatformSnapshot } from '../../../adapters/indexeddb/platform.repository';
 import type { ControlTab } from '../../../control/contracts';
-import { activeCycleFor, baselineFor, planFor, type SimpleWorkspaceData } from '../../data';
+import {
+  activeCycleFor,
+  baselineFor,
+  completedLessonCountForStudent,
+  planFor,
+  type SimpleWorkspaceData,
+} from '../../data';
 import { ArabicDateField, ArabicTimeField } from '../localized-fields';
 import {
   formatArabicDate,
@@ -46,6 +52,7 @@ export function StudentHub({
   const plan = student ? planFor(data, student.id) : null;
   const cycle = student ? activeCycleFor(data, student.id) : null;
   const baseline = student ? baselineFor(data, student.id) : null;
+  const lessonCount = student ? completedLessonCountForStudent(data, student.id) : { beforeTracking: 0, tracked: 0, total: 0 };
   const [billingMode, setBillingMode] = useState<'' | 'per_session' | 'package'>(plan?.billingMode ?? '');
 
   if (!student) {
@@ -108,7 +115,9 @@ export function StudentHub({
             <p><span>العمر</span><b>{student.age ?? 'غير مسجل'}</b></p>
             <p><span>المستوى</span><b>{student.level || 'غير مسجل'}</b></p>
             {student.notes && <p><span>ملاحظات</span><b>{student.notes}</b></p>}
-            {baseline && <p><span>قبل بداية التتبع</span><b>{baseline.completedLessonsBeforeTracking} حصة سابقة</b></p>}
+            <p><span>إجمالي الحصص التي أخذها</span><b>{lessonCount.total} حصة</b></p>
+            {baseline && <p><span>منها قبل بداية التتبع</span><b>{baseline.completedLessonsBeforeTracking} حصة</b></p>}
+            {lessonCount.tracked > 0 && <p><span>حصص مسجلة داخل Sozan2</span><b>{lessonCount.tracked} حصة</b></p>}
           </div>
         )}
       </Section>
@@ -189,7 +198,11 @@ export function StudentHub({
       </Section>
 
       <Section title="سجل الحضور" action={history.length ? `آخر ${history.length}` : undefined}>
-        <div className="student-hub-history">{history.map((occurrence) => { const session = data.sessions.find((row) => row.id === occurrence.recurringSessionId); return <div key={occurrence.id}><span><strong>{formatArabicDate(occurrence.rescheduledToDate ?? occurrence.sessionDate)}</strong><small>{session?.title ?? 'حصة'}{occurrence.scheduledStart ? ` · ${formatClockTime(occurrence.rescheduledToStart ?? occurrence.scheduledStart)}` : ''}</small></span><b className={`student-hub-state state-${occurrence.status}`}>{occurrence.status === 'completed' && occurrence.studentIds && !occurrence.studentIds.includes(student.id) ? 'غائب' : occurrenceStatus(occurrence.status)}</b></div>; })}{!history.length && <div className="friendly-empty">لسه مفيش تاريخ حضور مسجل.</div>}</div>
+        <div className="student-hub-history">{history.map((occurrence) => { const session = data.sessions.find((row) => row.id === occurrence.recurringSessionId); return <div key={occurrence.id}><span><strong>{formatArabicDate(occurrence.rescheduledToDate ?? occurrence.sessionDate)}</strong><small>{session?.title ?? 'حصة'}{occurrence.scheduledStart ? ` · ${formatClockTime(occurrence.rescheduledToStart ?? occurrence.scheduledStart)}` : ''}</small></span><b className={`student-hub-state state-${occurrence.status}`}>{occurrence.status === 'completed' && occurrence.studentIds && !occurrence.studentIds.includes(student.id) ? 'غائب' : occurrenceStatus(occurrence.status)}</b></div>; })}{!history.length && <div className="friendly-empty">
+  {lessonCount.beforeTracking > 0
+    ? `لا توجد تواريخ حضور مسجلة داخل Sozan2 بعد. يوجد ${lessonCount.beforeTracking} حصة سابقة محفوظة كعدد تاريخي.`
+    : 'لسه مفيش تاريخ حضور مسجل.'}
+</div>}</div>
       </Section>
     </section>
   );
