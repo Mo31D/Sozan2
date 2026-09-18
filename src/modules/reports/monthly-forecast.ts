@@ -191,7 +191,7 @@ function sessionExpectedEarnedPence(session: ForecastSession, occurrence: Foreca
     occurrence?.defaultPricePenceSnapshot ?? session.defaultPricePence ?? 0,
   ));
   const linkedCount = occurrence?.studentIds?.length ?? session.studentIds?.length ?? 0;
-  const plannedCount = Math.max(1, Number(session.expectedStudentCount ?? linkedCount || 1));
+  const plannedCount = Math.max(1, Number(session.expectedStudentCount ?? (linkedCount || 1)));
   const gross = priceBasis === 'per_student' ? unitPrice * plannedCount : unitPrice;
   const centerCutBps = clamp(Math.round(Number(session.centerCutBps ?? 0)), 0, 10_000);
   const centerCut = Math.floor((gross * centerCutBps) / 10_000);
