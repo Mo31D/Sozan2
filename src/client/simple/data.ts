@@ -108,6 +108,8 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
 
   const mine = <T extends { workspaceId: string }>(rows: T[]) => rows.filter((row) => row.workspaceId === workspaceId);
   const workspaceSettings = mine(settings);
+  const activeReceipts = mine(receipts).filter((row) => !row.deletedAt);
+  const activeReceiptIds = new Set(activeReceipts.map((row) => row.id));
   const openingRaw = workspaceSettings.find((row) => row.key === 'finance.opening_balance_pence')?.value ?? '0';
   const openingBalancePence = Number.isFinite(Number(openingRaw)) ? Math.round(Number(openingRaw)) : 0;
   return {
@@ -117,8 +119,8 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     occurrences: mine(occurrences),
     billingPlans: mine(billingPlans),
     billingCycles: mine(billingCycles),
-    receipts: mine(receipts).filter((row) => !row.deletedAt),
-    allocations: mine(allocations),
+    receipts: activeReceipts,
+    allocations: mine(allocations).filter((row) => activeReceiptIds.has(row.receiptId)),
     expenses: mine(expenses).filter((row) => !row.deletedAt),
     otherIncome: mine(otherIncome).filter((row) => !row.deletedAt),
     cashChecks: mine(cashChecks).filter((row) => !row.deletedAt),
