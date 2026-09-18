@@ -81,6 +81,15 @@ export class D1SessionRepository implements SessionRepository {
     return rowsToSessions(result.results ?? []);
   }
 
+  async listAll(workspaceId: string): Promise<RecurringSession[]> {
+    const result = await this.db.prepare(
+      `${SELECT_SESSIONS}
+       WHERE s.workspace_id = ?1 AND s.deleted_at IS NULL
+       ORDER BY s.active DESC, COALESCE(s.weekday, 9), COALESCE(s.start_time, '99:99'), s.title, p.student_id`,
+    ).bind(workspaceId).all<SessionRow>();
+    return rowsToSessions(result.results ?? []);
+  }
+
   async getById(workspaceId: string, sessionId: string): Promise<RecurringSession> {
     const result = await this.db.prepare(
       `${SELECT_SESSIONS}

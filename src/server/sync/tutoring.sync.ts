@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { FinanceCollectionService } from '../../modules/finance/allocation.service';
 import { packageUnitShare } from '../../modules/tutoring/domain/billing';
+import { archiveStudentFromRecurringSession } from '../../modules/tutoring/domain/student-lifecycle';
 import { createRecurringSessionSchema, updateRecurringScheduleSchema } from '../../modules/tutoring/domain/session';
 import { createStudentSchema, updateStudentSchema } from '../../modules/tutoring/domain/student';
 import { BillingService } from '../../modules/tutoring/services/billing.service';
@@ -259,6 +260,78 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
       return;
     }
 
+    if (mutation.operation === 'student.archive') {
+      const student = await db.prepare(
+        `SELECT active FROM tutoring_students
+         WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`,
+      ).bind(workspaceId, mutation.entityId).first<{ active: number }>();
+      if (!student) throw new Error('STUDENT_NOT_FOUND');
+      if (student.active === 0) return;
+
+      const sessions = (await new D1SessionRepository(db).listAll(workspaceId))
+        .filter((session) => session.active && session.studentIds.includes(mutation.entityId));
+      const changes = sessions
+        .map((session) => archiveStudentFromRecurringSession(session, mutation.entityId))
+        .filter((change) => change.kind !== 'unchanged');
+
+      const statements: D1PreparedStatement[] = [
+        db.prepare(
+          `UPDATE tutoring_students
+           SET active=0, updated_at=CURRENT_TIMESTAMP
+           WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`,
+        ).bind(workspaceId, mutation.entityId),
+      ];
+
+      for (const change of changes) {
+        if (change.kind === 'deactivated') {
+          statements.push(
+            db.prepare(
+              `UPDATE tutoring_recurring_sessions
+               SET active=0, updated_at=CURRENT_TIMESTAMP
+               WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`,
+            ).bind(workspaceId, change.session.id),
+          );
+          continue;
+        }
+
+        statements.push(
+          db.prepare(
+            `UPDATE tutoring_recurring_sessions
+             SET expected_student_count=?3, payer_student_id=?4, updated_at=CURRENT_TIMESTAMP
+             WHERE workspace_id=?1 AND id=?2 AND active=1 AND deleted_at IS NULL`,
+          ).bind(
+            workspaceId,
+            change.session.id,
+            change.session.expectedStudentCount,
+            change.session.payerStudentId,
+          ),
+          db.prepare(
+            `DELETE FROM tutoring_session_students
+             WHERE workspace_id=?1 AND recurring_session_id=?2 AND student_id=?3`,
+          ).bind(workspaceId, change.session.id, mutation.entityId),
+        );
+      }
+
+      await db.batch(statements);
+      return;
+    }
+
+    if (mutation.operation === 'student.restore') {
+      const result = await db.prepare(
+        `UPDATE tutoring_students
+         SET active=1, updated_at=CURRENT_TIMESTAMP
+         WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL AND active=0`,
+      ).bind(workspaceId, mutation.entityId).run();
+      if ((result.meta?.changes ?? 0) === 0) {
+        const existing = await db.prepare(
+          `SELECT active FROM tutoring_students
+           WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`,
+        ).bind(workspaceId, mutation.entityId).first<{ active: number }>();
+        if (!existing) throw new Error('STUDENT_NOT_FOUND');
+      }
+      return;
+    }
+
     if (mutation.operation === 'student.update') {
       const parsed = updateStudentSchema.parse(mutation.payload);
       const result = await db.prepare(
@@ -391,8 +464,8 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
 
   async snapshot(db: D1Database, workspaceId: string): Promise<ModuleSnapshot> {
     const [students, sessions, occurrencesResult, plansResult, cyclesResult, cycleOccurrencesResult] = await Promise.all([
-      new D1StudentRepository(db).listActive(workspaceId),
-      new D1SessionRepository(db).listActive(workspaceId),
+      new D1StudentRepository(db).listAll(workspaceId),
+      new D1SessionRepository(db).listAll(workspaceId),
       db.prepare(
         `SELECT id, workspace_id, recurring_session_id, session_date, scheduled_start,
                 rescheduled_to_date, rescheduled_to_start, status, gross_pence,

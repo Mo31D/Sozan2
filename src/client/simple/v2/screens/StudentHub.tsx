@@ -29,6 +29,7 @@ export function StudentHub({
   onBack,
   onOpenStudent,
   onStudentSave,
+  onStudentArchive,
   onSessionSave,
   onBillingSave,
   onCollect,
@@ -41,6 +42,7 @@ export function StudentHub({
   onBack: () => void;
   onOpenStudent: (studentId: string) => void;
   onStudentSave: (studentId: string, form: FormData) => Promise<boolean>;
+  onStudentArchive: (studentId: string) => Promise<boolean>;
   onSessionSave: (sessionId: string, form: FormData) => Promise<boolean>;
   onBillingSave: (studentId: string, form: FormData) => Promise<boolean>;
   onCollect: (studentId: string, form: FormData) => Promise<boolean>;
@@ -49,6 +51,7 @@ export function StudentHub({
   const student = data.students.find((row) => row.id === studentId) ?? null;
   const [editingDetails, setEditingDetails] = useState(false);
   const [collecting, setCollecting] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const plan = student ? planFor(data, student.id) : null;
   const cycle = student ? activeCycleFor(data, student.id) : null;
   const baseline = student ? baselineFor(data, student.id) : null;
@@ -64,9 +67,17 @@ export function StudentHub({
   const sessions = data.sessions
     .filter((session) => session.studentIds.includes(student.id))
     .sort((a, b) => (a.weekday ?? 99) - (b.weekday ?? 99) || (a.startTime ?? '99:99').localeCompare(b.startTime ?? '99:99'));
-  const sessionIds = new Set(sessions.map((session) => session.id));
+  const historicalSessions = [...data.sessions, ...(data.archivedSessions ?? [])];
+  const historicalSessionIds = new Set(
+    historicalSessions
+      .filter((session) => session.studentIds.includes(student.id))
+      .map((session) => session.id),
+  );
   const history = data.occurrences
-    .filter((row) => sessionIds.has(row.recurringSessionId))
+    .filter((row) => (
+      row.studentIds?.includes(student.id)
+      || historicalSessionIds.has(row.recurringSessionId)
+    ))
     .sort((a, b) => (b.rescheduledToDate ?? b.sessionDate).localeCompare(a.rescheduledToDate ?? a.sessionDate))
     .slice(0, 12);
   const receipts = data.receipts
@@ -198,12 +209,30 @@ export function StudentHub({
       </Section>
 
       <Section title="سجل الحضور" action={history.length ? `آخر ${history.length}` : undefined}>
-        <div className="student-hub-history">{history.map((occurrence) => { const session = data.sessions.find((row) => row.id === occurrence.recurringSessionId); return <div key={occurrence.id}><span><strong>{formatArabicDate(occurrence.rescheduledToDate ?? occurrence.sessionDate)}</strong><small>{session?.title ?? 'حصة'}{occurrence.scheduledStart ? ` · ${formatClockTime(occurrence.rescheduledToStart ?? occurrence.scheduledStart)}` : ''}</small></span><b className={`student-hub-state state-${occurrence.status}`}>{occurrence.status === 'completed' && occurrence.studentIds && !occurrence.studentIds.includes(student.id) ? 'غائب' : occurrenceStatus(occurrence.status)}</b></div>; })}{!history.length && <div className="friendly-empty">
+        <div className="student-hub-history">{history.map((occurrence) => { const session = historicalSessions.find((row) => row.id === occurrence.recurringSessionId); return <div key={occurrence.id}><span><strong>{formatArabicDate(occurrence.rescheduledToDate ?? occurrence.sessionDate)}</strong><small>{session?.title ?? 'حصة'}{occurrence.scheduledStart ? ` · ${formatClockTime(occurrence.rescheduledToStart ?? occurrence.scheduledStart)}` : ''}</small></span><b className={`student-hub-state state-${occurrence.status}`}>{occurrence.status === 'completed' && occurrence.studentIds && !occurrence.studentIds.includes(student.id) ? 'غائب' : occurrenceStatus(occurrence.status)}</b></div>; })}{!history.length && <div className="friendly-empty">
   {lessonCount.beforeTracking > 0
     ? `لا توجد تواريخ حضور مسجلة داخل Sozan2 بعد. يوجد ${lessonCount.beforeTracking} حصة سابقة محفوظة كعدد تاريخي.`
     : 'لسه مفيش تاريخ حضور مسجل.'}
 </div>}</div>
       </Section>
+
+      <section className="student-hub-danger-zone">
+        <div>
+          <strong>إيقاف الطالب</strong>
+          <small>للطالب الذي لن يكمل حاليًا. يحتفظ البرنامج بالحضور والباقات والمدفوعات والسجل، ويزيله من العمل والمواعيد المستقبلية.</small>
+        </div>
+        {!confirmArchive ? (
+          <button type="button" disabled={busy} onClick={() => setConfirmArchive(true)}>إيقاف الطالب</button>
+        ) : (
+          <div className="student-hub-danger-confirm">
+            <p>سيتم إيقاف المواعيد الفردية الخاصة بالطالب، وفصله من المواعيد المشتركة المستقبلية. لن يتم حذف أي تاريخ أو مدفوعات.</p>
+            <div>
+              <button type="button" disabled={busy} onClick={() => setConfirmArchive(false)}>رجوع</button>
+              <button type="button" disabled={busy} onClick={() => void onStudentArchive(student.id)}>تأكيد الإيقاف</button>
+            </div>
+          </div>
+        )}
+      </section>
     </section>
   );
 }

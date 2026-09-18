@@ -16,7 +16,11 @@ import {
 } from '../tutoring/attendance-workflow';
 import { collectLocalStudentPayment, configureLocalStudentBilling } from '../tutoring/local-commands';
 import { updateLocalSessionDetails } from '../tutoring/session-corrections';
-import { updateLocalStudent } from '../tutoring/student-corrections';
+import {
+  archiveLocalStudent,
+  restoreLocalStudent,
+  updateLocalStudent,
+} from '../tutoring/student-corrections';
 import { loadSimpleWorkspaceData, type SimpleWorkspaceData } from './data';
 import { NavButton } from './v2/components';
 import { ManagementScreen } from './v2/screens/ManagementScreen';
@@ -197,6 +201,18 @@ export function TutorWorkspace({
     });
   }, 'تم تعديل بيانات الطالب.');
 
+  const archiveStudent = async (studentId: string): Promise<boolean> => {
+    const success = await runAction(async () => {
+      await archiveLocalStudent(workspaceId, studentId);
+    }, 'تم إيقاف الطالب مع حفظ تاريخه ومدفوعاته.');
+    if (success) setStudentHubId(null);
+    return success;
+  };
+
+  const restoreStudent = (studentId: string) => runAction(async () => {
+    await restoreLocalStudent(workspaceId, studentId);
+  }, 'تمت إعادة الطالب. المواعيد السابقة لا تعود تلقائيًا.');
+
   const saveStudentSession = (sessionId: string, form: FormData) => runAction(async () => {
     const current = data.sessions.find((session) => session.id === sessionId);
     if (!current) throw new Error('SESSION_NOT_FOUND');
@@ -274,6 +290,7 @@ export function TutorWorkspace({
               onBack={() => { setStudentHubId(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
               onOpenStudent={openStudent}
               onStudentSave={saveStudent}
+              onStudentArchive={archiveStudent}
               onSessionSave={saveStudentSession}
               onBillingSave={saveStudentBilling}
               onCollect={collectForStudent}
@@ -389,6 +406,7 @@ export function TutorWorkspace({
                   onToggleAddStudent={() => setShowAddStudent((value) => !value)}
                   onOpenPendingSchedule={openPendingScheduleEdits}
                   onOpenStudent={openStudent}
+                  onStudentRestore={restoreStudent}
                   onOpenAdvanced={setAdvancedTab}
                   onPlatformChanged={platformChanged}
                   onPresentationSave={async (form) => {

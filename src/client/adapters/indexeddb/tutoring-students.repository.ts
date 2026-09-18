@@ -21,6 +21,16 @@ export class IndexedDbStudentRepository implements StudentRepository {
       .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
   }
 
+  async listAll(workspaceId: string): Promise<Student[]> {
+    const db = await openLocalDatabase();
+    const rows = await requestResult<StoredStudent[]>(
+      db.transaction(STORES.tutoringStudents, 'readonly').objectStore(STORES.tutoringStudents).getAll(),
+    );
+    return rows
+      .filter((row) => row.workspaceId === workspaceId)
+      .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, 'ar'));
+  }
+
   async create(input: NewStudent): Promise<Student> {
     const student: Student = {
       id: input.id,
