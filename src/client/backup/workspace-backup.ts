@@ -1,7 +1,10 @@
 import {
   assertBackupWorkspaceScope,
+  backupManifest,
   FULL_BACKUP_SCHEMA_VERSION,
+  validateWorkspaceBackup,
   workspaceBackupSchema,
+  type BackupValidationSummary,
   type WorkspaceBackup,
 } from '../../modules/backup/workspace-backup';
 import type {
@@ -88,6 +91,7 @@ export async function createLocalWorkspaceBackup(
   const backup: WorkspaceBackup = {
     schemaVersion: FULL_BACKUP_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
+    manifest: backupManifest({ stores }),
     workspace: {
       id: workspaceId,
       name: snapshot.workspace.name,
@@ -104,18 +108,67 @@ export async function createLocalWorkspaceBackup(
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    credentials: 'same-origin',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-  });
-  const body = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(body.error ?? `BACKUP_HTTP_${response.status}`);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 45_000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      credentials: 'same-origin',
+      signal: controller.signal,
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('BACKUP_REQUEST_TIMEOUT');
+    }
+    throw new Error('BACKUP_NETWORK_ERROR');
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  const raw = await response.text();
+  let body: (T & { error?: string }) | null = null;
+  try {
+    body = raw ? JSON.parse(raw) as T & { error?: string } : null;
+  } catch {
+    if (!response.ok) throw new Error(`BACKUP_HTTP_${response.status}`);
+    throw new Error('BACKUP_RESPONSE_INVALID');
+  }
+  if (!response.ok) throw new Error(body?.error ?? `BACKUP_HTTP_${response.status}`);
+  if (!body) throw new Error('BACKUP_RESPONSE_EMPTY');
   return body;
+}
+
+export async function validateWorkspaceBackupForImport(
+  snapshot: LocalPlatformSnapshot,
+  input: unknown,
+): Promise<{ backup: WorkspaceBackup; validation: BackupValidationSummary }> {
+  const backup = workspaceBackupSchema.parse(input);
+  assertBackupWorkspaceScope(backup);
+  if (backup.workspace.id !== snapshot.workspace.id) {
+    throw new Error('BACKUP_WORKSPACE_ID_MISMATCH');
+  }
+
+  const localValidation = validateWorkspaceBackup(backup);
+  if (!localValidation.valid) {
+    throw new Error(localValidation.errors[0] ?? 'BACKUP_VALIDATION_FAILED');
+  }
+
+  if (!snapshot.cloudLink) return { backup, validation: localValidation };
+
+  const result = await requestJson<{ ok: boolean; validation: BackupValidationSummary }>(
+    `/api/backup/${encodeURIComponent(snapshot.workspace.id)}/validate`,
+    { method: 'POST', body: JSON.stringify(backup) },
+  );
+  if (!result.ok || !result.validation.valid) {
+    throw new Error(result.validation.errors[0] ?? 'BACKUP_VALIDATION_FAILED');
+  }
+  return { backup, validation: result.validation };
 }
 
 export async function createWorkspaceBackup(
