@@ -72,6 +72,14 @@ export async function createLocalWorkspaceBackup(
   );
   const stores = Object.fromEntries(entries) as WorkspaceBackup['stores'];
   enrichLocalAttendance(stores);
+  const activeReceiptIds = new Set(
+    stores.financeReceipts
+      .filter((row) => !(row as Row).deletedAt)
+      .map((row) => String((row as Row).id)),
+  );
+  stores.financeAllocations = stores.financeAllocations.filter(
+    (row) => activeReceiptIds.has(String((row as Row).receiptId)),
+  );
 
   const backup: WorkspaceBackup = {
     schemaVersion: FULL_BACKUP_SCHEMA_VERSION,
