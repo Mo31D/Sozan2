@@ -49,6 +49,7 @@ export class SessionsService {
         || details.defaultPricePence !== current.defaultPricePence
         || details.expectedStudentCount !== current.expectedStudentCount
         || details.centerCutBps !== current.centerCutBps
+        || details.payerStudentId !== current.payerStudentId
         || !sameIds(details.studentIds, current.studentIds);
       if (financeChanged) throw new Error('SESSION_FINANCE_LOCKED_BY_HISTORY');
     }
