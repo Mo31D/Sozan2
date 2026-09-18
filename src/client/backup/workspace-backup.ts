@@ -329,16 +329,20 @@ async function publishBackupImportToCloud(
     const code = error instanceof Error ? error.message : 'BACKUP_CLOUD_IMPORT_FAILED';
     if (code !== 'BACKUP_NETWORK_ERROR' && code !== 'BACKUP_REQUEST_TIMEOUT') throw error;
 
-    // A lost response is not evidence that the commit failed. Ask the journal.
-    try {
-      const status = await cloudImportStatus(snapshot.workspace.id, importId);
-      if (status.status === 'completed') return status.revision;
-      if (status.status === 'failed') throw new Error(status.error);
-    } catch (statusError) {
-      const statusCode = statusError instanceof Error ? statusError.message : '';
-      if (!['BACKUP_NETWORK_ERROR', 'BACKUP_REQUEST_TIMEOUT'].includes(statusCode)) {
-        throw statusError;
+    // A lost response is not evidence that the commit failed. Poll the import
+    // journal briefly before declaring the cloud outcome unknown.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const status = await cloudImportStatus(snapshot.workspace.id, importId);
+        if (status.status === 'completed') return status.revision;
+        if (status.status === 'failed') throw new Error(status.error);
+      } catch (statusError) {
+        const statusCode = statusError instanceof Error ? statusError.message : '';
+        if (!['BACKUP_NETWORK_ERROR', 'BACKUP_REQUEST_TIMEOUT'].includes(statusCode)) {
+          throw statusError;
+        }
       }
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 500 * (attempt + 1)));
     }
     throw new Error('BACKUP_CLOUD_STATUS_UNKNOWN');
   }
