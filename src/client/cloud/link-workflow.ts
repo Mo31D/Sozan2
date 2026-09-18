@@ -3,6 +3,7 @@ import type { LocalPlatformSnapshot } from '../adapters/indexeddb/platform.repos
 import {
   linkLocalPlatformToCloud,
   loadLocalPlatform,
+  markLocalCloudLinkReady,
 } from '../adapters/indexeddb/platform.repository';
 import {
   clearWorkspaceSyncOutbox,
@@ -23,7 +24,12 @@ export type CloudLinkWorkflowDependencies = {
     loginName: string,
     password: string,
   ): Promise<CloudRegisterResponse>;
-  link(snapshot: LocalPlatformSnapshot, loginName: string): Promise<void>;
+  link(
+    snapshot: LocalPlatformSnapshot,
+    loginName: string,
+    state?: 'provisioning' | 'ready',
+  ): Promise<void>;
+  markReady(workspaceId: string, serverRevision: number): Promise<void>;
   load(): Promise<LocalPlatformSnapshot | null>;
   restoreCloud(workspaceId: string, backup: WorkspaceBackup): Promise<number>;
   clearOutbox(workspaceId: string): Promise<void>;
@@ -34,6 +40,7 @@ const defaultDependencies: CloudLinkWorkflowDependencies = {
   createBackup: createLocalWorkspaceBackup,
   register: registerCloudAccount,
   link: linkLocalPlatformToCloud,
+  markReady: markLocalCloudLinkReady,
   load: loadLocalPlatform,
   restoreCloud: restoreCloudWorkspaceBackup,
   clearOutbox: clearWorkspaceSyncOutbox,
@@ -53,6 +60,7 @@ export async function linkExistingLocalWorkspaceToCloud(
   snapshot: LocalPlatformSnapshot,
   credentials: { loginName: string; password: string },
   dependencies: CloudLinkWorkflowDependencies = defaultDependencies,
+  onRegistered?: (recoveryCode: string) => void,
 ): Promise<{ recoveryCode: string; sync: SyncRunResult }> {
   if (snapshot.cloudLink) throw new Error('WORKSPACE_ALREADY_CLOUD_LINKED');
 
@@ -63,18 +71,28 @@ export async function linkExistingLocalWorkspaceToCloud(
     credentials.password,
   );
 
-  // Restore first. If the cloud write fails, the device deliberately remains
-  // local-only, so a transient server failure can never turn the next sync into
-  // an empty-cloud overwrite of the user's complete local state.
-  await dependencies.restoreCloud(snapshot.workspace.id, backup);
+  onRegistered?.(registration.recoveryCode);
+
+  // Persist a recoverable provisioning state immediately after account
+  // creation. Normal sync refuses to run in this state, so even if cloud
+  // restore fails (or the app is closed) an empty cloud can never overwrite
+  // the complete local workspace.
+  await dependencies.link(
+    snapshot,
+    registration.account.user.loginName,
+    'provisioning',
+  );
+
+  const revision = await dependencies.restoreCloud(snapshot.workspace.id, backup);
   await dependencies.clearOutbox(snapshot.workspace.id);
-  await dependencies.link(snapshot, registration.account.user.loginName);
+  await dependencies.markReady(snapshot.workspace.id, revision);
 
   const linkedSnapshot = await dependencies.load();
   if (
     !linkedSnapshot
     || linkedSnapshot.workspace.id !== snapshot.workspace.id
     || !linkedSnapshot.cloudLink
+    || linkedSnapshot.cloudLink.initializationState === 'provisioning'
   ) {
     throw new Error('CLOUD_LINK_STATE_INVALID');
   }
@@ -85,4 +103,24 @@ export async function linkExistingLocalWorkspaceToCloud(
     recoveryCode: registration.recoveryCode,
     sync,
   };
+}
+
+
+/**
+ * Completes a cloud promotion that was interrupted after account creation.
+ * The local workspace remains authoritative until the full restore succeeds.
+ */
+export async function resumeCloudWorkspacePromotion(
+  snapshot: LocalPlatformSnapshot,
+  dependencies: CloudLinkWorkflowDependencies = defaultDependencies,
+): Promise<SyncRunResult> {
+  if (!snapshot.cloudLink || snapshot.cloudLink.initializationState !== 'provisioning') {
+    throw new Error('CLOUD_PROMOTION_NOT_PENDING');
+  }
+
+  const backup = await dependencies.createBackup(snapshot);
+  const revision = await dependencies.restoreCloud(snapshot.workspace.id, backup);
+  await dependencies.clearOutbox(snapshot.workspace.id);
+  await dependencies.markReady(snapshot.workspace.id, revision);
+  return dependencies.sync(snapshot.workspace.id);
 }
