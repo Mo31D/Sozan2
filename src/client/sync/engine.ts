@@ -27,9 +27,10 @@ type PushResponse = {
     retryable?: boolean;
   }>;
   serverTime: string;
+  revision: number;
 };
 type ModuleSnapshot = { moduleKey: string; data: unknown };
-type SnapshotResponse = { workspaceId: string; generatedAt: string; modules: ModuleSnapshot[] };
+export type SnapshotResponse = { workspaceId: string; generatedAt: string; revision: number; modules: ModuleSnapshot[] };
 type WorkspaceRow = Record<string, unknown> & { workspaceId: string };
 type EntitySyncRow = WorkspaceRow & { id: string };
 type CoreSnapshot = {
@@ -67,7 +68,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 async function updateCloudLink(
   workspaceId: string,
-  update: Partial<Pick<LocalCloudLinkRecord, 'lastCloudPullAt' | 'lastCloudPushAt'>>,
+  update: Partial<Pick<LocalCloudLinkRecord, 'lastCloudPullAt' | 'lastCloudPushAt' | 'serverRevision'>>,
 ): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(STORES.coreCloudLinks, 'readwrite');
@@ -75,6 +76,15 @@ async function updateCloudLink(
   const current = await requestResult<LocalCloudLinkRecord | undefined>(store.get(workspaceId));
   if (current) store.put({ ...current, ...update });
   await transactionDone(transaction);
+}
+
+async function cloudRevision(workspaceId: string): Promise<number> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(STORES.coreCloudLinks, 'readonly');
+  const row = await requestResult<LocalCloudLinkRecord | undefined>(
+    transaction.objectStore(STORES.coreCloudLinks).get(workspaceId),
+  );
+  return Math.max(0, Number(row?.serverRevision ?? 0));
 }
 
 async function seedInitialLocalState(workspaceId: string): Promise<void> {
@@ -133,7 +143,7 @@ async function replaceWorkspaceRows(
   for (const row of rows) store.put(row);
 }
 
-async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
+export async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
   const core = snapshot.modules.find((item) => item.moduleKey === 'core')?.data as CoreSnapshot | undefined;
   const tutoring = snapshot.modules.find((item) => item.moduleKey === 'tutoring')?.data as TutoringSnapshot | undefined;
   const appointments = snapshot.modules.find((item) => item.moduleKey === 'appointments')?.data as AppointmentsSnapshot | undefined;
@@ -195,9 +205,10 @@ export async function runWorkspaceSync(
   let pushed = 0;
   let failed = 0;
   if (pending.length) {
+    const baseRevision = await cloudRevision(workspaceId);
     const response = await requestJson<PushResponse>(`/api/sync/${encodeURIComponent(workspaceId)}/push`, {
       method: 'POST',
-      body: JSON.stringify({ mutations: pending }),
+      body: JSON.stringify({ baseRevision, mutations: pending }),
     });
     for (const result of response.results) {
       if (result.status === 'applied' || result.status === 'duplicate') {
@@ -210,7 +221,10 @@ export async function runWorkspaceSync(
         failed += 1;
       }
     }
-    if (pushed) await updateCloudLink(workspaceId, { lastCloudPushAt: response.serverTime });
+    await updateCloudLink(workspaceId, {
+      serverRevision: response.revision,
+      ...(pushed ? { lastCloudPushAt: response.serverTime } : {}),
+    });
   }
 
   const remaining = await listPendingSyncMutations(workspaceId);
@@ -228,6 +242,9 @@ export async function runWorkspaceSync(
 
   const snapshot = await requestJson<SnapshotResponse>(`/api/sync/${encodeURIComponent(workspaceId)}/snapshot`);
   await applySnapshot(snapshot);
-  await updateCloudLink(workspaceId, { lastCloudPullAt: snapshot.generatedAt });
+  await updateCloudLink(workspaceId, {
+    lastCloudPullAt: snapshot.generatedAt,
+    serverRevision: snapshot.revision,
+  });
   return { pushed, pulled: true, pending: 0, failed: 0, deadLetters, syncedAt: snapshot.generatedAt };
 }
