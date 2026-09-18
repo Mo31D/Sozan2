@@ -92,10 +92,10 @@ export function App() {
   };
 
   const common = {
-    key: `${local.snapshot.workspace.id}-${dataRevision}`,
     snapshot: local.snapshot,
     cloudAvailable: cloudAccountsAvailable(cloud),
     onPlatformChanged: reloadLocal,
+    dataRevision,
   };
 
   if (local.snapshot.workspace.templateKey === 'appointments') {
