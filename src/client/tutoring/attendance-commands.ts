@@ -103,6 +103,9 @@ export async function completeLocalSession(
     travelMinutesSnapshot: session.travelMinutes,
     sessionTypeSnapshot: session.sessionType,
     locationSnapshot: session.location,
+    priceBasisSnapshot: session.priceBasis,
+    defaultPricePenceSnapshot: session.defaultPricePence,
+    payerStudentIdSnapshot: session.payerStudentId,
   };
   occurrenceStore.put(completedOccurrence);
 
