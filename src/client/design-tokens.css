@@ -1,0 +1,34 @@
+:root{
+  --ui-canvas:#f8f6fb;
+  --ui-surface:#ffffff;
+  --ui-surface-soft:#faf8fc;
+  --ui-border:#e2d9e7;
+  --ui-border-strong:#d5c9df;
+  --ui-text:#302938;
+  --ui-muted:#817789;
+  --ui-primary:#72509b;
+  --ui-primary-strong:#604182;
+  --ui-primary-soft:#f0e9f6;
+  --ui-primary-soft-strong:#e8dcf2;
+  --ui-success:#39704a;
+  --ui-success-soft:#eaf5ed;
+  --ui-warning:#8a6126;
+  --ui-warning-soft:#fff7e8;
+  --ui-danger:#9e4747;
+  --ui-danger-soft:#fbe9e7;
+
+  --ui-radius-xs:10px;
+  --ui-radius-sm:14px;
+  --ui-radius-md:18px;
+  --ui-radius-lg:24px;
+  --ui-radius-xl:28px;
+
+  --ui-space-1:4px;
+  --ui-space-2:8px;
+  --ui-space-3:12px;
+  --ui-space-4:16px;
+  --ui-space-5:24px;
+
+  --ui-shadow-soft:0 5px 20px rgba(59,42,73,.035);
+  --ui-shadow-float:0 10px 28px rgba(59,42,73,.08);
+}

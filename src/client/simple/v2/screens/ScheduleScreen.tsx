@@ -3,11 +3,12 @@ import type { SimpleWorkspaceData } from '../../data';
 import { QuickForm, ScheduleTab, ScreenHeader } from '../components';
 import { ArabicTimeField } from '../localized-fields';
 import { lessonTimeDefaults } from '../session-defaults';
-import type { AddDraft, ScheduleMode } from '../types';
+import type { AddDraft, ScheduleMode, WeekDisplay } from '../types';
 import { todayIso, weekdayForIso, WEEKDAYS } from '../utils';
 import { EditScheduleView } from './schedule/EditScheduleView';
 import { FreeTimeView } from './schedule/FreeTimeView';
 import { MonthView } from './schedule/MonthView';
+import { WeekGridView } from './schedule/WeekGridView';
 import { WeekView } from './schedule/WeekView';
 
 export function ScheduleScreen({
@@ -15,6 +16,9 @@ export function ScheduleScreen({
   busy,
   mode,
   assistantLabel,
+  timeZone,
+  weekDisplay,
+  onWeekDisplay,
   onMode,
   monthCursor,
   onMonthCursor,
@@ -28,6 +32,9 @@ export function ScheduleScreen({
   busy: boolean;
   mode: ScheduleMode;
   assistantLabel: string;
+  timeZone: string;
+  weekDisplay: WeekDisplay;
+  onWeekDisplay: (display: WeekDisplay) => void;
   onMode: (mode: ScheduleMode) => void;
   monthCursor: Date;
   onMonthCursor: (date: Date) => void;
@@ -157,7 +164,17 @@ export function ScheduleScreen({
         <ScheduleTab active={mode === 'edit'} label="تعديل" onClick={() => { onMode('edit'); setFocusPending(false); }} />
       </div>
 
-      {mode === 'week' && <WeekView data={data} onEdit={openEdit} onOpenStudent={onOpenStudent} />}
+      {mode === 'week' && (
+        <>
+          <div className="week-view-switch" role="group" aria-label="طريقة عرض الأسبوع">
+            <button type="button" className={weekDisplay === 'list' ? 'active' : ''} onClick={() => onWeekDisplay('list')}>قائمة</button>
+            <button type="button" className={weekDisplay === 'grid' ? 'active' : ''} onClick={() => onWeekDisplay('grid')}>جدول</button>
+          </div>
+          {weekDisplay === 'list'
+            ? <WeekView data={data} onEdit={openEdit} onOpenStudent={onOpenStudent} />
+            : <WeekGridView data={data} timeZone={timeZone} onEdit={openEdit} />}
+        </>
+      )}
       {mode === 'month' && <MonthView data={data} cursor={monthCursor} onCursor={onMonthCursor} onOpenDay={onOpenDay} />}
       {mode === 'free' && <FreeTimeView data={data} start={freeStart} end={freeEnd} onStart={setFreeStart} onEnd={setFreeEnd} onUseSlot={(date, startTime) => openAdd({ weekday: weekdayForIso(date), startTime })} />}
       {mode === 'edit' && <EditScheduleView data={data} busy={busy} editingId={editingId} focusPending={focusPending} onEditing={setEditingId} onSave={onUpdate} onOpenStudent={onOpenStudent} />}
