@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { buildStudentFinancialSummary } from '../../../../modules/reports/student-finance';
 import type { LocalPlatformSnapshot } from '../../../adapters/indexeddb/platform.repository';
 import type { ControlTab } from '../../../control/contracts';
@@ -42,13 +42,14 @@ export function MoneyScreen({
   busy: boolean;
   assistantLabel: string;
   onMode: (mode: MoneyMode) => void;
-  onCollect: (form: FormData) => void;
+  onCollect: (form: FormData) => Promise<boolean>;
   onExpense: (form: FormData) => void;
   onOpenStudent: (studentId: string) => void;
   onOpenAdvanced: (tab: ControlTab) => void;
 }) {
   const [view, setView] = useState<MoneyView>(() => initialList ? { kind: 'list', list: initialList } : { kind: 'overview' });
   const [receiptStudentId, setReceiptStudentId] = useState('');
+  const [collectingStudentId, setCollectingStudentId] = useState<string | null>(null);
   const currency = snapshot.workspace.currencyLabel;
   const month = todayIso().slice(0, 7);
   const receipts = data.receipts.filter((row) => row.receivedAt.startsWith(month));
@@ -81,13 +82,40 @@ export function MoneyScreen({
       return (
         <MoneySubView title="مطلوب تحصيله الآن" subtitle={`الإجمالي ${money(due, currency)}`} onBack={backToOverview}>
           <div className="money-ledger-list">
-            {dueStudents.map(({ student, summary }) => (
-              <button type="button" className="money-person-row" key={student.id} onClick={() => onOpenStudent(student.id)}>
-                <div className="avatar-circle">{student.name.trim().charAt(0)}</div>
-                <span><strong>{student.name}</strong><small>{planFor(data, student.id)?.billingMode === 'package' ? `باقة · ${packageProgress(data, student.id)}` : 'الحساب بالحصة'}</small></span>
-                <b>{money(summary.duePence, currency)}</b>
-              </button>
-            ))}
+            {dueStudents.map(({ student, summary }) => {
+              const collecting = collectingStudentId === student.id;
+              return (
+                <article className={`money-due-item${collecting ? ' collecting' : ''}`} key={student.id}>
+                  <div className="money-due-row">
+                    <button type="button" className="money-person-row money-due-person" onClick={() => onOpenStudent(student.id)}>
+                      <div className="avatar-circle">{student.name.trim().charAt(0)}</div>
+                      <span><strong>{student.name}</strong><small>{planFor(data, student.id)?.billingMode === 'package' ? `باقة · ${packageProgress(data, student.id)}` : 'الحساب بالحصة'}</small></span>
+                      <b>{money(summary.duePence, currency)}</b>
+                    </button>
+                    <button
+                      type="button"
+                      className={`money-due-collect-button${collecting ? ' active' : ''}`}
+                      disabled={busy}
+                      aria-expanded={collecting}
+                      onClick={() => setCollectingStudentId(collecting ? null : student.id)}
+                    >
+                      {collecting ? 'إلغاء' : 'تم التحصيل'}
+                    </button>
+                  </div>
+                  {collecting && (
+                    <DueCollectionForm
+                      studentId={student.id}
+                      studentName={student.name}
+                      duePence={summary.duePence}
+                      currency={currency}
+                      busy={busy}
+                      onCancel={() => setCollectingStudentId(null)}
+                      onCollect={onCollect}
+                    />
+                  )}
+                </article>
+              );
+            })}
             {!dueStudents.length && <div className="friendly-empty">مفيش مستحقات جاهزة للتحصيل حاليًا.</div>}
           </div>
         </MoneySubView>
@@ -213,6 +241,66 @@ export function MoneyScreen({
 
 function MoneyMetric({ label, value, accent = false, onClick }: { label: string; value: string; accent?: boolean; onClick: () => void }) {
   return <button type="button" className={`metric-card money-metric-button ${accent ? 'accent' : ''}`} onClick={onClick}><span>{label}</span><strong>{value}</strong><small>عرض التفاصيل ‹</small></button>;
+}
+
+function DueCollectionForm({
+  studentId,
+  studentName,
+  duePence,
+  currency,
+  busy,
+  onCancel,
+  onCollect,
+}: {
+  studentId: string;
+  studentName: string;
+  duePence: number;
+  currency: string;
+  busy: boolean;
+  onCancel: () => void;
+  onCollect: (form: FormData) => Promise<boolean>;
+}) {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const success = await onCollect(new FormData(event.currentTarget));
+    if (success) onCancel();
+  };
+  const defaultAmount = (duePence / 100).toFixed(2).replace(/\.00$/u, '');
+
+  return (
+    <form className="money-due-collection-form" onSubmit={(event) => void submit(event)}>
+      <input type="hidden" name="studentId" value={studentId} />
+      <div className="money-due-confirm-copy">
+        <strong>تأكيد التحصيل من {studentName}</strong>
+        <small>المستحق الآن {money(duePence, currency)}. عدّلي المبلغ فقط لو تم دفع جزء مختلف.</small>
+      </div>
+      <label>
+        <span>المبلغ</span>
+        <input name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={defaultAmount} required />
+      </label>
+      <label>
+        <span>تاريخ التحصيل</span>
+        <ArabicDateField name="receivedAt" defaultValue={todayIso()} ariaLabel="تاريخ التحصيل" />
+      </label>
+      <label>
+        <span>طريقة الدفع</span>
+        <select name="paymentMethod" defaultValue="cash">
+          <option value="cash">كاش</option>
+          <option value="bank">بنك</option>
+          <option value="wallet">محفظة</option>
+          <option value="other">أخرى</option>
+        </select>
+      </label>
+      <label>
+        <span>ملاحظة</span>
+        <input name="note" placeholder="اختياري" />
+      </label>
+      <div className="money-due-confirm-actions">
+        <button className="primary-small" type="submit" disabled={busy}>{busy ? 'جاري التسجيل…' : `تأكيد تحصيل ${money(duePence, currency)}`}</button>
+        <button className="secondary-small" type="button" disabled={busy} onClick={onCancel}>إلغاء</button>
+      </div>
+    </form>
+  );
 }
 
 function MoneySubView({ title, subtitle, onBack, children }: { title: string; subtitle?: string; onBack: () => void; children: React.ReactNode }) {
