@@ -23,6 +23,9 @@ type OccurrenceRow = {
   travel_minutes_snapshot: number | null;
   session_type_snapshot: string | null;
   location_snapshot: string | null;
+  price_basis_snapshot: 'total_session' | 'per_student' | null;
+  default_price_pence_snapshot: number | null;
+  payer_student_id_snapshot: string | null;
   student_id: string | null;
 };
 
@@ -33,7 +36,8 @@ const SELECT_OCCURRENCES = `
          o.completed_at, o.note,
          o.duration_minutes_snapshot, o.travel_minutes_snapshot,
          o.session_type_snapshot, o.location_snapshot,
-         os.student_id
+         o.price_basis_snapshot, o.default_price_pence_snapshot,
+         o.payer_student_id_snapshot, os.student_id
   FROM tutoring_occurrences o
   LEFT JOIN tutoring_occurrence_students os
     ON os.workspace_id = o.workspace_id
@@ -65,6 +69,9 @@ function mapRows(rows: OccurrenceRow[]): TutoringOccurrence[] {
         travelMinutesSnapshot: row.travel_minutes_snapshot,
         sessionTypeSnapshot: row.session_type_snapshot,
         locationSnapshot: row.location_snapshot,
+        priceBasisSnapshot: row.price_basis_snapshot,
+        defaultPricePenceSnapshot: row.default_price_pence_snapshot,
+        payerStudentIdSnapshot: row.payer_student_id_snapshot,
       };
       items.set(row.id, occurrence);
     }
@@ -130,7 +137,8 @@ export class D1OccurrenceRepository implements OccurrenceRepository {
              earned_pence = ?5, completed_at = ?6, note = ?7,
              duration_minutes_snapshot = ?8, travel_minutes_snapshot = ?9,
              session_type_snapshot = ?10, location_snapshot = ?11,
-             updated_at = CURRENT_TIMESTAMP
+             price_basis_snapshot = ?12, default_price_pence_snapshot = ?13,
+             payer_student_id_snapshot = ?14, updated_at = CURRENT_TIMESTAMP
          WHERE workspace_id = ?1 AND id = ?2 AND status IN ('scheduled', 'missed')`,
       ).bind(
         workspaceId,
@@ -144,6 +152,9 @@ export class D1OccurrenceRepository implements OccurrenceRepository {
         snapshot.travelMinutes,
         snapshot.sessionType,
         snapshot.location,
+        snapshot.priceBasis,
+        snapshot.defaultPricePence,
+        snapshot.payerStudentId,
       ),
       this.db.prepare(
         `DELETE FROM tutoring_occurrence_students
