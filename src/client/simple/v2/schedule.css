@@ -281,6 +281,7 @@
 .week-grid-entry.type-center_group{--week-entry-color:#c99b57;background:#fbf6ec}
 .week-grid-entry.type-own_group{--week-entry-color:#8065b5;background:#f3eff9}
 .week-grid-entry.status-completed{filter:saturate(.72);opacity:.86}
+.week-grid-entry.status-cancelled{opacity:.48;text-decoration:line-through}
 .week-grid-entry.status-missed{--week-entry-color:#b7834d;background:#fff7eb}
 
 .week-grid-outside{
