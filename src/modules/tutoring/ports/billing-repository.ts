@@ -6,6 +6,7 @@ export interface BillingRepository {
   hasBillingHistory(workspaceId: string, studentId: string): Promise<boolean>;
   getCurrentCycle(workspaceId: string, studentId: string): Promise<BillingCycle | null>;
   getOpenCycle(workspaceId: string, studentId: string): Promise<BillingCycle | null>;
+  getCycleForOccurrence(workspaceId: string, studentId: string, occurrenceId: string): Promise<BillingCycle | null>;
   getNextSequenceNo(workspaceId: string, studentId: string): Promise<number>;
   createCycle(input: Omit<BillingCycle, 'realCompletedCount'>): Promise<BillingCycle>;
   updateOpeningProgress(input: {
