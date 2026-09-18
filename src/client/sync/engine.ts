@@ -96,6 +96,16 @@ async function cloudRevision(workspaceId: string): Promise<number> {
   return Math.max(0, Number(row?.serverRevision ?? 0));
 }
 
+async function mergeWorkspaceRows(
+  store: IDBObjectStore,
+  workspaceId: string,
+  rows: WorkspaceRow[],
+): Promise<void> {
+  for (const row of rows) {
+    if (row.workspaceId === workspaceId) store.put(row);
+  }
+}
+
 async function replaceWorkspaceRows(
   store: IDBObjectStore,
   workspaceId: string,
@@ -137,7 +147,10 @@ export async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(stores, 'readwrite');
   if (core) {
-    await replaceWorkspaceRows(transaction.objectStore(STORES.coreActivityEvents), snapshot.workspaceId, core.activityEvents);
+    // Activity is append-mostly audit history. The server intentionally sends
+    // a bounded recent window; replacing the store would silently erase older
+    // local history on every pull. Merge authoritative recent rows instead.
+    await mergeWorkspaceRows(transaction.objectStore(STORES.coreActivityEvents), snapshot.workspaceId, core.activityEvents);
     await replaceWorkspaceRows(transaction.objectStore(STORES.coreWorkspaceSettings), snapshot.workspaceId, core.workspaceSettings ?? []);
   }
   if (tutoring) {
