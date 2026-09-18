@@ -4,6 +4,7 @@ import {
   loginCloudAccount,
 } from './account-api';
 import { linkExistingLocalWorkspaceToCloud, resumeCloudWorkspacePromotion } from './link-workflow';
+import { resumePendingBackupImport } from '../backup/workspace-backup';
 import {
   hydrateLocalPlatformFromCloud,
   loadLocalPlatform,
@@ -128,8 +129,13 @@ export function CloudLinkPanel({
       setBusy(true);
       setError('');
       try {
-        const sync = await resumeCloudWorkspacePromotion(snapshot);
-        setSyncResult(sync);
+        if (snapshot.cloudLink?.provisioningReason === 'backup-import') {
+          await resumePendingBackupImport(snapshot);
+          setSyncResult(null);
+        } else {
+          const sync = await resumeCloudWorkspacePromotion(snapshot);
+          setSyncResult(sync);
+        }
         await onLinked();
       } catch (cause) {
         setError(messageFor(cause));
@@ -305,6 +311,9 @@ function messageFor(cause: unknown): string {
     BACKUP_NETWORK_ERROR: 'تعذر الاتصال بالسحابة. بيانات الجهاز محفوظة ويمكن إعادة المحاولة.',
     BACKUP_REQUEST_TIMEOUT: 'انتهت مهلة الاتصال بالسحابة. بيانات الجهاز محفوظة ويمكن إعادة المحاولة.',
     BACKUP_TOO_LARGE_FOR_ATOMIC_RESTORE: 'النسخة أكبر من الحد الآمن للرفع السحابي الحالي.',
+    BACKUP_IMPORT_NOT_PENDING: 'لا توجد نسخة مستوردة معلقة تحتاج إلى رفع.',
+    BACKUP_IMPORT_IN_PROGRESS: 'رفع النسخة ما زال قيد التنفيذ على السحابة. انتظر قليلًا ثم أعد المحاولة.',
+    BACKUP_IMPORT_REVISION_CONFLICT: 'تم تغيير بيانات السحابة من جهاز آخر. النسخة المحلية ما زالت محمية ولم تُستبدل.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
 }
