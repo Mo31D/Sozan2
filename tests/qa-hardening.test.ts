@@ -27,11 +27,13 @@ const session: RecurringSession = {
   centerCutBps: 0,
   active: true,
   studentIds: [studentId],
+  payerStudentId: studentId,
 };
 
 function emptyData(): SimpleWorkspaceData {
   return {
     students: [],
+    studentBaselines: [],
     sessions: [],
     occurrences: [],
     billingPlans: [],
@@ -64,6 +66,14 @@ describe('QA hardening regressions', () => {
       earnedPence: 0,
       completedAt: null,
       note: null,
+      studentIds: [],
+      durationMinutesSnapshot: null,
+      travelMinutesSnapshot: null,
+      sessionTypeSnapshot: null,
+      locationSnapshot: null,
+      priceBasisSnapshot: null,
+      defaultPricePenceSnapshot: null,
+      payerStudentIdSnapshot: null,
     }];
 
     const entries = scheduleEntriesForDate(data, '2026-09-17');
@@ -99,14 +109,22 @@ describe('QA hardening regressions', () => {
       earnedPence: 2500,
       completedAt: '2026-09-17T16:00:00.000Z',
       note: null,
+      studentIds: [studentId],
+      durationMinutesSnapshot: 60,
+      travelMinutesSnapshot: 0,
+      sessionTypeSnapshot: 'private_student_home',
+      locationSnapshot: null,
+      priceBasisSnapshot: 'total_session',
+      defaultPricePenceSnapshot: 2500,
+      payerStudentIdSnapshot: studentId,
     }];
     data.allocations = [{
       id: 'allocation-1',
       workspaceId,
       receiptId: 'receipt-1',
       targetModule: 'tutoring',
-      targetType: 'occurrence',
-      targetId: '10000000-0000-4000-8000-000000000011',
+      targetType: 'student_occurrence',
+      targetId: '10000000-0000-4000-8000-000000000011:10000000-0000-4000-8000-000000000002',
       amountPence: 1000,
     }];
 
