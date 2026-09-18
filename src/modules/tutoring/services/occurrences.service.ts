@@ -71,6 +71,9 @@ export class OccurrencesService {
     if (participants.some((studentId) => !session.studentIds.includes(studentId))) {
       throw new Error('OCCURRENCE_PARTICIPANT_INVALID');
     }
+    if (session.studentIds.length > 0 && participants.length === 0) {
+      throw new Error('OCCURRENCE_PARTICIPANT_REQUIRED');
+    }
 
     const { grossPence, centerCutPence, earnedPence } = completedSessionFinancials(
       session,
