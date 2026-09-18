@@ -3,7 +3,7 @@ import {
   getWorkspaceBootstrap,
   loginCloudAccount,
 } from './account-api';
-import { linkExistingLocalWorkspaceToCloud } from './link-workflow';
+import { linkExistingLocalWorkspaceToCloud, resumeCloudWorkspacePromotion } from './link-workflow';
 import {
   hydrateLocalPlatformFromCloud,
   loadLocalPlatform,
@@ -123,6 +123,38 @@ export function CloudLinkPanel({
     }
   };
 
+  if (snapshot.cloudLink?.initializationState === 'provisioning') {
+    const resume = async () => {
+      setBusy(true);
+      setError('');
+      try {
+        const sync = await resumeCloudWorkspacePromotion(snapshot);
+        setSyncResult(sync);
+        await onLinked();
+      } catch (cause) {
+        setError(messageFor(cause));
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    return (
+      <section className="panel cloud-link-panel cloud-register-panel">
+        <div className="cloud-register-copy">
+          <span className="panel-label">إكمال ربط الحساب</span>
+          <strong>{snapshot.cloudLink.loginName}</strong>
+          <small>الحساب اتعمل، لكن نقل نسخة البيانات الكاملة للسحابة لم يكتمل. بيانات الجهاز ما زالت محفوظة.</small>
+        </div>
+        <div className="cloud-actions">
+          <button className="primary-button" type="button" disabled={busy} onClick={() => void resume()}>
+            {busy ? 'جاري إكمال النقل…' : 'إكمال نقل البيانات بأمان'}
+          </button>
+        </div>
+        {error && <div className="status bad">{error}</div>}
+      </section>
+    );
+  }
+
   if (snapshot.cloudLink) {
     return (
       <section className="panel cloud-link-panel cloud-linked-panel">
@@ -198,10 +230,15 @@ export function CloudLinkPanel({
     setError('');
     const form = new FormData(event.currentTarget);
     try {
-      const result = await linkExistingLocalWorkspaceToCloud(snapshot, {
-        loginName: String(form.get('loginName') ?? ''),
-        password: String(form.get('password') ?? ''),
-      });
+      const result = await linkExistingLocalWorkspaceToCloud(
+        snapshot,
+        {
+          loginName: String(form.get('loginName') ?? ''),
+          password: String(form.get('password') ?? ''),
+        },
+        undefined,
+        setRecoveryCode,
+      );
       setRecoveryCode(result.recoveryCode);
       setSyncResult(result.sync);
       await onLinked();
@@ -253,6 +290,8 @@ function messageFor(cause: unknown): string {
     UNAUTHENTICATED: 'الجلسة انتهت. سجلي الدخول مرة أخرى.',
     WORKSPACE_FORBIDDEN: 'هذا الحساب لا يملك صلاحية لهذه البيانات.',
     SYNC_MODULE_UNSUPPORTED: 'يوجد جزء من البرنامج لم يُجهز للمزامنة بعد.',
+    CLOUD_INITIALIZATION_INCOMPLETE: 'ربط الحساب لم يكتمل بعد. استخدمي «إكمال نقل البيانات بأمان».',
+    CLOUD_PROMOTION_NOT_PENDING: 'لا توجد عملية ربط معلقة تحتاج إلى استكمال.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
 }
