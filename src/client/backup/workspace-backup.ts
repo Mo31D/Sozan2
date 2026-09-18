@@ -417,6 +417,7 @@ export async function resumePendingBackupImport(
 
     if (cloudLink.pendingBackupImportId) {
       try {
+        let retryWithNewId = false;
         for (let attempt = 0; attempt < 4; attempt += 1) {
           const status = await cloudImportStatus(workspaceId, importId);
           if (status.status === 'completed') {
@@ -426,13 +427,14 @@ export async function resumePendingBackupImport(
           if (status.status === 'failed') {
             if (['SYNC_WRITE_IN_PROGRESS', 'BACKUP_IMPORT_STALE'].includes(status.error)) {
               importId = crypto.randomUUID();
+              retryWithNewId = true;
               break;
             }
             throw new Error(status.error);
           }
           await new Promise((resolve) => globalThis.setTimeout(resolve, 500 * (attempt + 1)));
         }
-        throw new Error('BACKUP_IMPORT_IN_PROGRESS');
+        if (!retryWithNewId) throw new Error('BACKUP_IMPORT_IN_PROGRESS');
       } catch (error) {
         const code = error instanceof Error ? error.message : '';
         if (code !== 'BACKUP_IMPORT_NOT_FOUND') throw error;
