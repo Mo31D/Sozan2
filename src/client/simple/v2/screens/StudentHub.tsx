@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { buildStudentFinancialSummary } from '../../../../modules/reports/student-finance';
 import type { LocalPlatformSnapshot } from '../../../adapters/indexeddb/platform.repository';
 import type { ControlTab } from '../../../control/contracts';
-import { activeCycleFor, planFor, type SimpleWorkspaceData } from '../../data';
+import { activeCycleFor, baselineFor, planFor, type SimpleWorkspaceData } from '../../data';
 import { ArabicDateField, ArabicTimeField } from '../localized-fields';
 import {
   formatArabicDate,
@@ -45,7 +45,8 @@ export function StudentHub({
   const [collecting, setCollecting] = useState(false);
   const plan = student ? planFor(data, student.id) : null;
   const cycle = student ? activeCycleFor(data, student.id) : null;
-  const [billingMode, setBillingMode] = useState<'per_session' | 'package'>(plan?.billingMode ?? 'per_session');
+  const baseline = student ? baselineFor(data, student.id) : null;
+  const [billingMode, setBillingMode] = useState<'' | 'per_session' | 'package'>(plan?.billingMode ?? '');
 
   if (!student) {
     return <section className="simple-screen student-hub"><HubHeader title="الطالب غير موجود" onBack={onBack} /><div className="friendly-empty">تعذر العثور على بيانات الطالب.</div></section>;
@@ -80,7 +81,7 @@ export function StudentHub({
       </article>
 
       <div className="student-hub-metrics">
-        <Metric label="نظام الحساب" value={plan?.billingMode === 'package' ? `باقة ${packageProgress(data, student.id)}` : 'بالحصة'} />
+        <Metric label="نظام الحساب" value={plan?.billingMode === 'package' ? `باقة ${packageProgress(data, student.id)}` : plan?.billingMode === 'per_session' ? 'بالحصة' : 'غير محدد'} />
         <Metric label="مطلوب الآن" value={money(financial.duePence, currency)} attention={financial.duePence > 0} />
         <Metric label="قبضت منه" value={money(financial.receivedPence, currency)} />
         <Metric label="رصيد مقدم" value={money(financial.creditPence, currency)} />
@@ -107,6 +108,7 @@ export function StudentHub({
             <p><span>العمر</span><b>{student.age ?? 'غير مسجل'}</b></p>
             <p><span>المستوى</span><b>{student.level || 'غير مسجل'}</b></p>
             {student.notes && <p><span>ملاحظات</span><b>{student.notes}</b></p>}
+            {baseline && <p><span>قبل بداية التتبع</span><b>{baseline.completedLessonsBeforeTracking} حصة سابقة</b></p>}
           </div>
         )}
       </Section>
@@ -116,7 +118,7 @@ export function StudentHub({
           event.preventDefault();
           void onBillingSave(student.id, new FormData(event.currentTarget));
         }}>
-          <label>طريقة الحساب<select name="billingMode" value={billingMode} disabled={billingHistoryExists} onChange={(event) => setBillingMode(event.currentTarget.value as 'per_session' | 'package')}><option value="per_session">بالحصة</option><option value="package">باقة حصص</option></select></label>
+          <label>طريقة الحساب<select name="billingMode" value={billingMode} required disabled={billingHistoryExists} onChange={(event) => setBillingMode(event.currentTarget.value as '' | 'per_session' | 'package')}><option value="" disabled>اختاري نظام الحساب</option><option value="per_session">بالحصة</option><option value="package">باقة حصص</option></select></label>
           {billingHistoryExists && <input type="hidden" name="billingMode" value={plan?.billingMode ?? billingMode} />}
           {billingMode === 'package' && <>
             <label>عدد حصص الباقة<input name="packageSize" type="number" min="1" max="100" defaultValue={packageSize} /></label>
@@ -159,6 +161,8 @@ export function StudentHub({
                     <label>السعر<input name="price" type="number" min="0" step="0.01" defaultValue={session.defaultPricePence / 100} disabled={hasHistory} /></label>
                     <label>عدد الطلاب المتوقع<input name="expectedStudentCount" type="number" min="1" max="100" defaultValue={session.expectedStudentCount} disabled={hasHistory} /></label>
                     <label>عمولة السنتر %<input name="centerCut" type="number" min="0" max="100" step="0.01" defaultValue={session.centerCutBps / 100} disabled={hasHistory} /></label>
+                    <label>المسؤول عن سعر الحصة بالكامل<select name="payerStudentId" defaultValue={session.payerStudentId ?? ''} disabled={hasHistory}><option value="">غير محدد</option>{linkedStudents.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
+                    {hasHistory && <input type="hidden" name="payerStudentId" value={session.payerStudentId ?? ''} />}
                     {!hasHistory ? <fieldset className="student-hub-related-students wide"><legend>الطلاب المرتبطون بالحصة</legend><input type="hidden" name="studentIds" value={student.id} />{data.students.filter((candidate) => candidate.id !== student.id).map((candidate) => <label key={candidate.id}><input type="checkbox" name="studentIds" value={candidate.id} defaultChecked={session.studentIds.includes(candidate.id)} />{candidate.name}</label>)}</fieldset> : <>{session.studentIds.map((id) => <input type="hidden" name="studentIds" value={id} key={id} />)}<p className="student-hub-note wide">يوجد تاريخ حضور لهذه الحصة؛ السعر وطريقة التسعير والطلاب المرتبطون مقفولين لحماية الحسابات القديمة. باقي تفاصيل المواعيد القادمة قابلة للتعديل.</p></>}
                     <div className="student-hub-session-preview wide"><span>المحجوز في الجدول الآن</span><b>{formatDurationArabic(session.durationMinutes + session.travelMinutes)}</b></div>
                     <button className="student-hub-save wide" type="submit" disabled={busy}>حفظ كل تفاصيل الحصة</button>
@@ -185,7 +189,7 @@ export function StudentHub({
       </Section>
 
       <Section title="سجل الحضور" action={history.length ? `آخر ${history.length}` : undefined}>
-        <div className="student-hub-history">{history.map((occurrence) => { const session = data.sessions.find((row) => row.id === occurrence.recurringSessionId); return <div key={occurrence.id}><span><strong>{formatArabicDate(occurrence.rescheduledToDate ?? occurrence.sessionDate)}</strong><small>{session?.title ?? 'حصة'}{occurrence.scheduledStart ? ` · ${formatClockTime(occurrence.rescheduledToStart ?? occurrence.scheduledStart)}` : ''}</small></span><b className={`student-hub-state state-${occurrence.status}`}>{occurrenceStatus(occurrence.status)}</b></div>; })}{!history.length && <div className="friendly-empty">لسه مفيش تاريخ حضور مسجل.</div>}</div>
+        <div className="student-hub-history">{history.map((occurrence) => { const session = data.sessions.find((row) => row.id === occurrence.recurringSessionId); return <div key={occurrence.id}><span><strong>{formatArabicDate(occurrence.rescheduledToDate ?? occurrence.sessionDate)}</strong><small>{session?.title ?? 'حصة'}{occurrence.scheduledStart ? ` · ${formatClockTime(occurrence.rescheduledToStart ?? occurrence.scheduledStart)}` : ''}</small></span><b className={`student-hub-state state-${occurrence.status}`}>{occurrence.status === 'completed' && occurrence.studentIds && !occurrence.studentIds.includes(student.id) ? 'غائب' : occurrenceStatus(occurrence.status)}</b></div>; })}{!history.length && <div className="friendly-empty">لسه مفيش تاريخ حضور مسجل.</div>}</div>
       </Section>
     </section>
   );
