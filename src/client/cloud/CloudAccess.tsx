@@ -2,11 +2,10 @@ import { FormEvent, useEffect, useState } from 'react';
 import {
   getWorkspaceBootstrap,
   loginCloudAccount,
-  registerCloudAccount,
 } from './account-api';
+import { linkExistingLocalWorkspaceToCloud } from './link-workflow';
 import {
   hydrateLocalPlatformFromCloud,
-  linkLocalPlatformToCloud,
   loadLocalPlatform,
   type LocalPlatformSnapshot,
 } from '../adapters/indexeddb/platform.repository';
@@ -109,11 +108,11 @@ export function CloudLinkPanel({
     return () => { active = false; };
   }, [snapshot.cloudLink, snapshot.workspace.id]);
 
-  const syncNow = async (seedInitialState = false) => {
+  const syncNow = async () => {
     setBusy(true);
     setError('');
     try {
-      const result = await runWorkspaceSync(snapshot.workspace.id, { seedInitialState });
+      const result = await runWorkspaceSync(snapshot.workspace.id);
       setSyncResult(result);
       setDeadLetters(await listDeadLetterSyncMutations(snapshot.workspace.id));
       await onLinked();
@@ -139,7 +138,7 @@ export function CloudLinkPanel({
         </div>
         <div className="cloud-actions">
           <span className="cloud-linked-mark">متصل</span>
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => void syncNow(false)}>
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => void syncNow()}>
             {busy ? 'جاري المزامنة…' : 'زامن الآن'}
           </button>
         </div>
@@ -156,7 +155,7 @@ export function CloudLinkPanel({
                     <div>
                       <button type="button" disabled={busy} onClick={() => void (async () => {
                         await retryDeadLetterSyncMutation(row.id);
-                        await syncNow(false);
+                        await syncNow();
                       })()}>إعادة المحاولة</button>
                       <button type="button" disabled={busy} onClick={() => void (async () => {
                         await removeSyncMutation(row.id);
@@ -199,16 +198,12 @@ export function CloudLinkPanel({
     setError('');
     const form = new FormData(event.currentTarget);
     try {
-      const loginName = String(form.get('loginName') ?? '');
-      const result = await registerCloudAccount(
-        snapshot,
-        loginName,
-        String(form.get('password') ?? ''),
-      );
-      await linkLocalPlatformToCloud(snapshot, result.account.user.loginName);
+      const result = await linkExistingLocalWorkspaceToCloud(snapshot, {
+        loginName: String(form.get('loginName') ?? ''),
+        password: String(form.get('password') ?? ''),
+      });
       setRecoveryCode(result.recoveryCode);
-      const sync = await runWorkspaceSync(snapshot.workspace.id, { seedInitialState: true });
-      setSyncResult(sync);
+      setSyncResult(result.sync);
       await onLinked();
     } catch (cause) {
       setError(messageFor(cause));
