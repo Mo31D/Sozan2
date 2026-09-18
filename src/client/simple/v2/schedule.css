@@ -262,11 +262,28 @@
   gap:2px;
 }
 .week-grid-entry-copy strong{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:4px;
+  font-size:.76rem;
+  line-height:1.2;
+}
+.week-grid-entry-copy strong>span{
+  min-width:0;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
-  font-size:.76rem;
-  line-height:1.2;
+}
+.week-grid-entry-copy strong>b{
+  flex:0 0 auto;
+  border-radius:999px;
+  padding:2px 4px;
+  background:rgba(255,255,255,.72);
+  color:color-mix(in srgb,var(--week-entry-color,#72509b) 82%,#43384a);
+  font-size:.53rem;
+  line-height:1.15;
 }
 .week-grid-entry-copy small{
   overflow:hidden;
@@ -367,6 +384,7 @@
   }
   .week-grid-entry-accent{width:3px;min-height:14px}
   .week-grid-entry-copy strong{font-size:.63rem}
+  .week-grid-entry-copy strong>b{font-size:.45rem;padding:1px 3px}
   .week-grid-entry-copy small{font-size:.5rem}
 }
 
@@ -439,6 +457,7 @@
   .week-grid-entry-accent{width:2px;min-height:12px}
   .week-grid-entry-copy{gap:1px}
   .week-grid-entry-copy strong{font-size:.57rem;line-height:1.08}
+  .week-grid-entry-copy strong>b{font-size:.4rem;padding:1px 2px}
   .week-grid-entry-copy small{font-size:.44rem;line-height:1.08}
   .week-grid-outside>summary{padding:8px 10px;font-size:.7rem}
 }
