@@ -167,6 +167,22 @@ def validate_domain_integrity() -> None:
         raise SystemExit(f"Finance integrity view reports {violations} violations")
 
 
+    db.execute(
+        "INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id,revision) "
+        "VALUES('ws-integrity',0)"
+    )
+    first = db.execute(
+        "UPDATE core_workspace_sync_revisions "
+        "SET revision=revision+1 WHERE workspace_id='ws-integrity' AND revision=0"
+    )
+    second = db.execute(
+        "UPDATE core_workspace_sync_revisions "
+        "SET revision=revision+1 WHERE workspace_id='ws-integrity' AND revision=0"
+    )
+    if first.rowcount != 1 or second.rowcount != 0:
+        raise SystemExit("Workspace CAS revision did not reject a stale writer")
+
+
 def validate_no_tenant_data_in_schema_migrations() -> None:
     """Schema migrations must be reusable and must not seed real tenant rows."""
     db = make_database()
