@@ -31,10 +31,12 @@ export function AppointmentsWorkspace({
   snapshot,
   cloudAvailable,
   onPlatformChanged,
+  dataRevision,
 }: {
   snapshot: LocalPlatformSnapshot;
   cloudAvailable: boolean;
   onPlatformChanged: () => Promise<void>;
+  dataRevision: number;
 }) {
   const workspaceId = snapshot.workspace.id;
   const [page, setPage] = useState<AppointmentPage>('today');
@@ -58,9 +60,10 @@ export function AppointmentsWorkspace({
 
   useEffect(() => {
     void refresh();
-    // Workspace identity is the trigger; refresh remains intentionally local to this component.
+    // Refresh cloud-backed data in place. Do not remount the workspace because
+    // remounting resets the active page to "today".
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
+  }, [workspaceId, dataRevision]);
 
   const syncAfterWrite = async () => {
     if (snapshot.cloudLink && navigator.onLine) {

@@ -34,10 +34,12 @@ export function TutorWorkspace({
   snapshot,
   cloudAvailable,
   onPlatformChanged,
+  dataRevision,
 }: {
   snapshot: LocalPlatformSnapshot;
   cloudAvailable: boolean;
   onPlatformChanged: () => Promise<void>;
+  dataRevision: number;
 }) {
   const workspaceId = snapshot.workspace.id;
   const [page, setPage] = useState<PageKey>('today');
@@ -67,9 +69,10 @@ export function TutorWorkspace({
 
   useEffect(() => {
     void refresh();
-    // Workspace identity is the only trigger; refresh itself is deliberately not memoized.
+    // Background sync changes data, not navigation. Refresh the data in-place
+    // so the active page/student/schedule state remains mounted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
+  }, [workspaceId, dataRevision]);
 
   const syncAfterWrite = async () => {
     if (snapshot.cloudLink && navigator.onLine) {
