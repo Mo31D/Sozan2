@@ -99,6 +99,19 @@ WHERE (
     AND ss.recurring_session_id=tutoring_recurring_sessions.id
 )=1;
 
+-- Preserve the unambiguous payer for historical single-student total-session
+-- lessons. Group total-session history stays unassigned rather than guessing.
+UPDATE tutoring_occurrences
+SET payer_student_id_snapshot = (
+  SELECT s.payer_student_id
+  FROM tutoring_recurring_sessions s
+  WHERE s.workspace_id=tutoring_occurrences.workspace_id
+    AND s.id=tutoring_occurrences.recurring_session_id
+)
+WHERE status='completed'
+  AND price_basis_snapshot='total_session'
+  AND payer_student_id_snapshot IS NULL;
+
 -- ---------------------------------------------------------------------------
 -- FINANCE TARGET ISOLATION
 -- A per-student charge in a group lesson must not share one allocation target
