@@ -75,12 +75,13 @@ export function DataTools({
       const checked = await validateWorkspaceBackupForImport(snapshot, restoreBackup);
       setRestoreValidation(checked.validation);
 
-      setBackupMessage('جاري إنشاء نسخة أمان محلية قبل الاستيراد…');
-      const safety = await createLocalWorkspaceBackup(snapshot);
-      downloadWorkspaceBackup(safety, 'قبل-الاستيراد');
-
-      setBackupMessage('جاري استبدال البيانات على الجهاز…');
-      const outcome = await importWorkspaceBackupLocalFirst(snapshot, checked.backup);
+      setBackupMessage('جاري إنشاء نسخة أمان محلية ثم استبدال البيانات…');
+      const outcome = await importWorkspaceBackupLocalFirst(snapshot, checked.backup, {
+        onSafetyBackup: (safety) => {
+          downloadWorkspaceBackup(safety, 'قبل-الاستيراد');
+          setBackupMessage('تم حفظ نسخة الأمان. جاري استبدال البيانات على الجهاز…');
+        },
+      });
 
       setRestoreBackup(null);
       setRestoreFilename('');
