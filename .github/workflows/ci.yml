@@ -48,6 +48,7 @@ jobs:
               'tutoring_recurring_sessions',
               'tutoring_session_students',
               'tutoring_occurrences',
+              'tutoring_occurrence_students',
               'tutoring_billing_plans',
               'tutoring_billing_cycles',
               'tutoring_billing_cycle_occurrences',
