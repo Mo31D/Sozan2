@@ -100,3 +100,24 @@ export async function failSyncMutation(id: string, message: string): Promise<voi
 export async function deadLetterSyncMutation(id: string, message: string): Promise<void> {
   await updateFailureState(id, 'dead_letter', message);
 }
+
+export async function retryDeadLetterSyncMutation(id: string): Promise<void> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(STORES.syncOutbox, 'readwrite');
+  const store = transaction.objectStore(STORES.syncOutbox);
+  const row = await requestResult<SyncOutboxRecord | undefined>(store.get(id));
+  if (!row) {
+    await transactionDone(transaction);
+    return;
+  }
+  if (row.status !== 'dead_letter') {
+    await transactionDone(transaction);
+    return;
+  }
+  store.put({
+    ...row,
+    status: 'pending',
+    lastError: null,
+  } satisfies SyncOutboxRecord);
+  await transactionDone(transaction);
+}
