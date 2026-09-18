@@ -19,6 +19,10 @@ type OccurrenceRow = {
   earned_pence: number;
   completed_at: string | null;
   note: string | null;
+  duration_minutes_snapshot: number | null;
+  travel_minutes_snapshot: number | null;
+  session_type_snapshot: string | null;
+  location_snapshot: string | null;
   student_id: string | null;
 };
 
@@ -26,10 +30,15 @@ const SELECT_OCCURRENCES = `
   SELECT o.id, o.workspace_id, o.recurring_session_id, o.session_date, o.scheduled_start,
          o.rescheduled_to_date, o.rescheduled_to_start, o.status,
          o.gross_pence, o.center_cut_pence, o.earned_pence,
-         o.completed_at, o.note, ss.student_id
+         o.completed_at, o.note,
+         o.duration_minutes_snapshot, o.travel_minutes_snapshot,
+         o.session_type_snapshot, o.location_snapshot,
+         os.student_id
   FROM tutoring_occurrences o
-  LEFT JOIN tutoring_session_students ss
-    ON ss.workspace_id = o.workspace_id AND ss.recurring_session_id = o.recurring_session_id
+  LEFT JOIN tutoring_occurrence_students os
+    ON os.workspace_id = o.workspace_id
+   AND os.occurrence_id = o.id
+   AND os.attendance_status = 'attended'
 `;
 
 function mapRows(rows: OccurrenceRow[]): TutoringOccurrence[] {
@@ -52,6 +61,10 @@ function mapRows(rows: OccurrenceRow[]): TutoringOccurrence[] {
         completedAt: row.completed_at,
         note: row.note,
         studentIds: [],
+        durationMinutesSnapshot: row.duration_minutes_snapshot,
+        travelMinutesSnapshot: row.travel_minutes_snapshot,
+        sessionTypeSnapshot: row.session_type_snapshot,
+        locationSnapshot: row.location_snapshot,
       };
       items.set(row.id, occurrence);
     }
@@ -69,7 +82,7 @@ export class D1OccurrenceRepository implements OccurrenceRepository {
        WHERE o.workspace_id = ?1
          AND COALESCE(o.rescheduled_to_date, o.session_date) BETWEEN ?2 AND ?3
        ORDER BY COALESCE(o.rescheduled_to_date, o.session_date),
-                COALESCE(o.rescheduled_to_start, o.scheduled_start, '99:99'), o.id, ss.student_id`,
+                COALESCE(o.rescheduled_to_start, o.scheduled_start, '99:99'), o.id, os.student_id`,
     ).bind(workspaceId, from, to).all<OccurrenceRow>();
     return mapRows(result.results ?? []);
   }
@@ -78,7 +91,7 @@ export class D1OccurrenceRepository implements OccurrenceRepository {
     const result = await this.db.prepare(
       `${SELECT_OCCURRENCES}
        WHERE o.workspace_id = ?1 AND o.id = ?2
-       ORDER BY ss.student_id`,
+       ORDER BY os.student_id`,
     ).bind(workspaceId, occurrenceId).all<OccurrenceRow>();
     return mapRows(result.results ?? [])[0] ?? null;
   }
@@ -104,21 +117,58 @@ export class D1OccurrenceRepository implements OccurrenceRepository {
     occurrenceId: string,
     snapshot: CompletionSnapshot,
   ): Promise<void> {
-    const result = await this.db.prepare(
-      `UPDATE tutoring_occurrences
-       SET status = 'completed', gross_pence = ?3, center_cut_pence = ?4,
-           earned_pence = ?5, completed_at = ?6, note = ?7, updated_at = CURRENT_TIMESTAMP
-       WHERE workspace_id = ?1 AND id = ?2 AND status IN ('scheduled', 'missed')`,
-    ).bind(
-      workspaceId,
-      occurrenceId,
-      snapshot.grossPence,
-      snapshot.centerCutPence,
-      snapshot.earnedPence,
-      snapshot.completedAt,
-      snapshot.note,
-    ).run();
-    if ((result.meta.changes ?? 0) === 0) throw new Error('OCCURRENCE_STATE_INVALID');
+    const sessionStudents = [...new Set(snapshot.sessionStudentIds)];
+    const participants = [...new Set(snapshot.participantStudentIds)];
+    if (participants.some((studentId) => !sessionStudents.includes(studentId))) {
+      throw new Error('OCCURRENCE_PARTICIPANT_INVALID');
+    }
+
+    const statements: D1PreparedStatement[] = [
+      this.db.prepare(
+        `UPDATE tutoring_occurrences
+         SET status = 'completed', gross_pence = ?3, center_cut_pence = ?4,
+             earned_pence = ?5, completed_at = ?6, note = ?7,
+             duration_minutes_snapshot = ?8, travel_minutes_snapshot = ?9,
+             session_type_snapshot = ?10, location_snapshot = ?11,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE workspace_id = ?1 AND id = ?2 AND status IN ('scheduled', 'missed')`,
+      ).bind(
+        workspaceId,
+        occurrenceId,
+        snapshot.grossPence,
+        snapshot.centerCutPence,
+        snapshot.earnedPence,
+        snapshot.completedAt,
+        snapshot.note,
+        snapshot.durationMinutes,
+        snapshot.travelMinutes,
+        snapshot.sessionType,
+        snapshot.location,
+      ),
+      this.db.prepare(
+        `DELETE FROM tutoring_occurrence_students
+         WHERE workspace_id=?1 AND occurrence_id=?2`,
+      ).bind(workspaceId, occurrenceId),
+    ];
+
+    const participantSet = new Set(participants);
+    for (const studentId of sessionStudents) {
+      statements.push(
+        this.db.prepare(
+          `INSERT INTO tutoring_occurrence_students(
+             workspace_id, occurrence_id, student_id, attendance_status
+           ) VALUES(?1, ?2, ?3, ?4)`,
+        ).bind(
+          workspaceId,
+          occurrenceId,
+          studentId,
+          participantSet.has(studentId) ? 'attended' : 'absent',
+        ),
+      );
+    }
+
+    const results = await this.db.batch(statements);
+    if ((results[0]?.meta.changes ?? 0) === 0) throw new Error('OCCURRENCE_STATE_INVALID');
   }
 
   async setStatus(
