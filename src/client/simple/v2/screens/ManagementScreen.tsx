@@ -29,6 +29,7 @@ export function ManagementScreen({
   onPackage: _onPackage,
   onOpenPendingSchedule,
   onOpenStudent,
+  onStudentRestore,
   onOpenAdvanced,
 }: {
   snapshot: LocalPlatformSnapshot;
@@ -44,6 +45,7 @@ export function ManagementScreen({
   onPackage: (studentId: string, form: FormData) => void;
   onOpenPendingSchedule: () => void;
   onOpenStudent: (studentId: string) => void;
+  onStudentRestore: (studentId: string) => Promise<boolean>;
   onOpenAdvanced: (tab: ControlTab) => void;
 }) {
   const [view, setView] = useState<ManagementView>('home');
@@ -64,7 +66,7 @@ export function ManagementScreen({
     return <ReportsHub key={`${reportLaunch.kind}-${reportLaunch.preset}`} data={data} currency={presentation.currencyLabel} initialKind={reportLaunch.kind} initialPreset={reportLaunch.preset} onOpenStudent={onOpenStudent} onBack={back} />;
   }
   if (view === 'students') {
-    return <StudentsSettings data={data} busy={busy} showAddStudent={showAddStudent} onToggleAddStudent={onToggleAddStudent} onStudentAdd={onStudentAdd} onOpenStudent={onOpenStudent} onBack={back} />;
+    return <StudentsSettings data={data} busy={busy} showAddStudent={showAddStudent} onToggleAddStudent={onToggleAddStudent} onStudentAdd={onStudentAdd} onOpenStudent={onOpenStudent} onStudentRestore={onStudentRestore} onBack={back} />;
   }
   if (view === 'account') {
     return <AccountSettings snapshot={snapshot} cloudAvailable={cloudAvailable} pendingSync={pendingSync} onPlatformChanged={onPlatformChanged} onBack={back} />;
