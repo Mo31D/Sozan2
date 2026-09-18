@@ -353,9 +353,14 @@ export async function importSozan1(
     const occurrenceOldId = legacyKey(row.occurrence_id);
     const occurrenceId = occurrenceIds.get(occurrenceOldId);
     if (!id || !occurrenceId || int(row.amount_pence) <= 0) continue;
+
     const occurrence = occurrenceById.get(occurrenceOldId);
-    const session = occurrence ? sessionById.get(legacyKey(occurrence.recurring_session_id)) : undefined;
-    const studentId = session ? studentIds.get(legacyKey(session.student_id)) : undefined;
+    const legacySessionId = occurrence ? legacyKey(occurrence.recurring_session_id) : '';
+    const participants = legacySessionId ? mappedParticipantsForSession(legacySessionId) : [];
+    const studentId = participants.length === 1 ? participants[0] : undefined;
+    if (studentId) paymentStudentIds.set(oldId, studentId);
+    else if (participants.length > 1) ambiguousGroupPaymentCount += 1;
+
     const note = [nullableText(row.note), nullableText(row.reversal_reason)].filter(Boolean).join(' · ') || null;
     statements.push(db.prepare(
       `INSERT OR IGNORE INTO finance_receipts(
@@ -372,10 +377,30 @@ export async function importSozan1(
 
   const allocationMap = new Map<string, { idSeed: string; receiptId: string; targetType: string; targetId: string; amount: number; createdAt: string }>();
   for (const row of receiptAllocations) {
-    const receiptId = receiptIds.get(legacyKey(row.receipt_id));
-    const occurrenceId = occurrenceIds.get(legacyKey(row.occurrence_id));
+    const oldReceiptId = legacyKey(row.receipt_id);
+    const oldOccurrenceId = legacyKey(row.occurrence_id);
+    const receiptId = receiptIds.get(oldReceiptId);
+    const occurrenceId = occurrenceIds.get(oldOccurrenceId);
+    const studentId = receiptStudentIds.get(oldReceiptId);
+    const legacyOccurrence = occurrenceById.get(oldOccurrenceId);
+    const legacySessionId = legacyOccurrence ? legacyKey(legacyOccurrence.recurring_session_id) : '';
+    const participants = legacySessionId ? mappedParticipantsForSession(legacySessionId) : [];
+
     if (!receiptId || !occurrenceId || int(row.amount_pence) <= 0) continue;
-    addAllocation(allocationMap, `receipt:${legacyKey(row.receipt_id)}:occurrence:${legacyKey(row.occurrence_id)}`, receiptId, 'occurrence', occurrenceId, int(row.amount_pence), timestamp(row.created_at));
+    if (!studentId || !participants.includes(studentId)) {
+      skippedOccurrenceAllocationCount += 1;
+      continue;
+    }
+
+    addAllocation(
+      allocationMap,
+      `receipt:${oldReceiptId}:student-occurrence:${oldOccurrenceId}:${studentId}`,
+      receiptId,
+      'student_occurrence',
+      studentOccurrenceTargetId(occurrenceId, studentId),
+      int(row.amount_pence),
+      timestamp(row.created_at),
+    );
   }
   for (const row of packageAllocations) {
     const receiptId = receiptIds.get(legacyKey(row.receipt_id));
@@ -384,10 +409,24 @@ export async function importSozan1(
     addAllocation(allocationMap, `receipt:${legacyKey(row.receipt_id)}:cycle:${legacyKey(row.cycle_id)}`, receiptId, 'package_cycle', cycleId, int(row.amount_pence), timestamp(row.created_at));
   }
   for (const row of payments) {
-    const receiptId = paymentReceiptIds.get(legacyKey(row.id));
+    const oldPaymentId = legacyKey(row.id);
+    const receiptId = paymentReceiptIds.get(oldPaymentId);
     const occurrenceId = occurrenceIds.get(legacyKey(row.occurrence_id));
+    const studentId = paymentStudentIds.get(oldPaymentId);
     if (!receiptId || !occurrenceId || int(row.amount_pence) <= 0) continue;
-    addAllocation(allocationMap, `payment:${legacyKey(row.id)}:occurrence:${legacyKey(row.occurrence_id)}`, receiptId, 'occurrence', occurrenceId, int(row.amount_pence), timestamp(row.created_at));
+    if (!studentId) {
+      skippedOccurrenceAllocationCount += 1;
+      continue;
+    }
+    addAllocation(
+      allocationMap,
+      `payment:${oldPaymentId}:student-occurrence:${legacyKey(row.occurrence_id)}:${studentId}`,
+      receiptId,
+      'student_occurrence',
+      studentOccurrenceTargetId(occurrenceId, studentId),
+      int(row.amount_pence),
+      timestamp(row.created_at),
+    );
   }
   for (const allocation of allocationMap.values()) {
     const id = await ids.id('allocation', allocation.idSeed);
