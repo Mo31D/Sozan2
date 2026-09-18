@@ -572,6 +572,13 @@ async function importJob(
   workspaceId: string,
   importId: string,
 ): Promise<ImportJobRow | null> {
+  await db.prepare(
+    `UPDATE core_backup_imports
+     SET status='failed',error_code='BACKUP_IMPORT_STALE',updated_at=CURRENT_TIMESTAMP
+     WHERE workspace_id=?1 AND import_id=?2 AND status='applying'
+       AND updated_at < datetime('now','-10 minutes')`,
+  ).bind(workspaceId, importId).run();
+
   return db.prepare(
     `SELECT import_id,backup_fingerprint,expected_revision,status,applied_revision,error_code
      FROM core_backup_imports
