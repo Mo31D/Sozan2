@@ -142,10 +142,13 @@ async function exportBackup(db: D1Database, workspaceId: string): Promise<Worksp
                     source_entity_id AS sourceEntityId,note,deleted_at AS deletedAt,
                     created_at AS createdAt,updated_at AS updatedAt,0 AS pendingSync
              FROM finance_receipts WHERE workspace_id=?1 ORDER BY received_at,id`, workspaceId),
-    all(db, `SELECT id,workspace_id AS workspaceId,receipt_id AS receiptId,
-                    target_module AS targetModule,target_type AS targetType,target_id AS targetId,
-                    amount_pence AS amountPence,created_at AS createdAt
-             FROM finance_receipt_allocations WHERE workspace_id=?1 ORDER BY receipt_id,id`, workspaceId),
+    all(db, `SELECT a.id,a.workspace_id AS workspaceId,a.receipt_id AS receiptId,
+                    a.target_module AS targetModule,a.target_type AS targetType,a.target_id AS targetId,
+                    a.amount_pence AS amountPence,a.created_at AS createdAt
+             FROM finance_receipt_allocations a
+             JOIN finance_receipts r
+               ON r.workspace_id=a.workspace_id AND r.id=a.receipt_id AND r.deleted_at IS NULL
+             WHERE a.workspace_id=?1 ORDER BY a.receipt_id,a.id`, workspaceId),
     all(db, `SELECT id,workspace_id AS workspaceId,expense_date AS expenseDate,scope,category,
                     amount_pence AS amountPence,note,deleted_at AS deletedAt,
                     created_at AS createdAt,updated_at AS updatedAt
@@ -391,17 +394,15 @@ async function restoreBackup(db: D1Database, workspaceId: string, backup: Worksp
       x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString(),x.deletedAt??null));
   }
 
-  // Receipts are inserted active so allocation guards can validate them. Their
-  // deleted_at state is restored only after allocations are inserted.
   for (const raw of s.financeReceipts) {
     const x=r(raw); statements.push(db.prepare(
       `INSERT INTO finance_receipts(
          id,workspace_id,payer_ref_type,payer_ref_id,amount_pence,received_at,payment_method,source_kind,
          source_module,source_entity_type,source_entity_id,note,deleted_at,created_at,updated_at
-       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,NULL,?13,?14)`,
+       ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`,
     ).bind(x.id,workspaceId,x.payerRefType??null,x.payerRefId??null,x.amountPence,x.receivedAt,x.paymentMethod,
       x.sourceKind,x.sourceModule??null,x.sourceEntityType??null,x.sourceEntityId??null,x.note??null,
-      x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
+      x.deletedAt??null,x.createdAt??new Date().toISOString(),x.updatedAt??new Date().toISOString()));
   }
   for (const raw of s.financeAllocations) {
     const x=r(raw); statements.push(db.prepare(
@@ -410,11 +411,6 @@ async function restoreBackup(db: D1Database, workspaceId: string, backup: Worksp
        ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)`,
     ).bind(x.id,workspaceId,x.receiptId,x.targetModule,x.targetType,x.targetId,x.amountPence,
       x.createdAt??new Date().toISOString()));
-  }
-  for (const raw of s.financeReceipts) {
-    const x=r(raw); if (x.deletedAt) statements.push(db.prepare(
-      `UPDATE finance_receipts SET deleted_at=?3 WHERE workspace_id=?1 AND id=?2`,
-    ).bind(workspaceId,x.id,x.deletedAt));
   }
   for (const raw of s.financeExpenses) {
     const x=r(raw); statements.push(db.prepare(
