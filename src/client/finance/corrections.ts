@@ -3,7 +3,7 @@ import { openLocalDatabase, requestResult, STORES, transactionDone } from '../ad
 import type { LocalAllocation, LocalExpense } from '../simple/data';
 import { newSyncOutboxRecord } from '../sync/outbox';
 import type { LocalReceipt } from '../tutoring/local-commands';
-import { rebalanceStudentLocally } from './local-rebalance';
+import { rebuildStudentLocally } from './local-rebalance';
 
 export type ReceiptCorrectionInput = {
   studentId: string;
@@ -74,12 +74,10 @@ export async function updateLocalReceipt(
     'readwrite',
   );
   transaction.objectStore(STORES.financeReceipts).put(updated);
-  if (current.payerRefId !== input.studentId) {
-    const allocationStore = transaction.objectStore(STORES.financeAllocations);
-    const rows = await requestResult<LocalAllocation[]>(allocationStore.getAll());
-    for (const row of rows) {
-      if (row.workspaceId === workspaceId && row.receiptId === receiptId) allocationStore.delete(row.id);
-    }
+  const allocationStore = transaction.objectStore(STORES.financeAllocations);
+  const rows = await requestResult<LocalAllocation[]>(allocationStore.getAll());
+  for (const row of rows) {
+    if (row.workspaceId === workspaceId && row.receiptId === receiptId) allocationStore.delete(row.id);
   }
   transaction.objectStore(STORES.coreActivityEvents).put(activity);
   transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
@@ -99,8 +97,10 @@ export async function updateLocalReceipt(
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
 
-  await rebalanceStudentLocally(workspaceId, current.payerRefId);
-  if (updated.payerRefId !== current.payerRefId) await rebalanceStudentLocally(workspaceId, updated.payerRefId);
+  await rebuildStudentLocally(workspaceId, current.payerRefId);
+  if (updated.payerRefId !== current.payerRefId) {
+    await rebuildStudentLocally(workspaceId, updated.payerRefId);
+  }
 }
 
 export async function deleteLocalReceipt(workspaceId: string, receiptId: string): Promise<void> {
@@ -122,10 +122,15 @@ export async function deleteLocalReceipt(workspaceId: string, receiptId: string)
   });
   const db = await openLocalDatabase();
   const transaction = db.transaction(
-    [STORES.financeReceipts, STORES.coreActivityEvents, STORES.syncOutbox],
+    [STORES.financeReceipts, STORES.financeAllocations, STORES.coreActivityEvents, STORES.syncOutbox],
     'readwrite',
   );
   transaction.objectStore(STORES.financeReceipts).put(updated);
+  const allocationStore = transaction.objectStore(STORES.financeAllocations);
+  const allocationRows = await requestResult<LocalAllocation[]>(allocationStore.getAll());
+  for (const row of allocationRows) {
+    if (row.workspaceId === workspaceId && row.receiptId === receiptId) allocationStore.delete(row.id);
+  }
   transaction.objectStore(STORES.coreActivityEvents).put(activity);
   transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
     workspaceId,
@@ -137,7 +142,7 @@ export async function deleteLocalReceipt(workspaceId: string, receiptId: string)
   }));
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
-  await rebalanceStudentLocally(workspaceId, current.payerRefId);
+  await rebuildStudentLocally(workspaceId, current.payerRefId);
 }
 
 export async function restoreLocalReceipt(workspaceId: string, receiptId: string): Promise<void> {
@@ -171,7 +176,7 @@ export async function restoreLocalReceipt(workspaceId: string, receiptId: string
   }));
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
-  await rebalanceStudentLocally(workspaceId, current.payerRefId);
+  await rebuildStudentLocally(workspaceId, current.payerRefId);
 }
 
 async function expenseById(workspaceId: string, expenseId: string): Promise<LocalExpense> {
