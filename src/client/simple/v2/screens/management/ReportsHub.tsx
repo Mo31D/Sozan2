@@ -89,12 +89,17 @@ function FinanceReport({ report, currency }: { report: ReturnType<typeof buildWo
 }
 
 function StudentsReport({ data, range, currency, onOpenStudent }: { data: SimpleWorkspaceData; range: ReportDateRange; currency: string; onOpenStudent: (studentId: string) => void }) {
-  const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
+  const sessionById = new Map(
+    [...data.sessions, ...(data.archivedSessions ?? [])].map((session) => [session.id, session]),
+  );
   const inRange = (value: string) => value.slice(0, 10) >= range.fromDate && value.slice(0, 10) <= range.toDate;
   const rows = data.students.map((student) => {
     const occurrences = data.occurrences.filter((occurrence) => {
       const session = sessionById.get(occurrence.recurringSessionId);
-      return Boolean(session?.studentIds.includes(student.id)) && inRange(occurrence.rescheduledToDate ?? occurrence.sessionDate);
+      return Boolean(
+        occurrence.studentIds?.includes(student.id)
+        || session?.studentIds.includes(student.id),
+      ) && inRange(occurrence.rescheduledToDate ?? occurrence.sessionDate);
     });
     const completed = occurrences.filter((row) => row.status === 'completed');
     const cancelled = occurrences.filter((row) => row.status === 'cancelled' || row.status === 'missed').length;
