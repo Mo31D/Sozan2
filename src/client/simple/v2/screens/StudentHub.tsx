@@ -132,7 +132,7 @@ export function StudentHub({
           {billingMode === 'package' && <>
             <label>عدد حصص الباقة<input name="packageSize" type="number" min="1" max="100" defaultValue={packageSize} /></label>
             <label>سعر الباقة<input name="packagePrice" type="number" min="0" step="0.01" defaultValue={packagePrice ? packagePrice / 100 : ''} /></label>
-            <label>التقدم عند البداية<input name="openingCompletedCount" type="number" min="0" max={cycle?.sessionLimit ?? 100} defaultValue={cycle?.openingCompletedCount ?? 0} readOnly={openingLocked} /></label>
+            <label>عدد الحصص المستخدمة من الباقة عند البداية<input name="openingCompletedCount" type="number" min="0" max={cycle?.sessionLimit ?? plan?.packageSize ?? 100} defaultValue={cycle?.openingCompletedCount ?? ''} placeholder="غير معروف" readOnly={openingLocked} /></label>
           </>}
           <input type="hidden" name="effectiveFrom" value={plan?.effectiveFrom ?? todayIso()} />
           <button className="student-hub-save wide" type="submit" disabled={busy}>حفظ نظام الحساب</button>

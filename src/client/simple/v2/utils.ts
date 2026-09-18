@@ -81,8 +81,9 @@ export function dueTotal(data: SimpleWorkspaceData): number {
 export function packageProgress(data: SimpleWorkspaceData, studentId: string): string {
   const plan = planFor(data, studentId);
   const cycle = activeCycleFor(data, studentId);
-  const done = cycle ? cycle.openingCompletedCount + cycle.realCompletedCount : 0;
   const size = cycle?.sessionLimit ?? plan?.packageSize ?? 8;
+  if (!cycle) return `؟/${size}`;
+  const done = cycle.openingCompletedCount + cycle.realCompletedCount;
   return `${done}/${size}`;
 }
 
