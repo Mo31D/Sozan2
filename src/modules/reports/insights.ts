@@ -60,6 +60,17 @@ export type ReportInput = {
     expectedStudentCount?: number;
     payerStudentId?: string | null;
   }>;
+  archivedSessions?: Array<{
+    id: string;
+    scheduleStatus: 'confirmed' | 'pending';
+    durationMinutes: number;
+    travelMinutes: number;
+    studentIds?: string[];
+    priceBasis?: 'total_session' | 'per_student';
+    defaultPricePence?: number;
+    expectedStudentCount?: number;
+    payerStudentId?: string | null;
+  }>;
   occurrences: Array<{
     id?: string;
     recurringSessionId: string;
@@ -157,7 +168,8 @@ export function currentDuePence(data: ReportInput): number {
   }, 0);
 
   const planByStudent = new Map((data.billingPlans ?? []).map((plan) => [plan.studentId, plan.billingMode]));
-  const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
+  const allSessions = [...data.sessions, ...(data.archivedSessions ?? [])];
+  const sessionById = new Map(allSessions.map((session) => [session.id, session]));
 
   for (const occurrence of data.occurrences.filter((row) => row.status === 'completed' && row.id)) {
     const session = sessionById.get(occurrence.recurringSessionId);
@@ -206,7 +218,8 @@ export function buildWorkspaceReportForRange(data: ReportInput, range: ReportDat
   const receivedPence = sum(data.receipts.filter((row) => inRange(row.receivedAt)).map((row) => row.amountPence));
   const expensesPence = sum(data.expenses.filter((row) => !row.deletedAt && inRange(row.expenseDate)).map((row) => row.amountPence));
   const otherIncomePence = sum(data.otherIncome.filter((row) => inRange(row.incomeDate)).map((row) => row.amountPence));
-  const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
+  const allSessions = [...data.sessions, ...(data.archivedSessions ?? [])];
+  const sessionById = new Map(allSessions.map((session) => [session.id, session]));
   let teachingMinutes = 0;
   let travelMinutes = 0;
   for (const occurrence of completed) {
