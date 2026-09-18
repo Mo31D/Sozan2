@@ -39,18 +39,42 @@ export class OccurrencesService {
     const parsed = completeOccurrenceSchema.parse(input);
     const occurrence = await this.occurrences.getById(workspaceId, occurrenceId);
     if (!occurrence) throw new Error('OCCURRENCE_NOT_FOUND');
-    if (occurrence.status === 'completed') return occurrence;
-    if (occurrence.status !== 'scheduled' && occurrence.status !== 'missed') {
-      throw new Error('OCCURRENCE_STATE_INVALID');
-    }
 
     const sessions = await this.sessions.listActive(workspaceId);
     const session = sessions.find((item) => item.id === occurrence.recurringSessionId);
     if (!session) throw new Error('SESSION_NOT_FOUND');
 
+    const occurredOn = occurrence.rescheduledToDate ?? occurrence.sessionDate;
+
+    if (occurrence.status === 'completed') {
+      // Completion is retryable as one logical command. If a previous attempt
+      // persisted attendance but failed while advancing one package, repair the
+      // missing package link instead of returning early.
+      for (const studentId of occurrence.studentIds) {
+        await this.billing.recordCompletedOccurrence(
+          workspaceId,
+          studentId,
+          occurrenceId,
+          occurredOn,
+        );
+      }
+      return (await this.occurrences.getById(workspaceId, occurrenceId)) ?? occurrence;
+    }
+
+    if (occurrence.status !== 'scheduled' && occurrence.status !== 'missed') {
+      throw new Error('OCCURRENCE_STATE_INVALID');
+    }
+
+    const participants = parsed.participantStudentIds
+      ? [...new Set(parsed.participantStudentIds)]
+      : [...session.studentIds];
+    if (participants.some((studentId) => !session.studentIds.includes(studentId))) {
+      throw new Error('OCCURRENCE_PARTICIPANT_INVALID');
+    }
+
     const { grossPence, centerCutPence, earnedPence } = completedSessionFinancials(
       session,
-      session.studentIds.length,
+      participants.length,
     );
     const completedAt = parsed.completedAt ?? new Date().toISOString();
 
@@ -60,14 +84,20 @@ export class OccurrencesService {
       earnedPence,
       completedAt,
       note: parsed.note,
+      participantStudentIds: participants,
+      sessionStudentIds: session.studentIds,
+      durationMinutes: session.durationMinutes,
+      travelMinutes: session.travelMinutes,
+      sessionType: session.sessionType,
+      location: session.location,
     });
 
-    for (const studentId of session.studentIds) {
+    for (const studentId of participants) {
       await this.billing.recordCompletedOccurrence(
         workspaceId,
         studentId,
         occurrenceId,
-        occurrence.rescheduledToDate ?? occurrence.sessionDate,
+        occurredOn,
       );
     }
 
