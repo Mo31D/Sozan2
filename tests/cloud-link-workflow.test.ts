@@ -129,7 +129,14 @@ describe('local workspace cloud promotion', () => {
         return 1;
       }),
       clearOutbox: vi.fn(async () => { order.push('clear-outbox'); }),
-      link: vi.fn(async () => { order.push('link'); }),
+      link: vi.fn(async (_snapshot, _loginName, state) => {
+        order.push('link');
+        expect(state).toBe('provisioning');
+      }),
+      markReady: vi.fn(async (_workspaceId, revision) => {
+        order.push('mark-ready');
+        expect(revision).toBe(1);
+      }),
       load: vi.fn(async () => { order.push('load'); return linked; }),
       sync: vi.fn(async () => {
         order.push('sync');
@@ -144,12 +151,22 @@ describe('local workspace cloud promotion', () => {
     );
 
     expect(result.recoveryCode).toBe('recovery-code-123');
-    expect(order).toEqual(['backup', 'register', 'restore', 'clear-outbox', 'link', 'load', 'sync']);
+    expect(order).toEqual([
+      'backup',
+      'register',
+      'link',
+      'restore',
+      'clear-outbox',
+      'mark-ready',
+      'load',
+      'sync',
+    ]);
   });
 
   it('never marks the local device linked when the initial cloud restore fails', async () => {
     const original = snapshot(false);
     const link = vi.fn(async () => undefined);
+    const markReady = vi.fn(async () => undefined);
     const sync = vi.fn(async () => ({
       pushed: 0, pulled: true, pending: 0, failed: 0, deadLetters: 0, syncedAt: null,
     }));
@@ -167,6 +184,7 @@ describe('local workspace cloud promotion', () => {
       restoreCloud: async () => { throw new Error('BACKUP_RESTORE_FAILED'); },
       clearOutbox: async () => undefined,
       link,
+      markReady,
       load: async () => snapshot(true),
       sync,
     };
@@ -177,7 +195,8 @@ describe('local workspace cloud promotion', () => {
       deps,
     )).rejects.toThrow('BACKUP_RESTORE_FAILED');
 
-    expect(link).not.toHaveBeenCalled();
+    expect(link).toHaveBeenCalledWith(original, 'user', 'provisioning');
+    expect(markReady).not.toHaveBeenCalled();
     expect(sync).not.toHaveBeenCalled();
   });
 });
