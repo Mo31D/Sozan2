@@ -5,7 +5,6 @@ import {
   downloadWorkspaceBackup,
   restoreWorkspaceBackup,
 } from '../../../../backup/workspace-backup';
-import { runWorkspaceSync } from '../../../../sync/engine';
 import { workspaceBackupSchema, type WorkspaceBackup } from '../../../../../modules/backup/workspace-backup';
 import { Sozan1MigrationPanel } from '../../../../migration/Sozan1MigrationPanel';
 import { SubHeader } from './ReportsHub';
@@ -74,14 +73,20 @@ export function DataTools({
       const safety = await createWorkspaceBackup(snapshot);
       downloadWorkspaceBackup(safety, 'قبل-الاستعادة');
       await restoreWorkspaceBackup(snapshot, restoreBackup);
-      if (snapshot.cloudLink) await runWorkspaceSync(snapshot.workspace.id);
       setRestoreBackup(null);
       setRestoreFilename('');
       setRestoreConfirm('');
       setBackupMessage('تم استيراد نسخة Sozan2 بنجاح، وتمت مزامنة البيانات المستوردة.');
       await onImported();
     } catch (error) {
-      setBackupMessage(error instanceof Error ? error.message : 'BACKUP_RESTORE_FAILED');
+      const code = error instanceof Error ? error.message : 'BACKUP_RESTORE_FAILED';
+      const messages: Record<string, string> = {
+        'Load failed': 'فشل الاتصال أثناء الاستعادة. لم يتم اعتبار العملية ناجحة؛ جرّبي مرة أخرى بعد تحديث النسخة المنشورة.',
+        Failed to fetch: 'فشل الاتصال أثناء الاستعادة. لم يتم اعتبار العملية ناجحة؛ جرّبي مرة أخرى بعد تحديث النسخة المنشورة.',
+        BACKUP_WORKSPACE_ID_MISMATCH: 'النسخة تخص مساحة عمل مختلفة.',
+        BACKUP_RESTORE_FAILED: 'تعذر استعادة النسخة.',
+      };
+      setBackupMessage(messages[code] ?? code);
     } finally {
       setBackupBusy(false);
     }
