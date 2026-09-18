@@ -24,7 +24,7 @@ import {
 import { loadSimpleWorkspaceData, type SimpleWorkspaceData } from './data';
 import { NavButton } from './v2/components';
 import { ManagementScreen } from './v2/screens/ManagementScreen';
-import { MoneyScreen } from './v2/screens/MoneyScreen';
+import { MoneyScreen, type MoneyList } from './v2/screens/MoneyScreen';
 import { ScheduleScreen } from './v2/screens/ScheduleScreen';
 import { StudentHub } from './v2/screens/StudentHub';
 import { TodayScreen } from './v2/screens/TodayScreen';
@@ -59,6 +59,7 @@ export function TutorWorkspace({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [moneyMode, setMoneyMode] = useState<MoneyMode>('none');
+  const [moneyInitialList, setMoneyInitialList] = useState<MoneyList | null>(null);
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [advancedTab, setAdvancedTab] = useState<ControlTab | null>(null);
   const [studentHubId, setStudentHubId] = useState<string | null>(null);
@@ -118,8 +119,20 @@ export function TutorWorkspace({
   const openMoney = (mode: Exclude<MoneyMode, 'none'>) => {
     setStudentHubId(null);
     setOpenedFromSchedule(false);
+    setMoneyInitialList(null);
     setMoneyMode(mode);
     setPage('money');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openDueMoney = () => {
+    setStudentHubId(null);
+    setOpenedFromSchedule(false);
+    setMoneyMode('none');
+    setMoneyInitialList('due');
+    setPage('money');
+    setNotice('');
+    setError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -132,6 +145,7 @@ export function TutorWorkspace({
       setOpenedFromSchedule(false);
     }
     if (next === 'schedule') setOpenPendingSchedule(false);
+    if (next === 'money') setMoneyInitialList(null);
     setPage(next);
     setNotice('');
     setError('');
@@ -322,6 +336,7 @@ export function TutorWorkspace({
                   snapshot={presentedSnapshot}
                   data={data}
                   mode={moneyMode}
+                  initialList={moneyInitialList}
                   busy={busy}
                   assistantLabel={assistantLabel}
                   onMode={setMoneyMode}
@@ -405,6 +420,7 @@ export function TutorWorkspace({
                   showAddStudent={showAddStudent}
                   onToggleAddStudent={() => setShowAddStudent((value) => !value)}
                   onOpenPendingSchedule={openPendingScheduleEdits}
+                  onOpenDue={openDueMoney}
                   onOpenStudent={openStudent}
                   onStudentRestore={restoreStudent}
                   onOpenAdvanced={setAdvancedTab}
