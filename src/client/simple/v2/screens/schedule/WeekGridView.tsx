@@ -4,6 +4,7 @@ import type { SimpleWorkspaceData } from '../../../data';
 import {
   formatClockTime,
   packageLessonLabelForEntry,
+  packageLessonNumbersForEntry,
   scheduleEntriesForDate,
   todayIso,
   WEEKDAYS,
@@ -182,6 +183,7 @@ export function WeekGridView({
                   const { entry } = item;
                   const clipped = item.clippedBefore || item.clippedAfter;
                   const lessonLabel = packageLessonLabelForEntry(data, entry);
+                  const lessonNumbers = packageLessonNumbersForEntry(data, entry);
                   return (
                     <button
                       type="button"
@@ -193,10 +195,12 @@ export function WeekGridView({
                     >
                       <span className="week-grid-entry-accent" />
                       <span className="week-grid-entry-copy">
-                        <strong>{entry.session.title}</strong>
+                        <strong>
+                          <span>{entry.session.title}</span>
+                          {lessonNumbers && <b>{lessonNumbers}</b>}
+                        </strong>
                         <small>
                           {entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}
-                          {lessonLabel ? ` · ${lessonLabel}` : ''}
                           {clipped ? ' · ممتدة خارج النطاق' : ''}
                         </small>
                       </span>
