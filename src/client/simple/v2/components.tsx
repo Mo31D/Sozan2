@@ -9,7 +9,7 @@ export function QuickForm({
   children,
 }: {
   title: string;
-  onSubmit: (form: FormData) => void | Promise<void>;
+  onSubmit: (form: FormData) => void | Promise<unknown>;
   busy: boolean;
   children: ReactNode;
 }) {
