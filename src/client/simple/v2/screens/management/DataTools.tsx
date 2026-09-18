@@ -8,18 +8,15 @@ import {
 import { runWorkspaceSync } from '../../../../sync/engine';
 import { workspaceBackupSchema, type WorkspaceBackup } from '../../../../../modules/backup/workspace-backup';
 import { Sozan1MigrationPanel } from '../../../../migration/Sozan1MigrationPanel';
-import type { SimpleWorkspaceData } from '../../../data';
 import { SubHeader } from './ReportsHub';
 
 export function DataTools({
   snapshot,
-  data,
   onImported,
   onBack,
   onOpenActivity,
 }: {
   snapshot: LocalPlatformSnapshot;
-  data: SimpleWorkspaceData;
   onImported: () => Promise<void>;
   onBack: () => void;
   onOpenActivity: () => void;
