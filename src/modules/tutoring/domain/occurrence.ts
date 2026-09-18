@@ -34,6 +34,9 @@ export type TutoringOccurrence = {
   travelMinutesSnapshot: number | null;
   sessionTypeSnapshot: string | null;
   locationSnapshot: string | null;
+  priceBasisSnapshot: 'total_session' | 'per_student' | null;
+  defaultPricePenceSnapshot: number | null;
+  payerStudentIdSnapshot: string | null;
 };
 
 export function datesForWeekday(from: string, to: string, weekday: number): string[] {
