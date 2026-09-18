@@ -163,3 +163,36 @@ export async function withStableWorkspaceRead<T>(
   }
   throw new Error('SYNC_SNAPSHOT_UNSTABLE');
 }
+
+
+export async function withWorkspaceWrite<T>(
+  db: D1Database,
+  workspaceId: string,
+  write: () => Promise<T>,
+): Promise<{ revision: number; value: T }> {
+  const reserved = await acquireWorkspaceWrite(db, workspaceId);
+  if (!reserved.ok) {
+    throw new Error(reserved.busy ? 'SYNC_WRITE_IN_PROGRESS' : 'SYNC_REVISION_CONFLICT');
+  }
+
+  let value: T | undefined;
+  let writeError: unknown = null;
+  try {
+    value = await write();
+  } catch (error) {
+    writeError = error;
+  }
+
+  let revision: number;
+  try {
+    revision = await finalizeWorkspaceWrite(db, workspaceId, reserved.token);
+  } catch (finalizeError) {
+    if (writeError === null) throw finalizeError;
+    // Preserve the original business/data error. A stale lease recovery will
+    // conservatively advance the revision if finalization itself failed.
+    throw writeError;
+  }
+
+  if (writeError !== null) throw writeError;
+  return { revision, value: value as T };
+}
