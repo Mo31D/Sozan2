@@ -6,6 +6,10 @@ import {
   type ReportPreset,
 } from '../../../../../modules/reports/insights';
 import { buildStudentFinancialSummary } from '../../../../../modules/reports/student-finance';
+import {
+  buildMonthlyForecast,
+  type MonthlyForecast,
+} from '../../../../../modules/reports/monthly-forecast';
 import { activeCycleFor, planFor, type SimpleWorkspaceData } from '../../../data';
 import { ArabicDateField } from '../../localized-fields';
 import { formatArabicDate, formatDurationArabic, money, todayIso } from '../../utils';
@@ -43,6 +47,7 @@ export function ReportsHub({
     [preset, today, fromDate, toDate],
   );
   const report = useMemo(() => buildWorkspaceReportForRange(data, range), [data, range]);
+  const monthlyForecast = useMemo(() => buildMonthlyForecast(data, today), [data, today]);
 
   const actionForInsight = (key: string): (() => void) | null => {
     if (key === 'due') return onOpenDue;
@@ -89,7 +94,13 @@ export function ReportsHub({
       )}
 
       {kind === 'work' && <WorkReport report={report} currency={currency} />}
-      {kind === 'finance' && <FinanceReport report={report} currency={currency} onOpenDue={onOpenDue} />}
+      {kind === 'finance' && <FinanceReport
+        report={report}
+        currency={currency}
+        forecast={preset === 'month' ? monthlyForecast : null}
+        onOpenDue={onOpenDue}
+        onOpenExpenses={onOpenExpenses}
+      />}
       {kind === 'students' && <StudentsReport data={data} range={range} currency={currency} onOpenStudent={onOpenStudent} />}
       {kind === 'attendance' && <AttendanceReport report={report} />}
       {kind === 'packages' && <PackagesReport data={data} currency={currency} onOpenStudent={onOpenStudent} />}
@@ -129,8 +140,115 @@ function WorkReport({ report, currency }: { report: ReturnType<typeof buildWorks
   return <><article className="report-answer-card"><span>اشتغلتي خلال الفترة</span><strong>{formatDurationArabic(report.workMinutes)}</strong><small>{report.completedLessons} حصة مكتملة · قيمة الشغل {money(report.earnedPence, currency)}</small></article><MetricGrid items={[["وقت التدريس", formatDurationArabic(report.teachingMinutes)],["وقت الانتقال", formatDurationArabic(report.travelMinutes)],["العائد الحقيقي/ساعة", money(report.effectiveHourlyPence, currency)],["إلغاء أو فوات", String(report.cancelledLessons)]]} /></>;
 }
 
-function FinanceReport({ report, currency, onOpenDue }: { report: ReturnType<typeof buildWorkspaceReportForRange>; currency: string; onOpenDue: () => void }) {
-  return <><article className="report-answer-card"><span>صافي الحركة خلال الفترة</span><strong>{money(report.netCashPence, currency)}</strong><small>المقبوض + الدخل الآخر − المصروفات</small></article><MetricGrid items={[["قبضتي", money(report.receivedPence, currency)],["دخل آخر", money(report.otherIncomePence, currency)],["صرفتي", money(report.expensesPence, currency)],["مطلوب تحصيله الآن", money(report.duePence, currency), onOpenDue]]} /></>;
+function FinanceReport({
+  report,
+  currency,
+  forecast,
+  onOpenDue,
+  onOpenExpenses,
+}: {
+  report: ReturnType<typeof buildWorkspaceReportForRange>;
+  currency: string;
+  forecast: MonthlyForecast | null;
+  onOpenDue: () => void;
+  onOpenExpenses: () => void;
+}) {
+  return <>
+    <article className="report-answer-card">
+      <span>صافي الحركة خلال الفترة</span>
+      <strong>{money(report.netCashPence, currency)}</strong>
+      <small>المقبوض + الدخل الآخر − المصروفات</small>
+    </article>
+    <MetricGrid items={[
+      ["قبضتي", money(report.receivedPence, currency)],
+      ["دخل آخر", money(report.otherIncomePence, currency)],
+      ["صرفتي", money(report.expensesPence, currency)],
+      ["مطلوب تحصيله الآن", money(report.duePence, currency), onOpenDue],
+    ]} />
+    {forecast && <MonthlyForecastPanel forecast={forecast} currency={currency} onOpenExpenses={onOpenExpenses} />}
+  </>;
+}
+
+function MonthlyForecastPanel({
+  forecast,
+  currency,
+  onOpenExpenses,
+}: {
+  forecast: MonthlyForecast;
+  currency: string;
+  onOpenExpenses: () => void;
+}) {
+  const confidenceLabel = forecast.confidence === 'high'
+    ? 'ثقة عالية'
+    : forecast.confidence === 'medium' ? 'ثقة متوسطة' : 'ثقة محدودة';
+
+  return (
+    <section className="monthly-forecast-card" aria-label="توقع نهاية الشهر">
+      <header className="monthly-forecast-head">
+        <div>
+          <span>توقع نهاية الشهر</span>
+          <strong>{money(forecast.projectedMonthEarnedPence, currency)}</strong>
+          <small>قيمة الشغل المتوقعة من الحصص التي تمت والمواعيد المؤكدة المتبقية.</small>
+        </div>
+        <span className={`forecast-confidence ${forecast.confidence}`}>
+          {confidenceLabel}
+        </span>
+      </header>
+
+      <div className="monthly-forecast-grid">
+        <div><span>تم بالفعل</span><strong>{money(forecast.actualEarnedPence, currency)}</strong></div>
+        <div><span>باقي الشهر</span><strong>{money(forecast.projectedRemainingEarnedPence, currency)}</strong></div>
+        <button type="button" onClick={onOpenExpenses}>
+          <span>مصروف الشغل المتوقع</span>
+          <strong>{money(forecast.projectedBusinessExpensesPence, currency)}</strong>
+          <small>عرض المصروفات ‹</small>
+        </button>
+        <div className={forecast.projectedOperatingNetPence < 0 ? 'negative' : ''}>
+          <span>صافي الشغل المتوقع</span>
+          <strong>{money(forecast.projectedOperatingNetPence, currency)}</strong>
+        </div>
+      </div>
+
+      <div className="monthly-forecast-summary">
+        <p>
+          <span>مستحق الآن</span>
+          <strong>{money(forecast.currentDuePence, currency)}</strong>
+        </p>
+        <p>
+          <span>استحقاقات جديدة متوقعة</span>
+          <strong>{money(forecast.projectedNewDuePence, currency)}</strong>
+        </p>
+        <p>
+          <span>باقي مواعيد مؤكدة</span>
+          <strong>{forecast.futureConfirmedLessons}</strong>
+        </p>
+        <p>
+          <span>وقت العمل المتوقع</span>
+          <strong>{formatDurationArabic(forecast.projectedWorkMinutes)}</strong>
+        </p>
+      </div>
+
+      <p className="monthly-forecast-note">
+        التوقع لا يعتبر أي مبلغ «مقبوضًا» قبل تسجيل التحصيل، ولا يفترض مواعيد غير محددة.
+      </p>
+
+      <div className="monthly-forecast-insights">
+        {forecast.insights.slice(0, 4).map((insight) => (
+          <article className={insight.level} key={insight.key}>
+            <strong>{insight.title}</strong>
+            <span>{insight.detail}</span>
+          </article>
+        ))}
+      </div>
+
+      {forecast.confidenceReasons.length > 0 && (
+        <details className="monthly-forecast-confidence-details">
+          <summary>لماذا {confidenceLabel}؟</summary>
+          <ul>{forecast.confidenceReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+        </details>
+      )}
+    </section>
+  );
 }
 
 function StudentsReport({ data, range, currency, onOpenStudent }: { data: SimpleWorkspaceData; range: ReportDateRange; currency: string; onOpenStudent: (studentId: string) => void }) {
