@@ -37,6 +37,19 @@ migrationRoutes.post('/:workspaceId/sozan1', async (c) => {
       }, 409);
     }
 
+    // Migration writes bypass the normal sync mutation endpoint, so publish a
+    // new workspace revision explicitly. Connected devices will then pull the
+    // imported canonical state instead of treating their old snapshot as current.
+    await db.prepare(
+      `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id,revision)
+       VALUES(?1,0)`,
+    ).bind(workspaceId).run();
+    await db.prepare(
+      `UPDATE core_workspace_sync_revisions
+       SET revision=revision+1,updated_at=CURRENT_TIMESTAMP
+       WHERE workspace_id=?1`,
+    ).bind(workspaceId).run();
+
     return c.json({ ok: true, ...result, reconciliation });
   } catch (error) {
     const access = accessError(error);
