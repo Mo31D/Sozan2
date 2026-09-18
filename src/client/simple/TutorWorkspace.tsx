@@ -340,6 +340,7 @@ export function TutorWorkspace({
                   busy={busy}
                   mode={scheduleMode}
                   assistantLabel={assistantLabel}
+                  timeZone={presentedSnapshot.workspace.timezone}
                   onMode={setScheduleMode}
                   monthCursor={scheduleMonthCursor}
                   onMonthCursor={setScheduleMonthCursor}
