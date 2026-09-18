@@ -34,7 +34,12 @@ export type LocalOccurrence = {
   earnedPence: number;
   completedAt: string | null;
   note: string | null;
+  /** Students who actually attended this occurrence. */
   studentIds?: string[];
+  durationMinutesSnapshot: number | null;
+  travelMinutesSnapshot: number | null;
+  sessionTypeSnapshot: string | null;
+  locationSnapshot: string | null;
 };
 
 export type SimpleWorkspaceData = {
