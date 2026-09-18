@@ -48,6 +48,7 @@ const TERMINAL_MUTATION_ERRORS = new Set([
   'RECEIPT_ALLOCATION_EXCEEDS_AMOUNT',
   'ALLOCATION_CONFLICT',
   'ALLOCATION_AMOUNT_INVALID',
+  'COMPLETED_APPOINTMENT_REQUIRES_REOPEN',
 ]);
 
 function classifyMutationError(error: unknown): { error: string; retryable: boolean } {
