@@ -1,6 +1,12 @@
 import type { SimpleWorkspaceData } from '../../../data';
 import { ScheduleRow } from '../../components';
-import { addDays, formatArabicDate, scheduleEntriesForDate, todayIso } from '../../utils';
+import {
+  addDays,
+  formatArabicDate,
+  packageLessonLabelForEntry,
+  scheduleEntriesForDate,
+  todayIso,
+} from '../../utils';
 
 export function WeekView({
   data,
@@ -26,7 +32,11 @@ export function WeekView({
                   .filter((student): student is NonNullable<typeof student> => Boolean(student));
                 return (
                   <div className="schedule-row-wrap" key={`${entry.session.id}-${date}-${entry.occurrence?.id ?? 'recurring'}`}>
-                    <ScheduleRow entry={entry} onClick={() => onEdit(entry.session.id)} />
+                    <ScheduleRow
+                      entry={entry}
+                      lessonLabel={packageLessonLabelForEntry(data, entry)}
+                      onClick={() => onEdit(entry.session.id)}
+                    />
                     {students.length > 0 && <div className="student-context-links schedule-student-links">{students.map((student) => <button type="button" key={student.id} onClick={() => onOpenStudent(student.id)}>{student.name}</button>)}</div>}
                   </div>
                 );
