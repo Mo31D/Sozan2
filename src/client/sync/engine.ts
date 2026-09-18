@@ -1,5 +1,6 @@
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import type { LocalCloudLinkRecord } from '../adapters/indexeddb/platform.repository';
+import { withWorkspaceOperation } from './workspace-operation';
 import {
   deadLetterSyncMutation,
   failSyncMutation,
@@ -176,7 +177,7 @@ export async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
   await transactionDone(transaction);
 }
 
-export async function runWorkspaceSync(
+async function runWorkspaceSyncUnlocked(
   workspaceId: string,
 ): Promise<SyncRunResult> {
   await assertCloudInitializationReady(workspaceId);
@@ -226,4 +227,10 @@ export async function runWorkspaceSync(
     serverRevision: snapshot.revision,
   });
   return { pushed, pulled: true, pending: 0, failed: 0, deadLetters, syncedAt: snapshot.generatedAt };
+}
+
+export async function runWorkspaceSync(
+  workspaceId: string,
+): Promise<SyncRunResult> {
+  return withWorkspaceOperation(workspaceId, 'sync', () => runWorkspaceSyncUnlocked(workspaceId));
 }
