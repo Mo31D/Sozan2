@@ -301,6 +301,10 @@ function messageFor(cause: unknown): string {
     SYNC_MODULE_UNSUPPORTED: 'يوجد جزء من البرنامج لم يُجهز للمزامنة بعد.',
     CLOUD_INITIALIZATION_INCOMPLETE: 'ربط الحساب لم يكتمل بعد. استخدمي «إكمال نقل البيانات بأمان».',
     CLOUD_PROMOTION_NOT_PENDING: 'لا توجد عملية ربط معلقة تحتاج إلى استكمال.',
+    WORKSPACE_OPERATION_BUSY: 'هناك مزامنة أو استيراد آخر قيد التنفيذ. انتظر لحظات ثم أعد المحاولة.',
+    BACKUP_NETWORK_ERROR: 'تعذر الاتصال بالسحابة. بيانات الجهاز محفوظة ويمكن إعادة المحاولة.',
+    BACKUP_REQUEST_TIMEOUT: 'انتهت مهلة الاتصال بالسحابة. بيانات الجهاز محفوظة ويمكن إعادة المحاولة.',
+    BACKUP_TOO_LARGE_FOR_ATOMIC_RESTORE: 'النسخة أكبر من الحد الآمن للرفع السحابي الحالي.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
 }
