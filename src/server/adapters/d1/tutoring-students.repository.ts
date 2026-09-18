@@ -47,6 +47,20 @@ export class D1StudentRepository implements StudentRepository {
     return (result.results ?? []).map(mapStudent);
   }
 
+  async listAll(workspaceId: string): Promise<Student[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT id, workspace_id, name, age, guardian_name, guardian_phone, level, notes, active
+         FROM tutoring_students
+         WHERE workspace_id = ?1 AND deleted_at IS NULL
+         ORDER BY active DESC, name COLLATE NOCASE, id`,
+      )
+      .bind(workspaceId)
+      .all<StudentRow>();
+
+    return (result.results ?? []).map(mapStudent);
+  }
+
   async create(input: NewStudent): Promise<Student> {
     await this.db
       .prepare(
