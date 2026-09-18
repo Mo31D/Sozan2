@@ -5,8 +5,9 @@ import {
   loadLocalPlatform,
 } from '../adapters/indexeddb/platform.repository';
 import {
+  clearWorkspaceSyncOutbox,
   createLocalWorkspaceBackup,
-  restoreWorkspaceBackup,
+  restoreCloudWorkspaceBackup,
 } from '../backup/workspace-backup';
 import type { SyncRunResult } from '../sync/engine';
 import { runWorkspaceSync } from '../sync/engine';
@@ -24,7 +25,8 @@ export type CloudLinkWorkflowDependencies = {
   ): Promise<CloudRegisterResponse>;
   link(snapshot: LocalPlatformSnapshot, loginName: string): Promise<void>;
   load(): Promise<LocalPlatformSnapshot | null>;
-  restore(snapshot: LocalPlatformSnapshot, backup: WorkspaceBackup): Promise<void>;
+  restoreCloud(workspaceId: string, backup: WorkspaceBackup): Promise<number>;
+  clearOutbox(workspaceId: string): Promise<void>;
   sync(workspaceId: string): Promise<SyncRunResult>;
 };
 
@@ -33,7 +35,8 @@ const defaultDependencies: CloudLinkWorkflowDependencies = {
   register: registerCloudAccount,
   link: linkLocalPlatformToCloud,
   load: loadLocalPlatform,
-  restore: restoreWorkspaceBackup,
+  restoreCloud: restoreCloudWorkspaceBackup,
+  clearOutbox: clearWorkspaceSyncOutbox,
   sync: runWorkspaceSync,
 };
 
@@ -60,7 +63,13 @@ export async function linkExistingLocalWorkspaceToCloud(
     credentials.password,
   );
 
+  // Restore first. If the cloud write fails, the device deliberately remains
+  // local-only, so a transient server failure can never turn the next sync into
+  // an empty-cloud overwrite of the user's complete local state.
+  await dependencies.restoreCloud(snapshot.workspace.id, backup);
+  await dependencies.clearOutbox(snapshot.workspace.id);
   await dependencies.link(snapshot, registration.account.user.loginName);
+
   const linkedSnapshot = await dependencies.load();
   if (
     !linkedSnapshot
@@ -70,7 +79,6 @@ export async function linkExistingLocalWorkspaceToCloud(
     throw new Error('CLOUD_LINK_STATE_INVALID');
   }
 
-  await dependencies.restore(linkedSnapshot, backup);
   const sync = await dependencies.sync(snapshot.workspace.id);
 
   return {
