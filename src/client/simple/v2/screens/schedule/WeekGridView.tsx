@@ -4,7 +4,6 @@ import type { SimpleWorkspaceData } from '../../../data';
 import {
   formatClockTime,
   scheduleEntriesForDate,
-  timeToMinutes,
   todayIso,
   WEEKDAYS,
   weekdayForIso,
@@ -86,7 +85,7 @@ export function WeekGridView({
     : null;
 
   const days = dates.map((date) => {
-    const entries = scheduleEntriesForDate(data, date).filter((entry) => entry.status !== 'cancelled');
+    const entries = scheduleEntriesForDate(data, date);
     return {
       date,
       entries,
