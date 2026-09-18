@@ -58,6 +58,7 @@ export type ReportInput = {
     priceBasis?: 'total_session' | 'per_student';
     defaultPricePence?: number;
     expectedStudentCount?: number;
+    payerStudentId?: string | null;
   }>;
   occurrences: Array<{
     id?: string;
