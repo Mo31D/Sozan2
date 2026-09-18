@@ -117,6 +117,24 @@ export async function acquireWorkspaceWrite(
   return reserveWorkspaceWrite(db, workspaceId, state.revision, token);
 }
 
+export async function abortWorkspaceWrite(
+  db: D1Database,
+  workspaceId: string,
+  token: string,
+): Promise<void> {
+  const result = await db.prepare(
+    `UPDATE core_workspace_sync_revisions
+     SET writer_token=NULL,
+         write_started_at=NULL,
+         updated_at=CURRENT_TIMESTAMP
+     WHERE workspace_id=?1 AND writer_token=?2`,
+  ).bind(workspaceId, token).run();
+
+  if ((result.meta?.changes ?? 0) === 0) {
+    throw new Error('SYNC_WRITE_LEASE_LOST');
+  }
+}
+
 export async function finalizeWorkspaceWrite(
   db: D1Database,
   workspaceId: string,

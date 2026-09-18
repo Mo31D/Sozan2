@@ -1,15 +1,21 @@
 import { Hono } from 'hono';
 import {
   assertBackupWorkspaceScope,
+  BACKUP_ENGINE_VERSION,
+  backupImportRequestSchema,
   FULL_BACKUP_SCHEMA_VERSION,
   validateWorkspaceBackup,
   workspaceBackupSchema,
+  type BackupImportStatus,
   type WorkspaceBackup,
 } from '../../modules/backup/workspace-backup';
 import { accessError, requireWorkspaceAccess } from '../auth/guard';
 import type { Env } from '../env';
 import { requireDatabase } from '../env';
 import {
+  abortWorkspaceWrite,
+  finalizeWorkspaceWrite,
+  reserveWorkspaceWrite,
   withStableWorkspaceRead,
   withWorkspaceWrite,
 } from '../sync/workspace-revision';
@@ -197,6 +203,8 @@ async function exportBackup(db: D1Database, workspaceId: string): Promise<Worksp
 
   return {
     schemaVersion: FULL_BACKUP_SCHEMA_VERSION,
+    engineVersion: BACKUP_ENGINE_VERSION,
+    backupId: crypto.randomUUID(),
     exportedAt: new Date().toISOString(),
     manifest: {
       students: tutoringStudents.length,
@@ -524,7 +532,7 @@ async function restoreBackupAtomic(db: D1Database, workspaceId: string, backup: 
   await db.batch(statements);
 }
 
-function routeError(error: unknown): { status: 400 | 401 | 403 | 503; error: string } {
+function routeError(error: unknown): { status: 400 | 401 | 403 | 409 | 503; error: string } {
   const access = accessError(error);
   if (access) return access;
   if (error instanceof Error && error.name === 'ZodError') return { status: 400, error: 'BACKUP_FILE_INVALID' };
@@ -532,7 +540,126 @@ function routeError(error: unknown): { status: 400 | 401 | 403 | 503; error: str
   if (code === 'SYNC_WRITE_IN_PROGRESS' || code === 'SYNC_SNAPSHOT_UNSTABLE') {
     return { status: 503, error: code };
   }
+  if ([
+    'BACKUP_IMPORT_REVISION_CONFLICT',
+    'BACKUP_IMPORT_IN_PROGRESS',
+    'BACKUP_IMPORT_ID_REUSED',
+    'BACKUP_IMPORT_ALREADY_FAILED',
+  ].includes(code)) {
+    return { status: 409, error: code };
+  }
   return { status: 400, error: code };
+}
+
+
+type ImportJobRow = {
+  import_id: string;
+  backup_fingerprint: string;
+  expected_revision: number;
+  status: 'applying' | 'completed' | 'failed';
+  applied_revision: number | null;
+  error_code: string | null;
+};
+
+async function sha256(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((part) => part.toString(16).padStart(2, '0')).join('');
+}
+
+async function importJob(
+  db: D1Database,
+  workspaceId: string,
+  importId: string,
+): Promise<ImportJobRow | null> {
+  await db.prepare(
+    `UPDATE core_backup_imports
+     SET status='failed',error_code='BACKUP_IMPORT_STALE',updated_at=CURRENT_TIMESTAMP
+     WHERE workspace_id=?1 AND import_id=?2 AND status='applying'
+       AND updated_at < datetime('now','-10 minutes')`,
+  ).bind(workspaceId, importId).run();
+
+  return db.prepare(
+    `SELECT import_id,backup_fingerprint,expected_revision,status,applied_revision,error_code
+     FROM core_backup_imports
+     WHERE workspace_id=?1 AND import_id=?2`,
+  ).bind(workspaceId, importId).first<ImportJobRow>();
+}
+
+function importStatus(row: ImportJobRow): BackupImportStatus {
+  if (row.status === 'completed') {
+    return {
+      importId: row.import_id,
+      status: 'completed',
+      expectedRevision: row.expected_revision,
+      revision: Number(row.applied_revision ?? 0),
+      error: null,
+    };
+  }
+  if (row.status === 'failed') {
+    return {
+      importId: row.import_id,
+      status: 'failed',
+      expectedRevision: row.expected_revision,
+      revision: row.applied_revision == null ? null : Number(row.applied_revision),
+      error: row.error_code ?? 'BACKUP_IMPORT_FAILED',
+    };
+  }
+  return {
+    importId: row.import_id,
+    status: 'applying',
+    expectedRevision: row.expected_revision,
+    revision: null,
+    error: null,
+  };
+}
+
+async function beginImportJob(
+  db: D1Database,
+  workspaceId: string,
+  importId: string,
+  fingerprint: string,
+  expectedRevision: number,
+): Promise<{ row: ImportJobRow; created: boolean }> {
+  const inserted = await db.prepare(
+    `INSERT OR IGNORE INTO core_backup_imports(
+       workspace_id,import_id,backup_fingerprint,expected_revision,status
+     ) VALUES(?1,?2,?3,?4,'applying')`,
+  ).bind(workspaceId, importId, fingerprint, expectedRevision).run();
+
+  const row = await importJob(db, workspaceId, importId);
+  if (!row) throw new Error('BACKUP_IMPORT_JOURNAL_FAILED');
+  if (row.backup_fingerprint !== fingerprint || row.expected_revision !== expectedRevision) {
+    throw new Error('BACKUP_IMPORT_ID_REUSED');
+  }
+  return { row, created: (inserted.meta?.changes ?? 0) > 0 };
+}
+
+async function failImportJob(
+  db: D1Database,
+  workspaceId: string,
+  importId: string,
+  errorCode: string,
+): Promise<void> {
+  await db.prepare(
+    `UPDATE core_backup_imports
+     SET status='failed',error_code=?3,updated_at=CURRENT_TIMESTAMP
+     WHERE workspace_id=?1 AND import_id=?2 AND status<>'completed'`,
+  ).bind(workspaceId, importId, errorCode).run();
+}
+
+async function completeImportJob(
+  db: D1Database,
+  workspaceId: string,
+  importId: string,
+  revision: number,
+): Promise<void> {
+  await db.prepare(
+    `UPDATE core_backup_imports
+     SET status='completed',applied_revision=?3,error_code=NULL,
+         updated_at=CURRENT_TIMESTAMP,completed_at=CURRENT_TIMESTAMP
+     WHERE workspace_id=?1 AND import_id=?2`,
+  ).bind(workspaceId, importId, revision).run();
 }
 
 export const backupRoutes = new Hono<{ Bindings: Env }>();
@@ -568,6 +695,123 @@ backupRoutes.post('/:workspaceId/validate', async (c) => {
   } catch (error) {
     const response = routeError(error);
     return c.json({ ok: false, error: response.error }, response.status);
+  }
+});
+
+backupRoutes.get('/:workspaceId/imports/:importId', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    const importId = c.req.param('importId');
+    await requireWorkspaceAccess(c, workspaceId);
+    const db = requireDatabase(c.env);
+    const row = await importJob(db, workspaceId, importId);
+    if (!row) return c.json({ error: 'BACKUP_IMPORT_NOT_FOUND' }, 404);
+    return c.json(importStatus(row));
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ error: response.error }, response.status);
+  }
+});
+
+backupRoutes.post('/:workspaceId/import', async (c) => {
+  const workspaceId = c.req.param('workspaceId');
+  let db: D1Database | null = null;
+  let importId = '';
+  let leaseToken: string | null = null;
+  let dataApplied = false;
+  let ownsImportJob = false;
+
+  try {
+    const access = await requireWorkspaceAccess(c, workspaceId, true);
+    if (access.role !== 'owner' && access.role !== 'admin') {
+      return c.json({ error: 'WORKSPACE_ADMIN_REQUIRED' }, 403);
+    }
+
+    const parsed = backupImportRequestSchema.parse(await c.req.json());
+    importId = parsed.importId;
+    const backup = parsed.backup;
+
+    assertBackupWorkspaceScope(backup);
+    if (backup.workspace.id !== workspaceId) {
+      return c.json({ error: 'BACKUP_WORKSPACE_ID_MISMATCH' }, 400);
+    }
+
+    const validation = validateWorkspaceBackup(backup);
+    if (!validation.valid) {
+      return c.json({ error: validation.errors[0] ?? 'BACKUP_VALIDATION_FAILED', validation }, 400);
+    }
+
+    db = requireDatabase(c.env);
+    const fingerprint = await sha256(JSON.stringify(backup));
+    const started = await beginImportJob(
+      db,
+      workspaceId,
+      importId,
+      fingerprint,
+      parsed.expectedRevision,
+    );
+    const existing = started.row;
+    ownsImportJob = started.created;
+
+    if (!started.created) {
+      if (existing.status === 'completed') {
+        return c.json({
+          ok: true,
+          importId,
+          revision: Number(existing.applied_revision ?? parsed.expectedRevision),
+          replayed: true,
+        });
+      }
+      if (existing.status === 'failed') throw new Error('BACKUP_IMPORT_ALREADY_FAILED');
+      throw new Error('BACKUP_IMPORT_IN_PROGRESS');
+    }
+
+    const token = `backup-import:${importId}`;
+    const reserved = await reserveWorkspaceWrite(
+      db,
+      workspaceId,
+      parsed.expectedRevision,
+      token,
+    );
+    if (!reserved.ok) {
+      const code = reserved.busy ? 'SYNC_WRITE_IN_PROGRESS' : 'BACKUP_IMPORT_REVISION_CONFLICT';
+      await failImportJob(db, workspaceId, importId, code);
+      throw new Error(code);
+    }
+
+    leaseToken = token;
+    await restoreBackupAtomic(db, workspaceId, backup);
+    dataApplied = true;
+
+    const revision = await finalizeWorkspaceWrite(db, workspaceId, token);
+    leaseToken = null;
+    await completeImportJob(db, workspaceId, importId, revision);
+
+    return c.json({
+      ok: true,
+      importId,
+      revision,
+      restoredAt: new Date().toISOString(),
+      validation,
+    });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'BACKUP_IMPORT_FAILED';
+
+    if (db && leaseToken && !dataApplied) {
+      try {
+        await abortWorkspaceWrite(db, workspaceId, leaseToken);
+        leaseToken = null;
+      } catch {
+        // If lease release itself fails, stale-write recovery will conservatively
+        // advance the revision. The import journal remains the recovery anchor.
+      }
+    }
+    if (db && importId && ownsImportJob && !dataApplied) {
+      try { await failImportJob(db, workspaceId, importId, code); } catch {}
+    }
+
+    const response = routeError(error);
+    return c.json({ error: response.error, importId: importId || null }, response.status);
   }
 });
 

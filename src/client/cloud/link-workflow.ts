@@ -12,6 +12,7 @@ import {
 } from '../backup/workspace-backup';
 import type { SyncRunResult } from '../sync/engine';
 import { runWorkspaceSync } from '../sync/engine';
+import { beginWorkspaceOperation } from '../sync/workspace-operation';
 import {
   registerCloudAccount,
   type CloudRegisterResponse,
@@ -118,9 +119,14 @@ export async function resumeCloudWorkspacePromotion(
     throw new Error('CLOUD_PROMOTION_NOT_PENDING');
   }
 
-  const backup = await dependencies.createBackup(snapshot);
-  const revision = await dependencies.restoreCloud(snapshot.workspace.id, backup);
-  await dependencies.clearOutbox(snapshot.workspace.id);
-  await dependencies.markReady(snapshot.workspace.id, revision);
+  const release = beginWorkspaceOperation(snapshot.workspace.id, 'cloud-promotion');
+  try {
+    const backup = await dependencies.createBackup(snapshot);
+    const revision = await dependencies.restoreCloud(snapshot.workspace.id, backup);
+    await dependencies.clearOutbox(snapshot.workspace.id);
+    await dependencies.markReady(snapshot.workspace.id, revision);
+  } finally {
+    release();
+  }
   return dependencies.sync(snapshot.workspace.id);
 }

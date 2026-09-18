@@ -50,6 +50,8 @@ export type LocalCloudLinkRecord = {
    * sync until the complete local workspace has been restored to cloud.
    */
   initializationState?: 'provisioning' | 'ready';
+  provisioningReason?: 'cloud-link' | 'backup-import';
+  pendingBackupImportId?: string | null;
 };
 
 export type LocalPlatformSnapshot = {
@@ -225,6 +227,8 @@ export async function linkLocalPlatformToCloud(
     lastCloudPushAt: null,
     serverRevision: null,
     initializationState,
+    provisioningReason: initializationState === 'provisioning' ? 'cloud-link' : undefined,
+    pendingBackupImportId: null,
   } satisfies LocalCloudLinkRecord);
   await transactionDone(transaction);
 }
@@ -244,7 +248,33 @@ export async function markLocalCloudLinkReady(
   store.put({
     ...current,
     serverRevision,
+    lastCloudPullAt: new Date().toISOString(),
+    lastCloudPushAt: new Date().toISOString(),
     initializationState: 'ready',
+    provisioningReason: undefined,
+    pendingBackupImportId: null,
+  } satisfies LocalCloudLinkRecord);
+  await transactionDone(transaction);
+}
+
+export async function markLocalCloudLinkProvisioning(
+  workspaceId: string,
+  reason: 'cloud-link' | 'backup-import',
+  pendingBackupImportId: string | null = null,
+): Promise<void> {
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(STORES.coreCloudLinks, 'readwrite');
+  const store = transaction.objectStore(STORES.coreCloudLinks);
+  const current = await requestResult<LocalCloudLinkRecord | undefined>(store.get(workspaceId));
+  if (!current) {
+    await transactionDone(transaction);
+    throw new Error('CLOUD_LINK_STATE_INVALID');
+  }
+  store.put({
+    ...current,
+    initializationState: 'provisioning',
+    provisioningReason: reason,
+    pendingBackupImportId,
   } satisfies LocalCloudLinkRecord);
   await transactionDone(transaction);
 }
@@ -336,6 +366,8 @@ export async function hydrateLocalPlatformFromCloud(
     lastCloudPushAt: null,
     serverRevision: null,
     initializationState: 'ready',
+    provisioningReason: undefined,
+    pendingBackupImportId: null,
   } satisfies LocalCloudLinkRecord);
 
   await transactionDone(transaction);

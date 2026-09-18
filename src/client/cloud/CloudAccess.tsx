@@ -4,6 +4,7 @@ import {
   loginCloudAccount,
 } from './account-api';
 import { linkExistingLocalWorkspaceToCloud, resumeCloudWorkspacePromotion } from './link-workflow';
+import { resumePendingBackupImport } from '../backup/workspace-backup';
 import {
   hydrateLocalPlatformFromCloud,
   loadLocalPlatform,
@@ -128,8 +129,13 @@ export function CloudLinkPanel({
       setBusy(true);
       setError('');
       try {
-        const sync = await resumeCloudWorkspacePromotion(snapshot);
-        setSyncResult(sync);
+        if (snapshot.cloudLink?.provisioningReason === 'backup-import') {
+          await resumePendingBackupImport(snapshot);
+          setSyncResult(null);
+        } else {
+          const sync = await resumeCloudWorkspacePromotion(snapshot);
+          setSyncResult(sync);
+        }
         await onLinked();
       } catch (cause) {
         setError(messageFor(cause));
@@ -137,17 +143,26 @@ export function CloudLinkPanel({
         setBusy(false);
       }
     };
+    const backupImport = snapshot.cloudLink.provisioningReason === 'backup-import';
 
     return (
       <section className="panel cloud-link-panel cloud-register-panel">
         <div className="cloud-register-copy">
-          <span className="panel-label">إكمال ربط الحساب</span>
+          <span className="panel-label">{backupImport ? 'استيراد محفوظ على الجهاز' : 'إكمال ربط الحساب'}</span>
           <strong>{snapshot.cloudLink.loginName}</strong>
-          <small>الحساب اتعمل، لكن نقل نسخة البيانات الكاملة للسحابة لم يكتمل. بيانات الجهاز ما زالت محفوظة.</small>
+          <small>
+            {backupImport
+              ? 'تم تطبيق النسخة المستوردة على هذا الجهاز، لكن رفعها للسحابة لم يكتمل. المزامنة متوقفة مؤقتًا حتى لا تعيد السحابة البيانات القديمة.'
+              : 'الحساب اتعمل، لكن نقل نسخة البيانات الكاملة للسحابة لم يكتمل. بيانات الجهاز ما زالت محفوظة.'}
+          </small>
         </div>
         <div className="cloud-actions">
           <button className="primary-button" type="button" disabled={busy} onClick={() => void resume()}>
-            {busy ? 'جاري إكمال النقل…' : 'إكمال نقل البيانات بأمان'}
+            {busy
+              ? 'جاري إكمال النقل…'
+              : backupImport
+                ? 'رفع النسخة المستوردة للسحابة'
+                : 'إكمال نقل البيانات بأمان'}
           </button>
         </div>
         {error && <div className="status bad">{error}</div>}
@@ -292,6 +307,13 @@ function messageFor(cause: unknown): string {
     SYNC_MODULE_UNSUPPORTED: 'يوجد جزء من البرنامج لم يُجهز للمزامنة بعد.',
     CLOUD_INITIALIZATION_INCOMPLETE: 'ربط الحساب لم يكتمل بعد. استخدمي «إكمال نقل البيانات بأمان».',
     CLOUD_PROMOTION_NOT_PENDING: 'لا توجد عملية ربط معلقة تحتاج إلى استكمال.',
+    WORKSPACE_OPERATION_BUSY: 'هناك مزامنة أو استيراد آخر قيد التنفيذ. انتظر لحظات ثم أعد المحاولة.',
+    BACKUP_NETWORK_ERROR: 'تعذر الاتصال بالسحابة. بيانات الجهاز محفوظة ويمكن إعادة المحاولة.',
+    BACKUP_REQUEST_TIMEOUT: 'انتهت مهلة الاتصال بالسحابة. بيانات الجهاز محفوظة ويمكن إعادة المحاولة.',
+    BACKUP_TOO_LARGE_FOR_ATOMIC_RESTORE: 'النسخة أكبر من الحد الآمن للرفع السحابي الحالي.',
+    BACKUP_IMPORT_NOT_PENDING: 'لا توجد نسخة مستوردة معلقة تحتاج إلى رفع.',
+    BACKUP_IMPORT_IN_PROGRESS: 'رفع النسخة ما زال قيد التنفيذ على السحابة. انتظر قليلًا ثم أعد المحاولة.',
+    BACKUP_IMPORT_REVISION_CONFLICT: 'تم تغيير بيانات السحابة من جهاز آخر. النسخة المحلية ما زالت محمية ولم تُستبدل.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
 }

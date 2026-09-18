@@ -1,20 +1,30 @@
 import {
   assertBackupWorkspaceScope,
+  BACKUP_ENGINE_VERSION,
   backupManifest,
   FULL_BACKUP_SCHEMA_VERSION,
   validateWorkspaceBackup,
   workspaceBackupSchema,
+  type BackupImportStatus,
   type BackupValidationSummary,
   type WorkspaceBackup,
 } from '../../modules/backup/workspace-backup';
-import type {
-  LocalCloudLinkRecord,
-  LocalPlatformSnapshot,
-  LocalWorkspaceRecord,
+import {
+  markLocalCloudLinkProvisioning,
+  markLocalCloudLinkReady,
+  type LocalPlatformSnapshot,
+  type LocalWorkspaceRecord,
 } from '../adapters/indexeddb/platform.repository';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
+import { withWorkspaceOperationWhenFree } from '../sync/workspace-operation';
+import {
+  executeLocalFirstImport,
+  type LocalFirstImportOutcome as WorkspaceBackupImportOutcome,
+} from './import-workflow';
 
 type Row = Record<string, any>;
+
+export type { WorkspaceBackupImportOutcome };
 
 const STORE_MAP = {
   coreWorkspaceModules: STORES.coreWorkspaceModules,
@@ -37,14 +47,6 @@ const STORE_MAP = {
   financeOtherIncome: STORES.financeOtherIncome,
   financeCashChecks: STORES.financeCashChecks,
 } as const;
-
-async function workspaceRows(storeName: string, workspaceId: string): Promise<Row[]> {
-  const db = await openLocalDatabase();
-  const rows = await requestResult<Row[]>(
-    db.transaction(storeName, 'readonly').objectStore(storeName).getAll(),
-  );
-  return rows.filter((row) => row.workspaceId === workspaceId);
-}
 
 function enrichLocalAttendance(stores: WorkspaceBackup['stores']): void {
   const sessions = new Map(
@@ -71,14 +73,20 @@ export async function createLocalWorkspaceBackup(
   snapshot: LocalPlatformSnapshot,
 ): Promise<WorkspaceBackup> {
   const workspaceId = snapshot.workspace.id;
+  const db = await openLocalDatabase();
+  const storeNames = [...new Set(Object.values(STORE_MAP))];
+  const transaction = db.transaction(storeNames, 'readonly');
+  const done = transactionDone(transaction);
   const entries = await Promise.all(
-    Object.entries(STORE_MAP).map(async ([key, storeName]) => [
-      key,
-      await workspaceRows(storeName, workspaceId),
-    ] as const),
+    Object.entries(STORE_MAP).map(async ([key, storeName]) => {
+      const rows = await requestResult<Row[]>(transaction.objectStore(storeName).getAll());
+      return [key, rows.filter((row) => row.workspaceId === workspaceId)] as const;
+    }),
   );
+  await done;
   const stores = Object.fromEntries(entries) as WorkspaceBackup['stores'];
   enrichLocalAttendance(stores);
+
   const activeReceiptIds = new Set(
     stores.financeReceipts
       .filter((row) => !(row as Row).deletedAt)
@@ -90,6 +98,8 @@ export async function createLocalWorkspaceBackup(
 
   const backup: WorkspaceBackup = {
     schemaVersion: FULL_BACKUP_SCHEMA_VERSION,
+    engineVersion: BACKUP_ENGINE_VERSION,
+    backupId: crypto.randomUUID(),
     exportedAt: new Date().toISOString(),
     manifest: backupManifest({ stores }),
     workspace: {
@@ -139,11 +149,18 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     if (!response.ok) throw new Error(`BACKUP_HTTP_${response.status}`);
     throw new Error('BACKUP_RESPONSE_INVALID');
   }
+
   if (!response.ok) throw new Error(body?.error ?? `BACKUP_HTTP_${response.status}`);
   if (!body) throw new Error('BACKUP_RESPONSE_EMPTY');
   return body;
 }
 
+/**
+ * Import validation is deliberately local. Selecting a file must never depend
+ * on the network: Sozan2 is local-first and the same exported file is editable
+ * and portable. The server repeats validation inside the one destructive cloud
+ * request immediately before committing.
+ */
 export async function validateWorkspaceBackupForImport(
   snapshot: LocalPlatformSnapshot,
   input: unknown,
@@ -154,32 +171,21 @@ export async function validateWorkspaceBackupForImport(
     throw new Error('BACKUP_WORKSPACE_ID_MISMATCH');
   }
 
-  const localValidation = validateWorkspaceBackup(backup);
-  if (!localValidation.valid) {
-    throw new Error(localValidation.errors[0] ?? 'BACKUP_VALIDATION_FAILED');
+  const validation = validateWorkspaceBackup(backup);
+  if (!validation.valid) {
+    throw new Error(validation.errors[0] ?? 'BACKUP_VALIDATION_FAILED');
   }
-
-  if (!snapshot.cloudLink) return { backup, validation: localValidation };
-
-  const result = await requestJson<{ ok: boolean; validation: BackupValidationSummary }>(
-    `/api/backup/${encodeURIComponent(snapshot.workspace.id)}/validate`,
-    { method: 'POST', body: JSON.stringify(backup) },
-  );
-  if (!result.ok || !result.validation.valid) {
-    throw new Error(result.validation.errors[0] ?? 'BACKUP_VALIDATION_FAILED');
-  }
-  return { backup, validation: result.validation };
+  return { backup, validation };
 }
 
+/**
+ * User-facing export is always the current local working copy. This preserves
+ * unsynced local edits and matches the local-first architecture.
+ */
 export async function createWorkspaceBackup(
   snapshot: LocalPlatformSnapshot,
 ): Promise<WorkspaceBackup> {
-  if (!snapshot.cloudLink) return createLocalWorkspaceBackup(snapshot);
-  const backup = workspaceBackupSchema.parse(await requestJson<unknown>(
-    `/api/backup/${encodeURIComponent(snapshot.workspace.id)}/export`,
-  ));
-  assertBackupWorkspaceScope(backup);
-  return backup;
+  return createLocalWorkspaceBackup(snapshot);
 }
 
 function keyForRow(store: IDBObjectStore, row: Row): IDBValidKey | IDBKeyRange {
@@ -210,28 +216,11 @@ export async function clearWorkspaceSyncOutbox(workspaceId: string): Promise<voi
   await transactionDone(transaction);
 }
 
-async function acknowledgeRestoredCloudRevision(
-  workspaceId: string,
-  revision: number,
-): Promise<void> {
-  const db = await openLocalDatabase();
-  const transaction = db.transaction(STORES.coreCloudLinks, 'readwrite');
-  const store = transaction.objectStore(STORES.coreCloudLinks);
-  const current = await requestResult<LocalCloudLinkRecord | undefined>(store.get(workspaceId));
-  if (!current) {
-    await transactionDone(transaction);
-    throw new Error('CLOUD_LINK_STATE_INVALID');
-  }
-  const now = new Date().toISOString();
-  store.put({
-    ...current,
-    serverRevision: revision,
-    lastCloudPullAt: now,
-    initializationState: 'ready',
-  } satisfies LocalCloudLinkRecord);
-  await transactionDone(transaction);
-}
-
+/**
+ * Replaces every workspace-owned IndexedDB store in one IndexedDB transaction.
+ * Auth identity and cloud-link credentials are intentionally not part of a
+ * portable backup.
+ */
 export async function restoreLocalWorkspaceBackup(
   snapshot: LocalPlatformSnapshot,
   input: unknown,
@@ -240,6 +229,9 @@ export async function restoreLocalWorkspaceBackup(
   assertBackupWorkspaceScope(backup);
   const workspaceId = snapshot.workspace.id;
   if (backup.workspace.id !== workspaceId) throw new Error('BACKUP_WORKSPACE_ID_MISMATCH');
+
+  const validation = validateWorkspaceBackup(backup);
+  if (!validation.valid) throw new Error(validation.errors[0] ?? 'BACKUP_VALIDATION_FAILED');
 
   const db = await openLocalDatabase();
   const stores = [
@@ -268,6 +260,7 @@ export async function restoreLocalWorkspaceBackup(
     workspaceStore.get(workspaceId),
   );
   if (!current) throw new Error('WORKSPACE_NOT_FOUND');
+
   workspaceStore.put({
     ...current,
     name: backup.workspace.name,
@@ -282,6 +275,10 @@ export async function restoreLocalWorkspaceBackup(
   await transactionDone(transaction);
 }
 
+/**
+ * Legacy whole-cloud restore is retained only for initial account promotion and
+ * recovery of an already-provisioning cloud link. DataTools uses Import V2.
+ */
 export async function restoreCloudWorkspaceBackup(
   workspaceId: string,
   input: unknown,
@@ -299,28 +296,173 @@ export async function restoreCloudWorkspaceBackup(
   return result.revision;
 }
 
+async function cloudImportStatus(
+  workspaceId: string,
+  importId: string,
+): Promise<BackupImportStatus> {
+  return requestJson<BackupImportStatus>(
+    `/api/backup/${encodeURIComponent(workspaceId)}/imports/${encodeURIComponent(importId)}`,
+  );
+}
+
+async function publishBackupImportToCloud(
+  snapshot: LocalPlatformSnapshot,
+  backup: WorkspaceBackup,
+  importId: string,
+  expectedRevision: number,
+): Promise<number> {
+  try {
+    const result = await requestJson<{ ok: true; importId: string; revision: number }>(
+      `/api/backup/${encodeURIComponent(snapshot.workspace.id)}/import`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ importId, expectedRevision, backup }),
+      },
+    );
+    return result.revision;
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'BACKUP_CLOUD_IMPORT_FAILED';
+    if (code !== 'BACKUP_NETWORK_ERROR' && code !== 'BACKUP_REQUEST_TIMEOUT') throw error;
+
+    // A lost response is not evidence that the commit failed. Poll the import
+    // journal briefly before declaring the cloud outcome unknown.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const status = await cloudImportStatus(snapshot.workspace.id, importId);
+        if (status.status === 'completed') return status.revision;
+        if (status.status === 'failed') throw new Error(status.error);
+      } catch (statusError) {
+        const statusCode = statusError instanceof Error ? statusError.message : '';
+        if (!['BACKUP_NETWORK_ERROR', 'BACKUP_REQUEST_TIMEOUT'].includes(statusCode)) {
+          throw statusError;
+        }
+      }
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 500 * (attempt + 1)));
+    }
+    throw new Error('BACKUP_CLOUD_STATUS_UNKNOWN');
+  }
+}
+
+/**
+ * Backup Engine V2:
+ * 1) blocks normal sync;
+ * 2) puts a cloud-linked workspace into provisioning before touching local data;
+ * 3) atomically replaces IndexedDB first, so a network outage cannot prevent
+ *    the user from getting the corrected local data;
+ * 4) publishes the exact same backup with one idempotent cloud request;
+ * 5) keeps cloud sync blocked if that publish cannot be confirmed.
+ */
+export async function importWorkspaceBackupLocalFirst(
+  snapshot: LocalPlatformSnapshot,
+  input: unknown,
+  options: { onSafetyBackup?: (backup: WorkspaceBackup) => void | Promise<void> } = {},
+): Promise<WorkspaceBackupImportOutcome> {
+  const { backup } = await validateWorkspaceBackupForImport(snapshot, input);
+  const workspaceId = snapshot.workspace.id;
+
+  return withWorkspaceOperationWhenFree(workspaceId, 'backup-import', async () => {
+    if (options.onSafetyBackup) {
+      const safety = await createLocalWorkspaceBackup(snapshot);
+      await options.onSafetyBackup(safety);
+    }
+
+    const cloudLink = snapshot.cloudLink;
+    const importId = cloudLink ? crypto.randomUUID() : null;
+    const expectedRevision = Math.max(0, Number(cloudLink?.serverRevision ?? 0));
+
+    return executeLocalFirstImport(
+      {
+        cloudLinked: Boolean(cloudLink),
+        expectedRevision,
+        importId,
+      },
+      {
+        markProvisioning: async (id) => {
+          await markLocalCloudLinkProvisioning(workspaceId, 'backup-import', id);
+        },
+        restoreLocal: async () => {
+          await restoreLocalWorkspaceBackup(snapshot, backup);
+        },
+        publishCloud: async (id, revision) => publishBackupImportToCloud(
+          snapshot,
+          backup,
+          id,
+          revision,
+        ),
+        markReady: async (revision) => {
+          await markLocalCloudLinkReady(workspaceId, revision);
+        },
+      },
+    );
+  });
+}
+
+export async function resumePendingBackupImport(
+  snapshot: LocalPlatformSnapshot,
+): Promise<number> {
+  const cloudLink = snapshot.cloudLink;
+  if (
+    !cloudLink
+    || cloudLink.initializationState !== 'provisioning'
+    || cloudLink.provisioningReason !== 'backup-import'
+  ) {
+    throw new Error('BACKUP_IMPORT_NOT_PENDING');
+  }
+
+  const workspaceId = snapshot.workspace.id;
+  return withWorkspaceOperationWhenFree(workspaceId, 'backup-import-cloud-resume', async () => {
+    const backup = await createLocalWorkspaceBackup(snapshot);
+    const expectedRevision = Math.max(0, Number(cloudLink.serverRevision ?? 0));
+    let importId = cloudLink.pendingBackupImportId ?? crypto.randomUUID();
+
+    if (cloudLink.pendingBackupImportId) {
+      try {
+        let retryWithNewId = false;
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          const status = await cloudImportStatus(workspaceId, importId);
+          if (status.status === 'completed') {
+            await markLocalCloudLinkReady(workspaceId, status.revision);
+            return status.revision;
+          }
+          if (status.status === 'failed') {
+            if (['SYNC_WRITE_IN_PROGRESS', 'BACKUP_IMPORT_STALE'].includes(status.error)) {
+              importId = crypto.randomUUID();
+              retryWithNewId = true;
+              break;
+            }
+            throw new Error(status.error);
+          }
+          await new Promise((resolve) => globalThis.setTimeout(resolve, 500 * (attempt + 1)));
+        }
+        if (!retryWithNewId) throw new Error('BACKUP_IMPORT_IN_PROGRESS');
+      } catch (error) {
+        const code = error instanceof Error ? error.message : '';
+        if (code !== 'BACKUP_IMPORT_NOT_FOUND') throw error;
+        importId = crypto.randomUUID();
+      }
+    }
+
+    await markLocalCloudLinkProvisioning(workspaceId, 'backup-import', importId);
+    const revision = await publishBackupImportToCloud(
+      snapshot,
+      backup,
+      importId,
+      expectedRevision,
+    );
+    await markLocalCloudLinkReady(workspaceId, revision);
+    return revision;
+  });
+}
+
+/**
+ * Compatibility wrapper for callers that only need "restore completed".
+ * A pending cloud publish is still a successful local restore.
+ */
 export async function restoreWorkspaceBackup(
   snapshot: LocalPlatformSnapshot,
   input: unknown,
 ): Promise<void> {
-  const backup = workspaceBackupSchema.parse(input);
-  assertBackupWorkspaceScope(backup);
-  if (backup.workspace.id !== snapshot.workspace.id) {
-    throw new Error('BACKUP_WORKSPACE_ID_MISMATCH');
-  }
-
-  if (!snapshot.cloudLink) {
-    await restoreLocalWorkspaceBackup(snapshot, backup);
-    return;
-  }
-
-  const revision = await restoreCloudWorkspaceBackup(snapshot.workspace.id, backup);
-
-  // The cloud restore is already authoritative. Apply the exact same validated
-  // payload locally instead of issuing a second network sync request. This
-  // avoids reporting a false restore failure when the post-restore pull fails.
-  await restoreLocalWorkspaceBackup(snapshot, backup);
-  await acknowledgeRestoredCloudRevision(snapshot.workspace.id, revision);
+  await importWorkspaceBackupLocalFirst(snapshot, input);
 }
 
 export function downloadWorkspaceBackup(backup: WorkspaceBackup, suffix = ''): void {

@@ -1,12 +1,15 @@
 import { z } from 'zod';
 
 export const FULL_BACKUP_SCHEMA_VERSION = 'sozan2-full-backup-v1' as const;
+export const BACKUP_ENGINE_VERSION = 'backup-engine-v2' as const;
 
 const backupRow = z.record(z.string(), z.unknown());
 const rows = z.array(backupRow);
 
 export const workspaceBackupSchema = z.object({
   schemaVersion: z.literal(FULL_BACKUP_SCHEMA_VERSION),
+  engineVersion: z.literal(BACKUP_ENGINE_VERSION).optional(),
+  backupId: z.string().uuid().optional(),
   exportedAt: z.string().min(10).max(50),
   manifest: z.object({
     students: z.number().int().min(0),
@@ -50,6 +53,37 @@ export const workspaceBackupSchema = z.object({
 });
 
 export type WorkspaceBackup = z.infer<typeof workspaceBackupSchema>;
+
+export const backupImportRequestSchema = z.object({
+  importId: z.string().uuid(),
+  expectedRevision: z.number().int().min(0),
+  backup: workspaceBackupSchema,
+});
+
+export type BackupImportRequest = z.infer<typeof backupImportRequestSchema>;
+
+export type BackupImportStatus =
+  | {
+      importId: string;
+      status: 'applying';
+      expectedRevision: number;
+      revision: null;
+      error: null;
+    }
+  | {
+      importId: string;
+      status: 'completed';
+      expectedRevision: number;
+      revision: number;
+      error: null;
+    }
+  | {
+      importId: string;
+      status: 'failed';
+      expectedRevision: number;
+      revision: number | null;
+      error: string;
+    };
 
 export const BACKUP_STORE_KEYS = Object.keys(
   workspaceBackupSchema.shape.stores.shape,

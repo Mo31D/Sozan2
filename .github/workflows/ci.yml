@@ -43,6 +43,8 @@ jobs:
               'core_surface_layouts',
               'core_activity_events',
               'core_idempotency_keys',
+              'core_workspace_sync_revisions',
+              'core_backup_imports',
               'tutoring_students',
               'tutoring_student_baselines',
               'tutoring_recurring_sessions',
