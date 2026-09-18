@@ -95,7 +95,46 @@ export function packageLessonNumberForEntry(
   if (!entry.session.studentIds.includes(studentId)) return null;
   const plan = planFor(data, studentId);
   if (plan?.billingMode !== 'package') return null;
-  return packageProgress(data, studentId);
+
+  const cycle = activeCycleFor(data, studentId);
+  const size = cycle?.sessionLimit ?? plan.packageSize ?? 8;
+  if (!cycle) return `؟/${size}`;
+
+  const completed = cycle.openingCompletedCount + cycle.realCompletedCount;
+
+  // A completed occurrence has already advanced package progress, so its
+  // ordinal is the just-completed position rather than the next one.
+  if (entry.status === 'completed') {
+    const ordinal = completed <= 0 ? 1 : ((completed - 1) % size) + 1;
+    return `${ordinal}/${size}`;
+  }
+
+  if (entry.status === 'cancelled' || entry.status === 'missed') return null;
+
+  // For scheduled lessons, project from the current completed count. Earlier
+  // scheduled lessons for the same student consume earlier package positions.
+  const today = todayIso();
+  if (entry.date < today) return null;
+
+  const targetKey = `${entry.date}T${entry.startTime ?? '99:99'}|${entry.session.id}`;
+  let earlierScheduled = 0;
+  let cursor = today;
+  let guard = 0;
+
+  while (cursor <= entry.date && guard < 370) {
+    for (const candidate of scheduleEntriesForDate(data, cursor)) {
+      if (candidate.status !== 'scheduled') continue;
+      if (!candidate.session.studentIds.includes(studentId)) continue;
+      const candidateKey = `${candidate.date}T${candidate.startTime ?? '99:99'}|${candidate.session.id}`;
+      if (candidateKey < targetKey) earlierScheduled += 1;
+    }
+    if (cursor === entry.date) break;
+    cursor = addDays(cursor, 1);
+    guard += 1;
+  }
+
+  const ordinal = ((completed + earlierScheduled) % size) + 1;
+  return `${ordinal}/${size}`;
 }
 
 export function packageLessonNumbersForEntry(
