@@ -70,7 +70,7 @@ export function ManagementScreen({
     return <AccountSettings snapshot={snapshot} cloudAvailable={cloudAvailable} pendingSync={pendingSync} onPlatformChanged={onPlatformChanged} onBack={back} />;
   }
   if (view === 'data') {
-    return <DataTools snapshot={snapshot} data={data} onImported={onPlatformChanged} onBack={back} onOpenActivity={() => onOpenAdvanced('activity')} />;
+    return <DataTools snapshot={snapshot} onImported={onPlatformChanged} onBack={back} onOpenActivity={() => onOpenAdvanced('activity')} />;
   }
   if (view === 'profile') {
     return <ProfileSettings snapshot={snapshot} data={data} busy={busy} onSave={onPresentationSave} onBack={back} />;

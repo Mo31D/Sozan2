@@ -282,6 +282,7 @@ function appointmentErrorText(cause: unknown): string {
     APPOINTMENT_CLIENT_MISMATCH: 'التحصيل المرتبط بالموعد لازم يكون لنفس العميل المسجل على الموعد.',
     APPOINTMENT_CLIENT_LOCKED_BY_COLLECTION: 'لا يمكن تغيير عميل هذا الموعد بعد وجود تحصيل مرتبط به. عدّل التحصيل أولًا من السجل المالي.',
     FUTURE_APPOINTMENT_COMPLETION_NOT_ALLOWED: 'لا يمكن تسجيل موعد مستقبلي كمكتمل قبل يومه.',
+    COMPLETED_APPOINTMENT_REQUIRES_REOPEN: 'الموعد مكتمل؛ أعد فتحه أولًا قبل تغيير العميل أو السعر أو الوقت أو مدة الخدمة.',
     EXPENSE_AMOUNT_INVALID: 'اكتب مبلغ المصروف بشكل صحيح.',
     EXPENSE_CATEGORY_REQUIRED: 'اكتب تصنيف المصروف.',
     INCOME_CATEGORY_REQUIRED: 'اكتب مصدر الدخل أو تصنيفه.',

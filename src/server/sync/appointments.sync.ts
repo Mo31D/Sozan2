@@ -45,8 +45,31 @@ export const appointmentsSyncHandler: ModuleSyncHandler = {
         if (!client) throw new Error('CLIENT_NOT_FOUND');
       }
       const current = await db.prepare(
-        `SELECT client_id FROM appointments_items WHERE workspace_id=?1 AND id=?2 LIMIT 1`,
-      ).bind(workspaceId, row.id).first<{ client_id: string | null }>();
+        `SELECT client_id,title,appointment_date,start_time,duration_minutes,travel_minutes,
+                location,price_pence,status
+         FROM appointments_items WHERE workspace_id=?1 AND id=?2 LIMIT 1`,
+      ).bind(workspaceId, row.id).first<{
+        client_id: string | null;
+        title: string;
+        appointment_date: string;
+        start_time: string | null;
+        duration_minutes: number;
+        travel_minutes: number;
+        location: string | null;
+        price_pence: number;
+        status: 'scheduled' | 'completed' | 'cancelled' | 'missed';
+      }>();
+      if (current?.status === 'completed' && row.status === 'completed') {
+        const historicalChanged = current.client_id !== row.clientId
+          || current.title !== row.title
+          || current.appointment_date !== row.appointmentDate
+          || current.start_time !== row.startTime
+          || current.duration_minutes !== row.durationMinutes
+          || current.travel_minutes !== row.travelMinutes
+          || current.location !== row.location
+          || current.price_pence !== row.pricePence;
+        if (historicalChanged) throw new Error('COMPLETED_APPOINTMENT_REQUIRES_REOPEN');
+      }
       if (current && current.client_id !== row.clientId) {
         const linkedCollection = await db.prepare(
           `SELECT 1 AS found FROM finance_receipts

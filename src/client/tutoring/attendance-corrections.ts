@@ -48,7 +48,14 @@ async function ensureOccurrence(
     earnedPence: 0,
     completedAt: null,
     note: null,
-    studentIds: session.studentIds,
+    studentIds: [],
+    durationMinutesSnapshot: null,
+    travelMinutesSnapshot: null,
+    sessionTypeSnapshot: null,
+    locationSnapshot: null,
+    priceBasisSnapshot: null,
+    defaultPricePenceSnapshot: null,
+    payerStudentIdSnapshot: null,
   };
   store.put(occurrence);
   await transactionDone(transaction);
@@ -211,6 +218,14 @@ export async function reopenLocalOccurrence(
     centerCutPence: 0,
     earnedPence: 0,
     completedAt: null,
+    studentIds: [],
+    durationMinutesSnapshot: null,
+    travelMinutesSnapshot: null,
+    sessionTypeSnapshot: null,
+    locationSnapshot: null,
+    priceBasisSnapshot: null,
+    defaultPricePenceSnapshot: null,
+    payerStudentIdSnapshot: null,
   };
   const activity = makeActivityEvent({
     workspaceId,

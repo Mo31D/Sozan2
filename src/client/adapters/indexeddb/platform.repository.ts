@@ -43,6 +43,8 @@ export type LocalCloudLinkRecord = {
   linkedAt: string;
   lastCloudPullAt: string | null;
   lastCloudPushAt: string | null;
+  /** Last authoritative workspace revision pulled/acknowledged from cloud. */
+  serverRevision: number | null;
 };
 
 export type LocalPlatformSnapshot = {
@@ -215,6 +217,7 @@ export async function linkLocalPlatformToCloud(
     linkedAt: nowIso(),
     lastCloudPullAt: null,
     lastCloudPushAt: null,
+    serverRevision: null,
   } satisfies LocalCloudLinkRecord);
   await transactionDone(transaction);
 }
@@ -304,6 +307,7 @@ export async function hydrateLocalPlatformFromCloud(
     linkedAt: now,
     lastCloudPullAt: now,
     lastCloudPushAt: null,
+    serverRevision: null,
   } satisfies LocalCloudLinkRecord);
 
   await transactionDone(transaction);

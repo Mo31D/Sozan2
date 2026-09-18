@@ -82,6 +82,10 @@ describe('student financial summary', () => {
         recurringSessionId: 'session-1',
         status: 'completed',
         grossPence: 2500,
+        studentIds: ['student-1'],
+        priceBasisSnapshot: 'per_student',
+        defaultPricePenceSnapshot: 2500,
+        payerStudentIdSnapshot: null,
       }],
       billingPlans: [{ studentId: 'student-1', billingMode: 'per_session' }],
       billingCycles: [],
@@ -94,8 +98,8 @@ describe('student financial summary', () => {
       allocations: [{
         receiptId: 'receipt-1',
         targetModule: 'tutoring',
-        targetType: 'occurrence',
-        targetId: 'occurrence-1',
+        targetType: 'student_occurrence',
+        targetId: 'occurrence-1:student-1',
         amountPence: 1000,
       }],
     }, 'student-1');
@@ -104,6 +108,53 @@ describe('student financial summary', () => {
     expect(summary.allocatedPence).toBe(1000);
     expect(summary.creditPence).toBe(0);
     expect(summary.duePence).toBe(1500);
+  });
+
+  it('keeps each student debt isolated in the same group occurrence', () => {
+    const shared = {
+      sessions: [{
+        id: 'session-group',
+        studentIds: ['student-a', 'student-b'],
+        priceBasis: 'per_student' as const,
+        defaultPricePence: 2500,
+        expectedStudentCount: 2,
+        payerStudentId: null,
+      }],
+      occurrences: [{
+        id: 'occurrence-group',
+        recurringSessionId: 'session-group',
+        status: 'completed' as const,
+        grossPence: 5000,
+        studentIds: ['student-a', 'student-b'],
+        priceBasisSnapshot: 'per_student' as const,
+        defaultPricePenceSnapshot: 2500,
+        payerStudentIdSnapshot: null,
+      }],
+      billingPlans: [
+        { studentId: 'student-a', billingMode: 'per_session' as const },
+        { studentId: 'student-b', billingMode: 'per_session' as const },
+      ],
+      billingCycles: [],
+      receipts: [{
+        id: 'receipt-a',
+        payerRefId: 'student-a',
+        amountPence: 2500,
+        receivedAt: '2026-09-20',
+      }],
+      allocations: [{
+        receiptId: 'receipt-a',
+        targetModule: 'tutoring',
+        targetType: 'student_occurrence',
+        targetId: 'occurrence-group:student-a',
+        amountPence: 2500,
+      }],
+    };
+
+    const a = buildStudentFinancialSummary(shared, 'student-a');
+    const b = buildStudentFinancialSummary(shared, 'student-b');
+
+    expect(a.duePence).toBe(0);
+    expect(b.duePence).toBe(2500);
   });
 
   it('uses the newest receipt as the last payment', () => {

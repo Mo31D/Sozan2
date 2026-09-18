@@ -167,6 +167,7 @@ export function TutoringSurface({
         expectedStudentCount: 1,
         centerCutBps: 0,
         studentIds: form.get('studentId') ? [String(form.get('studentId'))] : [],
+        payerStudentId: form.get('studentId') ? String(form.get('studentId')) : null,
       });
       event.currentTarget.reset();
       setNotice('تم حفظ الموعد محليًا.');

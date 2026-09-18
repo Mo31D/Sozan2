@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { authRoutes } from './auth/routes';
+import { backupRoutes } from './backup/routes';
 import type { Env } from './env';
 import { migrationRoutes } from './migration/routes';
 import { plannerRoutes } from './planner/routes';
@@ -23,6 +24,7 @@ app.get('/api/health', (c) => {
 });
 
 app.route('/api/auth', authRoutes);
+app.route('/api/backup', backupRoutes);
 app.route('/api/workspaces', workspaceRoutes);
 app.route('/api/tutoring', tutoringRoutes);
 app.route('/api/planner', plannerRoutes);

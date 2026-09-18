@@ -50,6 +50,15 @@ class AcceptanceBillingRepository implements BillingRepository {
       .sort((a, b) => b.sequenceNo - a.sequenceNo)[0] ?? null;
   }
 
+  async getCycleForOccurrence(
+    workspaceId: string,
+    studentId: string,
+    occurrenceId: string,
+  ): Promise<BillingCycle | null> {
+    if (!this.linkedOccurrences.some((item) => item.occurrenceId === occurrenceId)) return null;
+    return this.getCurrentCycle(workspaceId, studentId);
+  }
+
   async getNextSequenceNo(workspaceId: string, studentId: string): Promise<number> {
     return this.cycles
       .filter((cycle) => cycle.workspaceId === workspaceId && cycle.studentId === studentId)
@@ -123,6 +132,12 @@ class AcceptanceFinanceGateway implements FinanceGateway {
   async getAllocatedTotal(_workspaceId: string, target: ExternalReference): Promise<number> {
     return this.allocations
       .filter((item) => item.target.module === target.module && item.target.type === target.type && item.target.id === target.id)
+      .reduce((sum, item) => sum + item.amountPence, 0);
+  }
+
+  async getReceiptAllocatedTotal(_workspaceId: string, receiptId: string): Promise<number> {
+    return this.allocations
+      .filter((item) => item.receiptId === receiptId)
       .reduce((sum, item) => sum + item.amountPence, 0);
   }
 

@@ -1,5 +1,6 @@
 import { packageUnitShare } from '../../modules/tutoring/domain/billing';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
+import { completedSessionFinancials } from '../../modules/tutoring/domain/session-finance';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import { rebalanceStudentLocally } from '../finance/local-rebalance';
@@ -23,6 +24,7 @@ export async function completeLocalSession(
   session: RecurringSession,
   displayedDate: string,
   preferredOccurrenceId?: string,
+  participantStudentIds?: string[],
 ): Promise<void> {
   const db = await openLocalDatabase();
   const transaction = db.transaction(
@@ -59,14 +61,22 @@ export async function completeLocalSession(
     return;
   }
 
+  const participants = participantStudentIds
+    ? [...new Set(participantStudentIds)]
+    : [...session.studentIds];
+  if (participants.some((studentId) => !session.studentIds.includes(studentId))) {
+    throw new Error('OCCURRENCE_PARTICIPANT_INVALID');
+  }
+  if (session.studentIds.length > 0 && participants.length === 0) {
+    throw new Error('OCCURRENCE_PARTICIPANT_REQUIRED');
+  }
+
   const originalSessionDate = existing?.sessionDate ?? displayedDate;
   const effectiveDate = existing?.rescheduledToDate ?? displayedDate;
-  const chargeableCount = Math.max(session.studentIds.length, session.expectedStudentCount, 1);
-  const grossPence = session.priceBasis === 'per_student'
-    ? session.defaultPricePence * chargeableCount
-    : session.defaultPricePence;
-  const centerCutPence = Math.floor((grossPence * session.centerCutBps) / 10_000);
-  const earnedPence = Math.max(0, grossPence - centerCutPence);
+  const { grossPence, centerCutPence, earnedPence } = completedSessionFinancials(
+    session,
+    participants.length,
+  );
   const completedAt = new Date().toISOString();
   const occurrenceId = existing?.id ?? crypto.randomUUID();
   const fallbackStart = session.startTime && CLOCK_TIME.test(session.startTime) ? session.startTime : null;
@@ -88,11 +98,18 @@ export async function completeLocalSession(
     earnedPence,
     completedAt,
     note: existing?.note ?? null,
-    studentIds: session.studentIds,
+    studentIds: participants,
+    durationMinutesSnapshot: session.durationMinutes,
+    travelMinutesSnapshot: session.travelMinutes,
+    sessionTypeSnapshot: session.sessionType,
+    locationSnapshot: session.location,
+    priceBasisSnapshot: session.priceBasis,
+    defaultPricePenceSnapshot: session.defaultPricePence,
+    payerStudentIdSnapshot: session.payerStudentId,
   };
   occurrenceStore.put(completedOccurrence);
 
-  for (const studentId of session.studentIds) {
+  for (const studentId of participants) {
     const plan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId);
     if (!plan || plan.billingMode !== 'package') continue;
 
@@ -177,12 +194,13 @@ export async function completeLocalSession(
       scheduledStart,
       completedAt,
       note: null,
+      participantStudentIds: participants,
     },
   }));
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
 
   await transactionDone(transaction);
-  for (const studentId of session.studentIds) {
+  for (const studentId of participants) {
     await rebalanceStudentLocally(workspaceId, studentId);
   }
 }

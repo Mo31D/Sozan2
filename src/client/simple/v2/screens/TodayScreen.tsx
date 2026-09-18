@@ -135,9 +135,12 @@ function AttendanceCard({
   onOpenStudent: (studentId: string) => void;
   onAttendance: (action: AttendanceWorkflowAction, success: string) => Promise<boolean>;
 }) {
+  const { session, occurrence } = entry;
   const [collecting, setCollecting] = useState(false);
   const [moving, setMoving] = useState(false);
-  const { session, occurrence } = entry;
+  const [participantStudentIds, setParticipantStudentIds] = useState<string[]>(
+    () => [...session.studentIds],
+  );
   const primaryStudent = studentForSession(data, session);
   const plan = primaryStudent ? planFor(data, primaryStudent.id) : null;
   const done = occurrence?.status === 'completed';
@@ -151,6 +154,10 @@ function AttendanceCard({
   const paymentStudents = linkedStudents.length ? linkedStudents : data.students;
   const defaultStudent = paymentStudents[0] ?? null;
   const suggested = defaultStudent ? suggestedCollectionPence(data, session, defaultStudent.id) : 0;
+  const completionNeedsParticipant = linkedStudents.length > 0 && participantStudentIds.length === 0;
+  const attendedStudents = done
+    ? linkedStudents.filter((student) => occurrence?.studentIds?.includes(student.id))
+    : [];
 
   const perform = async (action: AttendanceWorkflowAction, success: string) => {
     const ok = await onAttendance(action, success);
@@ -173,6 +180,36 @@ function AttendanceCard({
             </div>
           )}
           {plan?.billingMode === 'package' && <small>باقة · {packageProgress(data, primaryStudent?.id ?? '')}</small>}
+          {linkedStudents.length > 1 && !done && !cancelled && !missed && (
+            <div className="lesson-inline-form attendance-picker" aria-label="اختيار الحضور">
+              <strong>مين حضر؟</strong>
+              <div className="student-context-links">
+                {linkedStudents.map((student) => {
+                  const checked = participantStudentIds.includes(student.id);
+                  return (
+                    <label key={student.id}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setParticipantStudentIds((current) =>
+                          checked
+                            ? current.filter((id) => id !== student.id)
+                            : [...current, student.id],
+                        )}
+                      />
+                      <span>{student.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {completionNeedsParticipant && <small className="lesson-state-note">اختاري طالبًا واحدًا على الأقل، أو استخدمي «إلغاء/فائتة» بدل تسجيل الحصة كمكتملة.</small>}
+            </div>
+          )}
+          {done && linkedStudents.length > 1 && (
+            <small className="lesson-state-note">
+              الحضور: {attendedStudents.length ? attendedStudents.map((student) => student.name).join('، ') : 'لم يُسجل حضور'}
+            </small>
+          )}
           {future && !done && <small className="lesson-state-note">حصة مستقبلية — يمكن نقلها أو إلغاؤها، والحضور يتسجل في يومها.</small>}
           {cancelled && <small className="lesson-state-note">ملغاة — محفوظة في السجل ويمكن استرجاعها</small>}
           {missed && <small className="lesson-state-note">فائتة — يمكنك استرجاعها أو نقلها</small>}
@@ -183,8 +220,8 @@ function AttendanceCard({
       {!done && !cancelled && !missed && (
         <>
           <div className="lesson-actions">
-            <button className="lesson-done-button" type="button" disabled={busy || future} onClick={() => void perform({ kind: 'complete', session, displayedDate: entry.date, occurrenceId: occurrence?.id }, 'تم تسجيل الحصة.')}>تمت</button>
-            <button className="lesson-pay-button" type="button" disabled={busy || future || !paymentStudents.length} onClick={() => setCollecting((value) => !value)}>تمت + قبض</button>
+            <button className="lesson-done-button" type="button" disabled={busy || future || completionNeedsParticipant} onClick={() => void perform({ kind: 'complete', session, displayedDate: entry.date, occurrenceId: occurrence?.id, participantStudentIds }, 'تم تسجيل الحصة.')}>تمت</button>
+            <button className="lesson-pay-button" type="button" disabled={busy || future || !paymentStudents.length || completionNeedsParticipant} onClick={() => setCollecting((value) => !value)}>تمت + قبض</button>
           </div>
           <div className="lesson-secondary-actions">
             <button type="button" disabled={busy} onClick={() => void perform({ kind: 'cancel', session, displayedDate: entry.date, occurrenceId: occurrence?.id }, 'تم إلغاء الحصة ويمكن استرجاعها من السجل.')}>إلغاء</button>
@@ -221,6 +258,7 @@ function AttendanceCard({
             amountPence: toPence(form.get('amount')),
             paymentMethod: String(form.get('paymentMethod') ?? 'cash') as 'cash' | 'bank' | 'wallet' | 'other',
             note: String(form.get('note') ?? ''),
+            participantStudentIds: done ? undefined : participantStudentIds,
           }, done ? 'تم تسجيل التحصيل وربطه بالطالب.' : 'تم تسجيل الحصة والتحصيل وربطهما بالطالب.');
         }}>
           <strong>{done ? 'تحصيل للحصة' : 'الحصة تمت وتم القبض'}</strong>

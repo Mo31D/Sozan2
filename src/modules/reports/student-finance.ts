@@ -1,3 +1,4 @@
+import { studentOccurrenceTargetId } from '../tutoring/domain/finance-target';
 export type StudentFinancialSummary = {
   receivedPence: number;
   allocatedPence: number;
@@ -17,12 +18,17 @@ type StudentFinanceInput = {
     priceBasis: 'total_session' | 'per_student';
     defaultPricePence: number;
     expectedStudentCount: number;
+    payerStudentId?: string | null;
   }>;
   occurrences: Array<{
     id: string;
     recurringSessionId: string;
     status: 'scheduled' | 'completed' | 'cancelled' | 'missed';
     grossPence: number;
+    studentIds?: string[];
+    priceBasisSnapshot?: 'total_session' | 'per_student' | null;
+    defaultPricePenceSnapshot?: number | null;
+    payerStudentIdSnapshot?: string | null;
   }>;
   billingPlans: Array<{
     studentId: string;
@@ -83,25 +89,36 @@ export function buildStudentFinancialSummary(
     duePence += Math.max(0, cycle.pricePence - allocatedToTarget(data, 'package_cycle', cycle.id));
   }
 
-  const billingMode = data.billingPlans.find((row) => row.studentId === studentId)?.billingMode ?? 'per_session';
+  const billingMode = data.billingPlans.find((row) => row.studentId === studentId)?.billingMode ?? null;
   if (billingMode === 'per_session') {
     const sessions = new Map(data.sessions.map((session) => [session.id, session]));
     for (const occurrence of data.occurrences) {
       if (occurrence.status !== 'completed') continue;
       const session = sessions.get(occurrence.recurringSessionId);
-      if (!session || !session.studentIds.includes(studentId)) continue;
+      if (!session) continue;
 
+      const priceBasis = occurrence.priceBasisSnapshot ?? session.priceBasis;
       let obligationPence = 0;
-      if (session.priceBasis === 'per_student') {
-        obligationPence = Math.max(0, session.defaultPricePence);
-      } else if (session.expectedStudentCount === 1) {
+      if (priceBasis === 'per_student') {
+        if (!(occurrence.studentIds ?? session.studentIds).includes(studentId)) continue;
+        obligationPence = Math.max(
+          0,
+          occurrence.defaultPricePenceSnapshot ?? session.defaultPricePence,
+        );
+      } else {
+        const payerStudentId = occurrence.payerStudentIdSnapshot ?? session.payerStudentId ?? null;
+        if (payerStudentId !== studentId) continue;
         obligationPence = Math.max(0, occurrence.grossPence);
       }
       if (!obligationPence) continue;
 
       duePence += Math.max(
         0,
-        obligationPence - allocatedToTarget(data, 'occurrence', occurrence.id),
+        obligationPence - allocatedToTarget(
+          data,
+          'student_occurrence',
+          studentOccurrenceTargetId(occurrence.id, studentId),
+        ),
       );
     }
   }

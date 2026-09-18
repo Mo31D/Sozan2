@@ -116,7 +116,7 @@ async function requireReceipt(db: D1Database, workspaceId: string, receiptId: st
 async function normalizeStudentBillingState(db: D1Database, workspaceId: string, studentId: string): Promise<void> {
   const cycles = await db.prepare(
     `SELECT c.id, c.session_limit, c.price_pence, c.opening_completed_count,
-            c.completed_on,
+            c.completed_on, c.started_on,
             COALESCE(SUM(CASE WHEN o.status='completed' THEN 1 ELSE 0 END),0) AS real_completed_count,
             MAX(CASE WHEN o.status='completed' THEN COALESCE(o.rescheduled_to_date,o.session_date) END) AS latest_completed
      FROM tutoring_billing_cycles c
@@ -133,6 +133,7 @@ async function normalizeStudentBillingState(db: D1Database, workspaceId: string,
     price_pence: number;
     opening_completed_count: number;
     completed_on: string | null;
+    started_on: string | null;
     real_completed_count: number;
     latest_completed: string | null;
   }>();
@@ -161,7 +162,8 @@ async function normalizeStudentBillingState(db: D1Database, workspaceId: string,
          AND a.target_id=?2`,
     ).bind(workspaceId, cycle.id).first<{ allocated_pence: number; paid_on: string | null }>();
     const isPaid = Number(paid?.allocated_pence || 0) >= Number(cycle.price_pence || 0);
-    const completedOn = cycle.completed_on ?? cycle.latest_completed ?? new Date().toISOString().slice(0, 10);
+    const completedOn = cycle.completed_on ?? cycle.latest_completed ?? cycle.started_on;
+    if (!completedOn) throw new Error('BILLING_CYCLE_COMPLETION_DATE_MISSING');
     await db.prepare(
       `UPDATE tutoring_billing_cycles
        SET status=?1, completed_on=?2, paid_on=?3, updated_at=CURRENT_TIMESTAMP
@@ -250,20 +252,26 @@ export const financeSyncHandler: ModuleSyncHandler = {
       await requireStudent(db, workspaceId, parsed.studentId);
       const existing = await requireReceipt(db, workspaceId, mutation.entityId);
       if (existing.deleted_at) throw new Error('RECEIPT_DELETED');
-      await db.prepare(
-        `UPDATE finance_receipts
-         SET payer_ref_type='tutoring.student', payer_ref_id=?1, amount_pence=?2,
-             received_at=?3, payment_method=?4, note=?5, updated_at=CURRENT_TIMESTAMP
-         WHERE workspace_id=?6 AND id=?7`,
-      ).bind(
-        parsed.studentId,
-        parsed.amountPence,
-        parsed.receivedAt,
-        parsed.paymentMethod,
-        parsed.note,
-        workspaceId,
-        mutation.entityId,
-      ).run();
+      await db.batch([
+        db.prepare(
+          `DELETE FROM finance_receipt_allocations
+           WHERE workspace_id=?1 AND receipt_id=?2`,
+        ).bind(workspaceId, mutation.entityId),
+        db.prepare(
+          `UPDATE finance_receipts
+           SET payer_ref_type='tutoring.student', payer_ref_id=?1, amount_pence=?2,
+               received_at=?3, payment_method=?4, note=?5, updated_at=CURRENT_TIMESTAMP
+           WHERE workspace_id=?6 AND id=?7`,
+        ).bind(
+          parsed.studentId,
+          parsed.amountPence,
+          parsed.receivedAt,
+          parsed.paymentMethod,
+          parsed.note,
+          workspaceId,
+          mutation.entityId,
+        ),
+      ]);
       await rebuildStudents(db, workspaceId, [existing.payer_ref_id, parsed.studentId]);
       return;
     }

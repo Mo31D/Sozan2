@@ -3,70 +3,197 @@ import { z } from 'zod';
 import { accessError, requireWorkspaceAccess } from '../auth/guard';
 import type { Env } from '../env';
 import { requireDatabase } from '../env';
-import { reconcileWorkspaceFinancialState } from '../integrations/financial-reconcile';
-import { appointmentsSyncHandler } from './appointments.sync';
-import { coreSyncHandler } from './core.sync';
-import { financeSyncHandler } from './finance-router.sync';
 import { getSyncHandler, type SyncMutation } from './contracts';
-import { tutoringSyncHandler } from './tutoring.sync';
-
-const handlers = [coreSyncHandler, tutoringSyncHandler, appointmentsSyncHandler, financeSyncHandler] as const;
+import { syncHandlers, syncPostApplyHooks } from './registry';
 
 const mutationSchema = z.object({
-  id: z.string().uuid(), workspaceId: z.string().uuid(), moduleKey: z.string().min(1).max(80), operation: z.string().min(1).max(100),
-  entityType: z.string().min(1).max(100), entityId: z.string().uuid(), payload: z.unknown(), createdAt: z.string().min(10).max(40),
+  id: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  moduleKey: z.string().min(1).max(80),
+  operation: z.string().min(1).max(100),
+  entityType: z.string().min(1).max(100),
+  entityId: z.string().uuid(),
+  payload: z.unknown(),
+  createdAt: z.string().min(10).max(40),
 });
-const pushSchema = z.object({ mutations: z.array(mutationSchema).max(100) });
-const sessionDetailsSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-  sessionType: z.enum(['private_student_home', 'private_tutor_home', 'online', 'center_group', 'own_group']),
-  scheduleStatus: z.enum(['confirmed', 'pending']), weekday: z.number().int().min(0).max(6).nullable(),
-  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable(), durationMinutes: z.number().int().min(15).max(360),
-  travelMinutes: z.number().int().min(0).max(360), location: z.string().trim().max(200).nullable(), priceBasis: z.enum(['total_session', 'per_student']),
-  defaultPricePence: z.number().int().min(0), expectedStudentCount: z.number().int().min(1).max(100), centerCutBps: z.number().int().min(0).max(10_000),
-  studentIds: z.array(z.string().uuid()).max(100),
-}).superRefine((value, ctx) => {
-  if (value.scheduleStatus === 'confirmed' && value.weekday === null) ctx.addIssue({ code: 'custom', message: 'SCHEDULE_DAY_REQUIRED', path: ['weekday'] });
-  if (value.scheduleStatus === 'confirmed' && value.startTime === null) ctx.addIssue({ code: 'custom', message: 'SCHEDULE_TIME_REQUIRED', path: ['startTime'] });
+const pushSchema = z.object({
+  baseRevision: z.number().int().min(0),
+  mutations: z.array(mutationSchema).max(100),
 });
 
-type MutationResult = { mutationId: string; status: 'applied' | 'duplicate' | 'failed'; error?: string };
+type MutationResult =
+  | { mutationId: string; status: 'applied' | 'duplicate' }
+  | { mutationId: string; status: 'failed'; error: string; retryable: boolean };
 
-async function currentSessionFinanceShape(db: D1Database, workspaceId: string, sessionId: string) {
-  const session = await db.prepare(`SELECT price_basis,default_price_pence,expected_student_count,center_cut_bps FROM tutoring_recurring_sessions WHERE workspace_id=?1 AND id=?2`).bind(workspaceId, sessionId).first<{ price_basis:'total_session'|'per_student';default_price_pence:number;expected_student_count:number;center_cut_bps:number }>();
-  if (!session) throw new Error('SESSION_NOT_FOUND');
-  const students = await db.prepare(`SELECT student_id FROM tutoring_session_students WHERE workspace_id=?1 AND recurring_session_id=?2 ORDER BY student_id`).bind(workspaceId, sessionId).all<{student_id:string}>();
-  return { session, studentIds:(students.results??[]).map((row)=>row.student_id) };
+const TERMINAL_MUTATION_ERRORS = new Set([
+  'SYNC_WORKSPACE_MISMATCH',
+  'SYNC_MODULE_UNSUPPORTED',
+  'SYNC_OPERATION_UNSUPPORTED',
+  'STUDENT_NOT_FOUND',
+  'SESSION_NOT_FOUND',
+  'SESSION_ARCHIVED',
+  'SESSION_FINANCE_LOCKED_BY_HISTORY',
+  'SCHEDULE_DAY_REQUIRED',
+  'SCHEDULE_TIME_REQUIRED',
+  'BILLING_MODE_LOCKED_BY_HISTORY',
+  'OPENING_PROGRESS_EXCEEDS_PACKAGE',
+  'OPENING_PROGRESS_LOCKED_BY_REAL_LESSONS',
+  'OCCURRENCE_NOT_FOUND',
+  'OCCURRENCE_STATE_INVALID',
+  'COMPLETED_REQUIRES_CORRECTION_FLOW',
+  'OCCURRENCE_PARTICIPANT_INVALID',
+  'OCCURRENCE_PARTICIPANT_REQUIRED',
+  'SCHEDULE_CONFLICT',
+  'PACKAGE_CYCLE_ALREADY_COMPLETE',
+  'RECEIPT_ID_CONFLICT',
+  'RECEIPT_NOT_FOUND',
+  'RECEIPT_OVERALLOCATED',
+  'RECEIPT_ALLOCATION_EXCEEDS_AMOUNT',
+  'ALLOCATION_CONFLICT',
+  'ALLOCATION_AMOUNT_INVALID',
+  'COMPLETED_APPOINTMENT_REQUIRES_REOPEN',
+]);
+
+function classifyMutationError(error: unknown): { error: string; retryable: boolean } {
+  if (error instanceof z.ZodError) return { error: 'INVALID_SYNC_PAYLOAD', retryable: false };
+  const code = error instanceof Error ? error.message : 'SYNC_MUTATION_FAILED';
+  return { error: code, retryable: !TERMINAL_MUTATION_ERRORS.has(code) };
 }
 
-async function applyTutoringHardeningMutation(db:D1Database,workspaceId:string,mutation:SyncMutation):Promise<boolean>{
-  if(mutation.moduleKey!=='tutoring')return false;
-  if(mutation.operation==='session.details.update'){
-    const parsed=sessionDetailsSchema.parse(mutation.payload);const current=await currentSessionFinanceShape(db,workspaceId,mutation.entityId);
-    const hasHistory=Boolean(await db.prepare(`SELECT 1 AS found FROM tutoring_occurrences WHERE workspace_id=?1 AND recurring_session_id=?2 AND status IN ('completed','cancelled','missed') LIMIT 1`).bind(workspaceId,mutation.entityId).first<{found:number}>());
-    if(hasHistory){const nextStudents=[...parsed.studentIds].sort();const currentStudents=[...current.studentIds].sort();const financeChanged=parsed.priceBasis!==current.session.price_basis||parsed.defaultPricePence!==current.session.default_price_pence||parsed.expectedStudentCount!==current.session.expected_student_count||parsed.centerCutBps!==current.session.center_cut_bps||JSON.stringify(nextStudents)!==JSON.stringify(currentStudents);if(financeChanged)throw new Error('SESSION_FINANCE_LOCKED_BY_HISTORY');}
-    for(const studentId of parsed.studentIds){const exists=await db.prepare(`SELECT 1 AS found FROM tutoring_students WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL`).bind(workspaceId,studentId).first<{found:number}>();if(!exists)throw new Error('STUDENT_NOT_FOUND');}
-    const result=await db.prepare(`UPDATE tutoring_recurring_sessions SET title=?1,session_type=?2,schedule_status=?3,weekday=?4,start_time=?5,duration_minutes=?6,travel_minutes=?7,location=?8,price_basis=?9,default_price_pence=?10,expected_student_count=?11,center_cut_bps=?12,updated_at=CURRENT_TIMESTAMP WHERE workspace_id=?13 AND id=?14 AND active=1 AND deleted_at IS NULL`).bind(parsed.title,parsed.sessionType,parsed.scheduleStatus,parsed.weekday,parsed.startTime,parsed.durationMinutes,parsed.travelMinutes,parsed.location,parsed.priceBasis,parsed.defaultPricePence,parsed.expectedStudentCount,parsed.centerCutBps,workspaceId,mutation.entityId).run();
-    if((result.meta?.changes??0)===0)throw new Error('SESSION_NOT_FOUND');
-    await db.prepare(`DELETE FROM tutoring_session_students WHERE workspace_id=?1 AND recurring_session_id=?2`).bind(workspaceId,mutation.entityId).run();
-    for(const studentId of parsed.studentIds)await db.prepare(`INSERT INTO tutoring_session_students(workspace_id,recurring_session_id,student_id) VALUES(?1,?2,?3)`).bind(workspaceId,mutation.entityId,studentId).run();
-    return true;
+async function applyMutation(
+  db: D1Database,
+  workspaceId: string,
+  mutation: SyncMutation,
+): Promise<MutationResult> {
+  if (mutation.workspaceId !== workspaceId) {
+    return { mutationId: mutation.id, status: 'failed', error: 'SYNC_WORKSPACE_MISMATCH', retryable: false };
   }
-  if(mutation.operation==='session.archive'){const result=await db.prepare(`UPDATE tutoring_recurring_sessions SET active=0,deleted_at=COALESCE(deleted_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE workspace_id=?1 AND id=?2`).bind(workspaceId,mutation.entityId).run();if((result.meta?.changes??0)===0)throw new Error('SESSION_NOT_FOUND');return true;}
-  if(mutation.operation==='session.restore'){const result=await db.prepare(`UPDATE tutoring_recurring_sessions SET active=1,deleted_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE workspace_id=?1 AND id=?2`).bind(workspaceId,mutation.entityId).run();if((result.meta?.changes??0)===0)throw new Error('SESSION_NOT_FOUND');return true;}
-  return false;
+
+  const previous = await db.prepare(
+    `SELECT status FROM core_idempotency_keys
+     WHERE workspace_id=?1 AND idempotency_key=?2`,
+  ).bind(workspaceId, mutation.id).first<{ status: 'pending' | 'done' }>();
+  if (previous?.status === 'done') return { mutationId: mutation.id, status: 'duplicate' };
+
+  await db.prepare(
+    `INSERT OR IGNORE INTO core_idempotency_keys(
+       workspace_id,idempotency_key,method,path,status
+     ) VALUES(?1,?2,'SYNC',?3,'pending')`,
+  ).bind(workspaceId, mutation.id, `${mutation.moduleKey}:${mutation.operation}`).run();
+
+  try {
+    await getSyncHandler(syncHandlers, mutation.moduleKey).apply(db, workspaceId, mutation);
+    for (const hook of syncPostApplyHooks) {
+      if (hook.supports(mutation)) await hook.afterApply(db, workspaceId, mutation);
+    }
+    await db.prepare(
+      `UPDATE core_idempotency_keys
+       SET status='done',response_status=200,completed_at=CURRENT_TIMESTAMP
+       WHERE workspace_id=?1 AND idempotency_key=?2`,
+    ).bind(workspaceId, mutation.id).run();
+    return { mutationId: mutation.id, status: 'applied' };
+  } catch (error) {
+    const classified = classifyMutationError(error);
+    return { mutationId: mutation.id, status: 'failed', ...classified };
+  }
 }
 
-async function applyMutation(db:D1Database,workspaceId:string,mutation:SyncMutation):Promise<MutationResult>{
-  if(mutation.workspaceId!==workspaceId)return{mutationId:mutation.id,status:'failed',error:'SYNC_WORKSPACE_MISMATCH'};
-  const previous=await db.prepare(`SELECT status FROM core_idempotency_keys WHERE workspace_id=?1 AND idempotency_key=?2`).bind(workspaceId,mutation.id).first<{status:'pending'|'done'}>();
-  if(previous?.status==='done')return{mutationId:mutation.id,status:'duplicate'};
-  await db.prepare(`INSERT OR IGNORE INTO core_idempotency_keys(workspace_id,idempotency_key,method,path,status) VALUES(?1,?2,'SYNC',?3,'pending')`).bind(workspaceId,mutation.id,`${mutation.moduleKey}:${mutation.operation}`).run();
-  try{const handled=await applyTutoringHardeningMutation(db,workspaceId,mutation);if(!handled)await getSyncHandler(handlers,mutation.moduleKey).apply(db,workspaceId,mutation);if(mutation.moduleKey==='tutoring')await reconcileWorkspaceFinancialState(db,workspaceId);await db.prepare(`UPDATE core_idempotency_keys SET status='done',response_status=200,completed_at=CURRENT_TIMESTAMP WHERE workspace_id=?1 AND idempotency_key=?2`).bind(workspaceId,mutation.id).run();return{mutationId:mutation.id,status:'applied'};}catch(error){return{mutationId:mutation.id,status:'failed',error:error instanceof Error?error.message:'SYNC_MUTATION_FAILED'};}
+async function currentWorkspaceRevision(db: D1Database, workspaceId: string): Promise<number> {
+  await db.prepare(
+    `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id, revision)
+     VALUES(?1, 0)`,
+  ).bind(workspaceId).run();
+  const row = await db.prepare(
+    `SELECT revision FROM core_workspace_sync_revisions WHERE workspace_id=?1`,
+  ).bind(workspaceId).first<{ revision: number }>();
+  return Math.max(0, Number(row?.revision ?? 0));
 }
 
-function routeError(error:unknown):{status:400|401|403|503;error:string}{const access=accessError(error);if(access)return access;if(error instanceof z.ZodError)return{status:400,error:'INVALID_SYNC_PAYLOAD'};return{status:400,error:error instanceof Error?error.message:'SYNC_FAILED'};}
+async function reserveWorkspaceRevision(
+  db: D1Database,
+  workspaceId: string,
+  expectedRevision: number,
+): Promise<{ ok: true; revision: number } | { ok: false; revision: number }> {
+  await db.prepare(
+    `INSERT OR IGNORE INTO core_workspace_sync_revisions(workspace_id, revision)
+     VALUES(?1, 0)`,
+  ).bind(workspaceId).run();
 
-export const syncRoutes=new Hono<{Bindings:Env}>();
-syncRoutes.post('/:workspaceId/push',async(c)=>{try{const workspaceId=c.req.param('workspaceId');await requireWorkspaceAccess(c,workspaceId,true);const parsed=pushSchema.parse(await c.req.json());const db=requireDatabase(c.env);const results:MutationResult[]=[];for(const mutation of parsed.mutations)results.push(await applyMutation(db,workspaceId,mutation));return c.json({results,serverTime:new Date().toISOString()});}catch(error){const response=routeError(error);return c.json({error:response.error},response.status);}});
-syncRoutes.get('/:workspaceId/snapshot',async(c)=>{try{const workspaceId=c.req.param('workspaceId');await requireWorkspaceAccess(c,workspaceId);const db=requireDatabase(c.env);const modules=await Promise.all(handlers.map((handler)=>handler.snapshot(db,workspaceId)));return c.json({workspaceId,generatedAt:new Date().toISOString(),modules});}catch(error){const response=routeError(error);return c.json({error:response.error},response.status);}});
+  const result = await db.prepare(
+    `UPDATE core_workspace_sync_revisions
+     SET revision=revision+1, updated_at=CURRENT_TIMESTAMP
+     WHERE workspace_id=?1 AND revision=?2`,
+  ).bind(workspaceId, expectedRevision).run();
+
+  if ((result.meta?.changes ?? 0) === 0) {
+    return { ok: false, revision: await currentWorkspaceRevision(db, workspaceId) };
+  }
+  return { ok: true, revision: expectedRevision + 1 };
+}
+
+function routeError(error: unknown): { status: 400 | 401 | 403 | 503; error: string } {
+  const access = accessError(error);
+  if (access) return access;
+  if (error instanceof z.ZodError) return { status: 400, error: 'INVALID_SYNC_PAYLOAD' };
+  return { status: 400, error: error instanceof Error ? error.message : 'SYNC_FAILED' };
+}
+
+export const syncRoutes = new Hono<{ Bindings: Env }>();
+
+syncRoutes.post('/:workspaceId/push', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    await requireWorkspaceAccess(c, workspaceId, true);
+    const parsed = pushSchema.parse(await c.req.json());
+    const db = requireDatabase(c.env);
+
+    const reserved = await reserveWorkspaceRevision(db, workspaceId, parsed.baseRevision);
+    if (!reserved.ok) {
+      const results: MutationResult[] = parsed.mutations.map((mutation) => ({
+        mutationId: mutation.id,
+        status: 'failed',
+        error: 'SYNC_REVISION_CONFLICT',
+        retryable: false,
+      }));
+      return c.json({
+        results,
+        serverTime: new Date().toISOString(),
+        revision: reserved.revision,
+      });
+    }
+
+    const results: MutationResult[] = [];
+    for (const mutation of parsed.mutations) {
+      results.push(await applyMutation(db, workspaceId, mutation));
+    }
+    return c.json({
+      results,
+      serverTime: new Date().toISOString(),
+      revision: reserved.revision,
+    });
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ error: response.error }, response.status);
+  }
+});
+
+syncRoutes.get('/:workspaceId/snapshot', async (c) => {
+  try {
+    const workspaceId = c.req.param('workspaceId');
+    await requireWorkspaceAccess(c, workspaceId);
+    const db = requireDatabase(c.env);
+    const [modules, revision] = await Promise.all([
+      Promise.all(syncHandlers.map((handler) => handler.snapshot(db, workspaceId))),
+      currentWorkspaceRevision(db, workspaceId),
+    ]);
+    return c.json({
+      workspaceId,
+      generatedAt: new Date().toISOString(),
+      revision,
+      modules,
+    });
+  } catch (error) {
+    const response = routeError(error);
+    return c.json({ error: response.error }, response.status);
+  }
+});

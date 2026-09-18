@@ -222,6 +222,10 @@ export function messageFor(cause: unknown): string {
     CORRECTION_REQUIRES_SYNC: 'يلزم مزامنة الحساب مرة واحدة قبل تصحيح هذه الحصة القديمة.',
     ATTENDANCE_COMPLETED_COLLECTION_FAILED: 'الحصة اتسجلت كمكتملة، لكن التحصيل لم يُسجل. سجلي التحصيل مرة أخرى من نفس الحصة أو من «فلوسي».',
     FUTURE_ATTENDANCE_NOT_ALLOWED: 'لا يمكن تسجيل حصة مستقبلية كحصة تمت. يمكنك نقلها أو إلغاؤها الآن، ثم تسجيل الحضور في يومها.',
+    SCHEDULE_CONFLICT: 'الموعد يتعارض مع حصة أخرى بعد احتساب مدة الحصة ووقت الانتقال.',
+    OCCURRENCE_PARTICIPANT_INVALID: 'يوجد طالب محدد للحضور غير مرتبط بهذه الحصة.',
+    OCCURRENCE_PARTICIPANT_REQUIRED: 'اختاري طالبًا واحدًا على الأقل قبل تسجيل الحصة كمكتملة.',
+    BILLING_MODE_REQUIRED: 'اختاري نظام الحساب: بالحصة أو باقة حصص.',
   };
   return messages[code] ?? `تعذر إكمال العملية (${code})`;
 }

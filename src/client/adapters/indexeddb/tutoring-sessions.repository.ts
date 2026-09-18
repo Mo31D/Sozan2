@@ -1,9 +1,13 @@
-import type { RecurringSession } from '../../../modules/tutoring/domain/session';
+import type {
+  RecurringSession,
+  UpdateRecurringSessionDetailsInput,
+} from '../../../modules/tutoring/domain/session';
 import type {
   NewRecurringSession,
   SessionRepository,
 } from '../../../modules/tutoring/ports/session-repository';
 import { activitySyncMutation, makeActivityEvent } from '../../activity/local-activity';
+import type { LocalOccurrence } from '../../simple/data';
 import { newSyncOutboxRecord } from '../../sync/outbox';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from './database';
 
@@ -21,6 +25,15 @@ export class IndexedDbSessionRepository implements SessionRepository {
         const bDay = b.weekday ?? 99;
         return aDay - bDay || (a.startTime ?? '99:99').localeCompare(b.startTime ?? '99:99');
       });
+  }
+
+  async getById(workspaceId: string, sessionId: string): Promise<RecurringSession> {
+    const db = await openLocalDatabase();
+    const row = await requestResult<RecurringSession | undefined>(
+      db.transaction(STORES.tutoringSessions, 'readonly').objectStore(STORES.tutoringSessions).get(sessionId),
+    );
+    if (!row || row.workspaceId !== workspaceId) throw new Error('SESSION_NOT_FOUND');
+    return row;
   }
 
   async create(input: NewRecurringSession): Promise<RecurringSession> {
@@ -41,6 +54,7 @@ export class IndexedDbSessionRepository implements SessionRepository {
       centerCutBps: input.centerCutBps,
       active: true,
       studentIds: input.studentIds,
+      payerStudentId: input.payerStudentId,
     };
     const activity = makeActivityEvent({
       workspaceId: input.workspaceId,
@@ -79,6 +93,7 @@ export class IndexedDbSessionRepository implements SessionRepository {
         expectedStudentCount: input.expectedStudentCount,
         centerCutBps: input.centerCutBps,
         studentIds: input.studentIds,
+        payerStudentId: input.payerStudentId,
       },
     }));
     transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
@@ -93,47 +108,92 @@ export class IndexedDbSessionRepository implements SessionRepository {
     weekday: number | null;
     startTime: string | null;
   }): Promise<RecurringSession> {
-    const db = await openLocalDatabase();
-    const transaction = db.transaction(
-      [STORES.tutoringSessions, STORES.coreActivityEvents, STORES.syncOutbox],
-      'readwrite',
-    );
-    const store = transaction.objectStore(STORES.tutoringSessions);
-    const current = await requestResult<RecurringSession | undefined>(store.get(input.sessionId));
-    if (!current || current.workspaceId !== input.workspaceId) throw new Error('SESSION_NOT_FOUND');
-
+    const current = await this.getById(input.workspaceId, input.sessionId);
     const updated: RecurringSession = {
       ...current,
       scheduleStatus: input.scheduleStatus,
       weekday: input.weekday,
       startTime: input.startTime,
     };
+    await this.persistUpdate(input.workspaceId, current, updated, 'session.schedule.update', {
+      scheduleStatus: input.scheduleStatus,
+      weekday: input.weekday,
+      startTime: input.startTime,
+    });
+    return updated;
+  }
+
+  async updateDetails(input: {
+    workspaceId: string;
+    sessionId: string;
+    details: UpdateRecurringSessionDetailsInput;
+  }): Promise<RecurringSession> {
+    const current = await this.getById(input.workspaceId, input.sessionId);
+    if (!current.active) throw new Error('SESSION_ARCHIVED');
+    const updated: RecurringSession = { ...current, ...input.details };
+    await this.persistUpdate(input.workspaceId, current, updated, 'session.details.update', input.details);
+    return updated;
+  }
+
+  async hasHistory(workspaceId: string, sessionId: string): Promise<boolean> {
+    const db = await openLocalDatabase();
+    const rows = await requestResult<LocalOccurrence[]>(
+      db.transaction(STORES.tutoringOccurrences, 'readonly').objectStore(STORES.tutoringOccurrences).getAll(),
+    );
+    return rows.some((row) =>
+      row.workspaceId === workspaceId
+      && row.recurringSessionId === sessionId
+      && (row.status === 'completed' || row.status === 'cancelled' || row.status === 'missed'),
+    );
+  }
+
+  async archive(workspaceId: string, sessionId: string): Promise<void> {
+    const current = await this.getById(workspaceId, sessionId);
+    if (!current.active) return;
+    const updated: RecurringSession = { ...current, active: false };
+    await this.persistUpdate(workspaceId, current, updated, 'session.archive', {});
+  }
+
+  async restore(workspaceId: string, sessionId: string): Promise<void> {
+    const current = await this.getById(workspaceId, sessionId);
+    if (current.active) return;
+    const updated: RecurringSession = { ...current, active: true };
+    await this.persistUpdate(workspaceId, current, updated, 'session.restore', {});
+  }
+
+  private async persistUpdate(
+    workspaceId: string,
+    current: RecurringSession,
+    updated: RecurringSession,
+    operation: string,
+    payload: unknown,
+  ): Promise<void> {
     const activity = makeActivityEvent({
-      workspaceId: input.workspaceId,
+      workspaceId,
       moduleKey: 'tutoring',
       entityType: 'session',
-      entityId: input.sessionId,
-      action: 'session.schedule.updated',
-      title: `تم تعديل موعد ${current.title}`,
+      entityId: current.id,
+      action: operation.replace(/\.update$/u, '.updated'),
+      title: `تم تعديل ${updated.title}`,
       before: current,
       after: updated,
     });
-    store.put(updated);
+    const db = await openLocalDatabase();
+    const transaction = db.transaction(
+      [STORES.tutoringSessions, STORES.coreActivityEvents, STORES.syncOutbox],
+      'readwrite',
+    );
+    transaction.objectStore(STORES.tutoringSessions).put(updated);
     transaction.objectStore(STORES.coreActivityEvents).add(activity);
     transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
-      workspaceId: input.workspaceId,
+      workspaceId,
       moduleKey: 'tutoring',
-      operation: 'session.schedule.update',
+      operation,
       entityType: 'session',
-      entityId: input.sessionId,
-      payload: {
-        scheduleStatus: input.scheduleStatus,
-        weekday: input.weekday,
-        startTime: input.startTime,
-      },
+      entityId: current.id,
+      payload,
     }));
     transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
     await transactionDone(transaction);
-    return updated;
   }
 }

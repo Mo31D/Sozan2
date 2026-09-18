@@ -150,6 +150,31 @@ export class D1BillingRepository implements BillingRepository {
     return row ? mapCycle(row) : null;
   }
 
+  async getCycleForOccurrence(
+    workspaceId: string,
+    studentId: string,
+    occurrenceId: string,
+  ): Promise<BillingCycle | null> {
+    const row = await this.db.prepare(
+      `SELECT c.id, c.workspace_id, c.student_id, c.sequence_no, c.session_limit,
+              c.price_pence, c.opening_completed_count, c.opening_progress_locked_at,
+              (SELECT COUNT(*)
+               FROM tutoring_billing_cycle_occurrences all_co
+               JOIN tutoring_occurrences all_o
+                 ON all_o.workspace_id=all_co.workspace_id AND all_o.id=all_co.occurrence_id
+               WHERE all_co.workspace_id=c.workspace_id
+                 AND all_co.billing_cycle_id=c.id
+                 AND all_o.status='completed') AS real_completed_count,
+              c.status, c.started_on, c.completed_on, c.paid_on
+       FROM tutoring_billing_cycles c
+       JOIN tutoring_billing_cycle_occurrences hit
+         ON hit.workspace_id=c.workspace_id AND hit.billing_cycle_id=c.id
+       WHERE c.workspace_id=?1 AND c.student_id=?2 AND hit.occurrence_id=?3
+       LIMIT 1`,
+    ).bind(workspaceId, studentId, occurrenceId).first<CycleRow>();
+    return row ? mapCycle(row) : null;
+  }
+
   async getNextSequenceNo(workspaceId: string, studentId: string): Promise<number> {
     const row = await this.db.prepare(
       `SELECT COALESCE(MAX(sequence_no), 0) + 1 AS next_sequence
@@ -161,7 +186,7 @@ export class D1BillingRepository implements BillingRepository {
 
   async createCycle(input: Omit<BillingCycle, 'realCompletedCount'>): Promise<BillingCycle> {
     await this.db.prepare(
-      `INSERT INTO tutoring_billing_cycles(
+      `INSERT OR IGNORE INTO tutoring_billing_cycles(
          id, workspace_id, student_id, sequence_no, session_limit, price_pence,
          opening_completed_count, opening_progress_locked_at, status, started_on, completed_on, paid_on
        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
@@ -230,10 +255,35 @@ export class D1BillingRepository implements BillingRepository {
     position: number;
     earnedPence: number;
   }): Promise<void> {
-    await this.db.prepare(
-      `INSERT OR IGNORE INTO tutoring_billing_cycle_occurrences(
+    const existing = await this.db.prepare(
+      `SELECT 1 AS found
+       FROM tutoring_billing_cycle_occurrences
+       WHERE workspace_id=?1 AND billing_cycle_id=?2 AND occurrence_id=?3
+       LIMIT 1`,
+    ).bind(input.workspaceId, input.cycleId, input.occurrenceId).first<{ found: number }>();
+    if (existing) return;
+
+    const result = await this.db.prepare(
+      `INSERT INTO tutoring_billing_cycle_occurrences(
          workspace_id, billing_cycle_id, occurrence_id, position, earned_pence
-       ) VALUES (?1, ?2, ?3, ?4, ?5)`,
+       )
+       SELECT ?1, c.id, ?3, ?4, ?5
+       FROM tutoring_billing_cycles c
+       WHERE c.workspace_id=?1
+         AND c.id=?2
+         AND c.status='open'
+         AND ?4 = c.opening_completed_count + (
+           SELECT COUNT(*)
+           FROM tutoring_billing_cycle_occurrences co
+           WHERE co.workspace_id=c.workspace_id AND co.billing_cycle_id=c.id
+         ) + 1
+         AND ?4 <= c.session_limit
+         AND NOT EXISTS (
+           SELECT 1 FROM tutoring_billing_cycle_occurrences hit
+           WHERE hit.workspace_id=c.workspace_id
+             AND hit.billing_cycle_id=c.id
+             AND hit.occurrence_id=?3
+         )`,
     ).bind(
       input.workspaceId,
       input.cycleId,
@@ -241,6 +291,34 @@ export class D1BillingRepository implements BillingRepository {
       input.position,
       input.earnedPence,
     ).run();
+
+    if ((result.meta?.changes ?? 0) === 0) {
+      const nowExisting = await this.db.prepare(
+        `SELECT 1 AS found
+         FROM tutoring_billing_cycle_occurrences
+         WHERE workspace_id=?1 AND billing_cycle_id=?2 AND occurrence_id=?3
+         LIMIT 1`,
+      ).bind(input.workspaceId, input.cycleId, input.occurrenceId).first<{ found: number }>();
+      if (nowExisting) return;
+
+      const cycle = await this.db.prepare(
+        `SELECT session_limit, opening_completed_count,
+                (SELECT COUNT(*) FROM tutoring_billing_cycle_occurrences co
+                 WHERE co.workspace_id=c.workspace_id AND co.billing_cycle_id=c.id) AS real_count
+         FROM tutoring_billing_cycles c
+         WHERE c.workspace_id=?1 AND c.id=?2`,
+      ).bind(input.workspaceId, input.cycleId).first<{
+        session_limit: number;
+        opening_completed_count: number;
+        real_count: number;
+      }>();
+      if (!cycle) throw new Error('BILLING_CYCLE_NOT_FOUND');
+      if (cycle.opening_completed_count + Number(cycle.real_count) >= cycle.session_limit) {
+        throw new Error('PACKAGE_CYCLE_ALREADY_COMPLETE');
+      }
+      throw new Error('PACKAGE_POSITION_CONFLICT');
+    }
+
     await this.db.prepare(
       `UPDATE tutoring_billing_cycles
        SET opening_progress_locked_at=COALESCE(opening_progress_locked_at,CURRENT_TIMESTAMP),

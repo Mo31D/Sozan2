@@ -1,3 +1,4 @@
+import { studentOccurrenceTargetId } from '../tutoring/domain/finance-target';
 import {
   probableDuplicateExpenseIds,
   type ExpenseDuplicateCandidate,
@@ -28,6 +29,7 @@ export type WorkspaceReport = {
   otherIncomePence: number;
   expensesPence: number;
   netCashPence: number;
+  /** Current outstanding amount, intentionally independent from the report date range. */
   duePence: number;
   earnedPence: number;
   teachingMinutes: number;
@@ -56,6 +58,7 @@ export type ReportInput = {
     priceBasis?: 'total_session' | 'per_student';
     defaultPricePence?: number;
     expectedStudentCount?: number;
+    payerStudentId?: string | null;
   }>;
   occurrences: Array<{
     id?: string;
@@ -65,13 +68,19 @@ export type ReportInput = {
     status: 'scheduled' | 'completed' | 'cancelled' | 'missed';
     grossPence?: number;
     earnedPence: number;
+    studentIds?: string[];
+    durationMinutesSnapshot?: number | null;
+    travelMinutesSnapshot?: number | null;
+    priceBasisSnapshot?: 'total_session' | 'per_student' | null;
+    defaultPricePenceSnapshot?: number | null;
+    payerStudentIdSnapshot?: string | null;
   }>;
   receipts: Array<{ receivedAt: string; amountPence: number }>;
   expenses: ReportExpense[];
   otherIncome: Array<{ incomeDate: string; amountPence: number }>;
   billingPlans?: Array<{ studentId: string; billingMode: 'per_session' | 'package' }>;
   billingCycles: Array<{ id: string; status: 'open' | 'due' | 'paid' | 'cancelled'; pricePence: number }>;
-  allocations: Array<{ targetId: string; amountPence: number }>;
+  allocations: Array<{ targetId: string; targetType?: string; amountPence: number }>;
 };
 
 export function localTodayIso(now = new Date()): string {
@@ -141,26 +150,49 @@ function expenseDuplicateCandidates(expenses: readonly ReportExpense[]): Expense
 
 export function currentDuePence(data: ReportInput): number {
   let due = data.billingCycles.filter((cycle) => cycle.status === 'due').reduce((total, cycle) => {
-    const allocated = sum(data.allocations.filter((row) => row.targetId === cycle.id).map((row) => row.amountPence));
+    const allocated = sum(data.allocations
+      .filter((row) => row.targetId === cycle.id && (!row.targetType || row.targetType === 'package_cycle'))
+      .map((row) => row.amountPence));
     return total + Math.max(0, cycle.pricePence - allocated);
   }, 0);
 
   const planByStudent = new Map((data.billingPlans ?? []).map((plan) => [plan.studentId, plan.billingMode]));
   const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
+
   for (const occurrence of data.occurrences.filter((row) => row.status === 'completed' && row.id)) {
     const session = sessionById.get(occurrence.recurringSessionId);
     if (!session) continue;
-    const perSessionStudents = (session.studentIds ?? []).filter((studentId) => (planByStudent.get(studentId) ?? 'per_session') === 'per_session');
-    if (!perSessionStudents.length) continue;
 
-    let obligation = 0;
-    if (session.priceBasis === 'per_student') {
-      obligation = Math.max(0, Number(session.defaultPricePence || 0)) * perSessionStudents.length;
-    } else if (Number(session.expectedStudentCount ?? 1) === 1) {
-      obligation = Math.max(0, Number(occurrence.grossPence ?? occurrence.earnedPence ?? 0));
+    const priceBasis = occurrence.priceBasisSnapshot ?? session.priceBasis;
+    if (priceBasis === 'per_student') {
+      const attendees = occurrence.studentIds ?? session.studentIds ?? [];
+      const amount = Math.max(
+        0,
+        Number(occurrence.defaultPricePenceSnapshot ?? session.defaultPricePence ?? 0),
+      );
+      if (!amount) continue;
+
+      for (const studentId of attendees) {
+        if (planByStudent.get(studentId) !== 'per_session') continue;
+        const targetId = studentOccurrenceTargetId(occurrence.id as string, studentId);
+        const allocated = sum(data.allocations
+          .filter((row) => row.targetId === targetId
+            && (!row.targetType || row.targetType === 'student_occurrence'))
+          .map((row) => row.amountPence));
+        due += Math.max(0, amount - allocated);
+      }
+      continue;
     }
+
+    const payerStudentId = occurrence.payerStudentIdSnapshot ?? session.payerStudentId ?? null;
+    if (!payerStudentId || planByStudent.get(payerStudentId) !== 'per_session') continue;
+    const obligation = Math.max(0, Number(occurrence.grossPence ?? occurrence.earnedPence ?? 0));
     if (!obligation) continue;
-    const allocated = sum(data.allocations.filter((row) => row.targetId === occurrence.id).map((row) => row.amountPence));
+    const targetId = studentOccurrenceTargetId(occurrence.id as string, payerStudentId);
+    const allocated = sum(data.allocations
+      .filter((row) => row.targetId === targetId
+        && (!row.targetType || row.targetType === 'student_occurrence'))
+      .map((row) => row.amountPence));
     due += Math.max(0, obligation - allocated);
   }
   return due;
@@ -180,8 +212,12 @@ export function buildWorkspaceReportForRange(data: ReportInput, range: ReportDat
   for (const occurrence of completed) {
     const session = sessionById.get(occurrence.recurringSessionId);
     if (!session) continue;
-    teachingMinutes += Math.max(0, Number(session.durationMinutes || 0));
-    travelMinutes += Math.max(0, Number(session.travelMinutes || 0));
+    teachingMinutes += Math.max(0, Number(
+      occurrence.durationMinutesSnapshot ?? session.durationMinutes ?? 0,
+    ));
+    travelMinutes += Math.max(0, Number(
+      occurrence.travelMinutesSnapshot ?? session.travelMinutes ?? 0,
+    ));
   }
   const duePence = currentDuePence(data);
   const netCashPence = receivedPence + otherIncomePence - expensesPence;
@@ -192,7 +228,7 @@ export function buildWorkspaceReportForRange(data: ReportInput, range: ReportDat
   const duplicateExpenseRows = probableDuplicateExpenseIds(expenseDuplicateCandidates(data.expenses)).size;
 
   const insights: ReportInsight[] = [];
-  if (duePence > 0) insights.push({ key: 'due', level: 'attention', title: 'فيه تحصيل محتاج متابعة', detail: `${duePence} قرش ما زالت مستحقة على حصص أو باقات مكتملة.` });
+  if (duePence > 0) insights.push({ key: 'due', level: 'attention', title: 'فيه تحصيل محتاج متابعة', detail: `${duePence} قرش مستحقة حاليًا على حصص أو باقات مكتملة.` });
   if (pendingSchedules > 0) insights.push({ key: 'pending', level: 'attention', title: 'مواعيد لسه غير محددة', detail: `${pendingSchedules} موعد محتاج يوم أو ساعة.` });
   if (duplicateExpenseRows > 0) insights.push({ key: 'duplicate-expenses', level: 'attention', title: 'راجعي المصروفات المتشابهة', detail: `${duplicateExpenseRows} تسجيلات مصروف متشابهة في التاريخ والنوع والتصنيف والمبلغ؛ ممكن يكون بينها تكرار.` });
   if (cancelled.length >= Math.max(3, Math.ceil(completed.length * 0.25))) insights.push({ key: 'cancelled', level: 'attention', title: 'الإلغاءات مرتفعة نسبيًا', detail: `${cancelled.length} حصة ألغيت أو فاتت خلال الفترة.` });

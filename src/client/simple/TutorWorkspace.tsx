@@ -214,11 +214,17 @@ export function TutorWorkspace({
       expectedStudentCount: Number(form.get('expectedStudentCount') ?? current.expectedStudentCount),
       centerCutBps: form.has('centerCut') ? Math.round(Number(form.get('centerCut') ?? 0) * 100) : current.centerCutBps,
       studentIds: submittedStudentIds.length ? submittedStudentIds : current.studentIds,
+      payerStudentId: form.has('payerStudentId')
+        ? (String(form.get('payerStudentId') ?? '') || null)
+        : current.payerStudentId,
     });
   }, 'تم تعديل بيانات الحصة القادمة.');
 
   const saveStudentBilling = (studentId: string, form: FormData) => runAction(async () => {
-    const billingMode = String(form.get('billingMode') ?? 'per_session') as 'per_session' | 'package';
+    const billingMode = String(form.get('billingMode') ?? '');
+    if (billingMode !== 'per_session' && billingMode !== 'package') {
+      throw new Error('BILLING_MODE_REQUIRED');
+    }
     if (billingMode === 'per_session') {
       await configureLocalStudentBilling(workspaceId, studentId, {
         billingMode: 'per_session',
@@ -340,8 +346,10 @@ export function TutorWorkspace({
                   onAdd={async (form) => runAction(async () => {
                     const pending = String(form.get('scheduleStatus') ?? 'confirmed') === 'pending';
                     const weekdayRaw = String(form.get('weekday') ?? '');
-                    const studentIds = form.getAll('studentIds').map(String);
+                    const studentIds = form.getAll('studentIds').map(String).filter(Boolean);
                     const expectedCount = Math.max(1, Number(form.get('expectedStudentCount') ?? (studentIds.length || 1)));
+                    const explicitPayer = String(form.get('payerStudentId') ?? '');
+                    const payerStudentId = explicitPayer || (studentIds.length === 1 ? studentIds[0] : null);
                     await sessionsService.create(workspaceId, {
                       title: String(form.get('title') ?? ''),
                       sessionType: String(form.get('sessionType') ?? 'private_student_home'),
@@ -356,6 +364,7 @@ export function TutorWorkspace({
                       expectedStudentCount: expectedCount,
                       centerCutBps: Math.round(Number(form.get('centerCut') ?? 0) * 100),
                       studentIds,
+                      payerStudentId,
                     });
                   }, 'تم حفظ الموعد.')}
                   onUpdate={saveStudentSession}

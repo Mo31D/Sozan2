@@ -44,9 +44,11 @@ jobs:
               'core_activity_events',
               'core_idempotency_keys',
               'tutoring_students',
+              'tutoring_student_baselines',
               'tutoring_recurring_sessions',
               'tutoring_session_students',
               'tutoring_occurrences',
+              'tutoring_occurrence_students',
               'tutoring_billing_plans',
               'tutoring_billing_cycles',
               'tutoring_billing_cycle_occurrences',
@@ -149,6 +151,8 @@ jobs:
 
           print('Modular D1 schema validated')
           PY
+      - name: Validate tutoring and finance integrity repair
+        run: python3 scripts/validate_domain_integrity_migrations.py
       - run: npm run check
       - run: npm run build
       - name: Validate production PWA shell

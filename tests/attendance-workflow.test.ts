@@ -22,6 +22,7 @@ const session: RecurringSession = {
   centerCutBps: 0,
   active: true,
   studentIds: ['10000000-0000-4000-8000-000000000003'],
+  payerStudentId: '10000000-0000-4000-8000-000000000003',
 };
 
 function dependencies(): AttendanceWorkflowDependencies {

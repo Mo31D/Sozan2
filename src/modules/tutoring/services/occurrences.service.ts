@@ -1,5 +1,6 @@
 import { datesForWeekday, rescheduleOccurrenceSchema, completeOccurrenceSchema, type TutoringOccurrence } from '../domain/occurrence';
 import { canGenerateOccurrences } from '../domain/schedule';
+import { completedSessionFinancials } from '../domain/session-finance';
 import type { OccurrenceRepository } from '../ports/occurrence-repository';
 import type { SessionRepository } from '../ports/session-repository';
 import type { BillingService } from './billing.service';
@@ -38,21 +39,46 @@ export class OccurrencesService {
     const parsed = completeOccurrenceSchema.parse(input);
     const occurrence = await this.occurrences.getById(workspaceId, occurrenceId);
     if (!occurrence) throw new Error('OCCURRENCE_NOT_FOUND');
-    if (occurrence.status === 'completed') return occurrence;
-    if (occurrence.status !== 'scheduled' && occurrence.status !== 'missed') {
-      throw new Error('OCCURRENCE_STATE_INVALID');
-    }
 
     const sessions = await this.sessions.listActive(workspaceId);
     const session = sessions.find((item) => item.id === occurrence.recurringSessionId);
     if (!session) throw new Error('SESSION_NOT_FOUND');
 
-    const chargeableCount = Math.max(session.studentIds.length, session.expectedStudentCount, 1);
-    const grossPence = session.priceBasis === 'per_student'
-      ? session.defaultPricePence * chargeableCount
-      : session.defaultPricePence;
-    const centerCutPence = Math.floor((grossPence * session.centerCutBps) / 10_000);
-    const earnedPence = grossPence - centerCutPence;
+    const occurredOn = occurrence.rescheduledToDate ?? occurrence.sessionDate;
+
+    if (occurrence.status === 'completed') {
+      // Completion is retryable as one logical command. If a previous attempt
+      // persisted attendance but failed while advancing one package, repair the
+      // missing package link instead of returning early.
+      for (const studentId of occurrence.studentIds) {
+        await this.billing.recordCompletedOccurrence(
+          workspaceId,
+          studentId,
+          occurrenceId,
+          occurredOn,
+        );
+      }
+      return (await this.occurrences.getById(workspaceId, occurrenceId)) ?? occurrence;
+    }
+
+    if (occurrence.status !== 'scheduled' && occurrence.status !== 'missed') {
+      throw new Error('OCCURRENCE_STATE_INVALID');
+    }
+
+    const participants = parsed.participantStudentIds
+      ? [...new Set(parsed.participantStudentIds)]
+      : [...session.studentIds];
+    if (participants.some((studentId) => !session.studentIds.includes(studentId))) {
+      throw new Error('OCCURRENCE_PARTICIPANT_INVALID');
+    }
+    if (session.studentIds.length > 0 && participants.length === 0) {
+      throw new Error('OCCURRENCE_PARTICIPANT_REQUIRED');
+    }
+
+    const { grossPence, centerCutPence, earnedPence } = completedSessionFinancials(
+      session,
+      participants.length,
+    );
     const completedAt = parsed.completedAt ?? new Date().toISOString();
 
     await this.occurrences.complete(workspaceId, occurrenceId, {
@@ -61,14 +87,23 @@ export class OccurrencesService {
       earnedPence,
       completedAt,
       note: parsed.note,
+      participantStudentIds: participants,
+      sessionStudentIds: session.studentIds,
+      durationMinutes: session.durationMinutes,
+      travelMinutes: session.travelMinutes,
+      sessionType: session.sessionType,
+      location: session.location,
+      priceBasis: session.priceBasis,
+      defaultPricePence: session.defaultPricePence,
+      payerStudentId: session.payerStudentId,
     });
 
-    for (const studentId of session.studentIds) {
+    for (const studentId of participants) {
       await this.billing.recordCompletedOccurrence(
         workspaceId,
         studentId,
         occurrenceId,
-        occurrence.rescheduledToDate ?? occurrence.sessionDate,
+        occurredOn,
       );
     }
 

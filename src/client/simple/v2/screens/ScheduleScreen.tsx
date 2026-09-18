@@ -131,6 +131,17 @@ export function ScheduleScreen({
           <label className="compact-form-field">مدة الحصة بالدقائق<input name="durationMinutes" type="number" min="15" max="360" value={durationMinutes} onChange={(event) => { setDurationTouched(true); setDurationMinutes(Number(event.currentTarget.value)); }} /></label>
           <label className="compact-form-field">وقت الانتقال بالدقائق<input name="travelMinutes" type="number" min="0" max="360" value={travelMinutes} onChange={(event) => { setTravelTouched(true); setTravelMinutes(Number(event.currentTarget.value)); }} /></label>
           <select name="priceBasis" defaultValue="total_session"><option value="total_session">السعر للحصة بالكامل</option><option value="per_student">السعر لكل طالب</option></select>
+          {selectedAddStudentIds.length > 1 && (
+            <label className="compact-form-field">
+              المسؤول عن سعر الحصة بالكامل
+              <select name="payerStudentId" defaultValue="">
+                <option value="">غير محدد — حدديه لو السعر على شخص واحد</option>
+                {data.students
+                  .filter((student) => selectedAddStudentIds.includes(student.id))
+                  .map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
+              </select>
+            </label>
+          )}
           <input name="price" type="number" min="0" step="0.01" placeholder="سعر الحصة إن وجد" />
           <label className="compact-form-field">عدد الطلاب المتوقع<input name="expectedStudentCount" type="number" min="1" max="100" value={expectedStudentCount} onChange={(event) => { setCountTouched(true); setExpectedStudentCount(Number(event.currentTarget.value)); }} /></label>
           <input name="centerCut" type="number" min="0" max="100" step="0.01" defaultValue="0" placeholder="عمولة السنتر %" />

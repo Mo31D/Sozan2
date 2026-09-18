@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import {
   getWorkspaceBootstrap,
   loginCloudAccount,
@@ -11,6 +11,12 @@ import {
   type LocalPlatformSnapshot,
 } from '../adapters/indexeddb/platform.repository';
 import { runWorkspaceSync, type SyncRunResult } from '../sync/engine';
+import {
+  listDeadLetterSyncMutations,
+  removeSyncMutation,
+  retryDeadLetterSyncMutation,
+  type SyncOutboxRecord,
+} from '../sync/outbox';
 
 export function ExistingAccountLogin({
   available,
@@ -88,6 +94,20 @@ export function CloudLinkPanel({
   const [error, setError] = useState('');
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncRunResult | null>(null);
+  const [deadLetters, setDeadLetters] = useState<SyncOutboxRecord[]>([]);
+  const deadLetterCount = deadLetters.length;
+
+  useEffect(() => {
+    let active = true;
+    if (!snapshot.cloudLink) {
+      setDeadLetters([]);
+      return () => { active = false; };
+    }
+    void listDeadLetterSyncMutations(snapshot.workspace.id)
+      .then((rows) => { if (active) setDeadLetters(rows); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [snapshot.cloudLink, snapshot.workspace.id]);
 
   const syncNow = async (seedInitialState = false) => {
     setBusy(true);
@@ -95,6 +115,7 @@ export function CloudLinkPanel({
     try {
       const result = await runWorkspaceSync(snapshot.workspace.id, { seedInitialState });
       setSyncResult(result);
+      setDeadLetters(await listDeadLetterSyncMutations(snapshot.workspace.id));
       await onLinked();
     } catch (cause) {
       setError(messageFor(cause));
@@ -122,8 +143,34 @@ export function CloudLinkPanel({
             {busy ? 'جاري المزامنة…' : 'زامن الآن'}
           </button>
         </div>
+        {deadLetterCount > 0 && (
+          <div className="status bad sync-conflict-box">
+            <span>فيه {deadLetterCount} تغيير اتوقف بسبب تعارض أو بيانات قديمة.</span>
+            <span>التغيير محفوظ للمراجعة ولم يعد يمنع تنزيل أحدث بيانات من السحابة.</span>
+            <details>
+              <summary>عرض التغييرات المتعارضة</summary>
+              <div className="sync-conflict-list">
+                {deadLetters.map((row) => (
+                  <div key={row.id} className="sync-conflict-row">
+                    <span><strong>{row.operation}</strong><small>{row.lastError ?? 'SYNC_MUTATION_REJECTED'}</small></span>
+                    <div>
+                      <button type="button" disabled={busy} onClick={() => void (async () => {
+                        await retryDeadLetterSyncMutation(row.id);
+                        await syncNow(false);
+                      })()}>إعادة المحاولة</button>
+                      <button type="button" disabled={busy} onClick={() => void (async () => {
+                        await removeSyncMutation(row.id);
+                        setDeadLetters(await listDeadLetterSyncMutations(snapshot.workspace.id));
+                      })()}>تجاهل التغيير المحلي</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
         {syncResult && (
-          <div className={`status ${syncResult.failed ? 'bad' : 'good'}`}>
+          <div className={`status ${syncResult.failed || syncResult.deadLetters ? 'bad' : 'good'}`}>
             <span>تم رفع {syncResult.pushed} تغيير.</span>
             <span>{syncResult.pulled ? 'تم تنزيل أحدث بيانات.' : 'تم تأجيل التنزيل لحماية تغييرات لم تُرفع بعد.'}</span>
             {syncResult.pending > 0 && <span>متبقي {syncResult.pending} تغيير للمزامنة.</span>}

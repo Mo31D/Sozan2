@@ -122,43 +122,79 @@ export class BillingService {
       throw new Error('PACKAGE_PLAN_INVALID');
     }
 
-    let cycle = await this.repository.getOpenCycle(workspaceId, studentId);
-    if (!cycle) {
-      cycle = await this.repository.createCycle({
-        id: this.idFactory(),
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const alreadyLinked = await this.repository.getCycleForOccurrence(
         workspaceId,
         studentId,
-        sequenceNo: await this.repository.getNextSequenceNo(workspaceId, studentId),
-        sessionLimit: plan.packageSize,
-        pricePence: plan.packagePricePence,
-        openingCompletedCount: 0,
-        openingProgressLockedAt: null,
-        status: 'open',
-        startedOn: occurredOn,
-        completedOn: null,
-        paidOn: null,
-      });
+        occurrenceId,
+      );
+      if (alreadyLinked) {
+        const complete = alreadyLinked.openingCompletedCount + alreadyLinked.realCompletedCount
+          >= alreadyLinked.sessionLimit;
+        if (complete && alreadyLinked.status === 'open') {
+          await this.repository.markCycleDue({
+            workspaceId,
+            cycleId: alreadyLinked.id,
+            completedOn: occurredOn,
+          });
+        }
+        return this.getStudentBilling(workspaceId, studentId);
+      }
+
+      let cycle = await this.repository.getOpenCycle(workspaceId, studentId);
+      if (!cycle) {
+        try {
+          cycle = await this.repository.createCycle({
+            id: this.idFactory(),
+            workspaceId,
+            studentId,
+            sequenceNo: await this.repository.getNextSequenceNo(workspaceId, studentId),
+            sessionLimit: plan.packageSize,
+            pricePence: plan.packagePricePence,
+            openingCompletedCount: 0,
+            openingProgressLockedAt: null,
+            status: 'open',
+            startedOn: occurredOn,
+            completedOn: null,
+            paidOn: null,
+          });
+        } catch {
+          // Another device may have created/closed the same next cycle between
+          // the read and insert. Re-read authoritative state and retry.
+          continue;
+        }
+      }
+
+      const position = cycle.openingCompletedCount + cycle.realCompletedCount + 1;
+      if (position > cycle.sessionLimit) continue;
+
+      try {
+        await this.repository.addOccurrenceToCycle({
+          workspaceId,
+          cycleId: cycle.id,
+          occurrenceId,
+          position,
+          earnedPence: packageUnitShare(cycle.pricePence, cycle.sessionLimit, position),
+        });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : '';
+        if (code === 'PACKAGE_POSITION_CONFLICT' || code === 'PACKAGE_CYCLE_ALREADY_COMPLETE') {
+          continue;
+        }
+        throw error;
+      }
+
+      if (position === cycle.sessionLimit) {
+        await this.repository.markCycleDue({
+          workspaceId,
+          cycleId: cycle.id,
+          completedOn: occurredOn,
+        });
+      }
+
+      return this.getStudentBilling(workspaceId, studentId);
     }
 
-    const position = cycle.openingCompletedCount + cycle.realCompletedCount + 1;
-    if (position > cycle.sessionLimit) throw new Error('PACKAGE_CYCLE_ALREADY_COMPLETE');
-
-    await this.repository.addOccurrenceToCycle({
-      workspaceId,
-      cycleId: cycle.id,
-      occurrenceId,
-      position,
-      earnedPence: packageUnitShare(cycle.pricePence, cycle.sessionLimit, position),
-    });
-
-    if (position === cycle.sessionLimit) {
-      await this.repository.markCycleDue({
-        workspaceId,
-        cycleId: cycle.id,
-        completedOn: occurredOn,
-      });
-    }
-
-    return this.getStudentBilling(workspaceId, studentId);
+    throw new Error('PACKAGE_POSITION_CONFLICT');
   }
 }
