@@ -50,6 +50,15 @@ class AcceptanceBillingRepository implements BillingRepository {
       .sort((a, b) => b.sequenceNo - a.sequenceNo)[0] ?? null;
   }
 
+  async getCycleForOccurrence(
+    workspaceId: string,
+    studentId: string,
+    occurrenceId: string,
+  ): Promise<BillingCycle | null> {
+    if (!this.linkedOccurrences.some((item) => item.occurrenceId === occurrenceId)) return null;
+    return this.getCurrentCycle(workspaceId, studentId);
+  }
+
   async getNextSequenceNo(workspaceId: string, studentId: string): Promise<number> {
     return this.cycles
       .filter((cycle) => cycle.workspaceId === workspaceId && cycle.studentId === studentId)
