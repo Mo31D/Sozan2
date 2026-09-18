@@ -34,6 +34,10 @@ class MemoryBillingRepository implements BillingRepository {
     return this.cycle?.status === 'open' ? this.cycle : null;
   }
 
+  async getCycleForOccurrence(): Promise<BillingCycle | null> {
+    return null;
+  }
+
   async getNextSequenceNo(): Promise<number> {
     return (this.cycle?.sequenceNo ?? 0) + 1;
   }
