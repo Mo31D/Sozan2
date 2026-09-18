@@ -203,6 +203,23 @@ export async function restoreLocalWorkspaceBackup(
   await transactionDone(transaction);
 }
 
+export async function restoreCloudWorkspaceBackup(
+  workspaceId: string,
+  input: unknown,
+): Promise<number> {
+  const backup = workspaceBackupSchema.parse(input);
+  assertBackupWorkspaceScope(backup);
+  if (backup.workspace.id !== workspaceId) {
+    throw new Error('BACKUP_WORKSPACE_ID_MISMATCH');
+  }
+
+  const result = await requestJson<{ ok: true; revision: number }>(
+    `/api/backup/${encodeURIComponent(workspaceId)}/restore`,
+    { method: 'POST', body: JSON.stringify(backup) },
+  );
+  return result.revision;
+}
+
 export async function restoreWorkspaceBackup(
   snapshot: LocalPlatformSnapshot,
   input: unknown,
@@ -218,10 +235,7 @@ export async function restoreWorkspaceBackup(
     return;
   }
 
-  await requestJson<{ ok: true; revision: number }>(
-    `/api/backup/${encodeURIComponent(snapshot.workspace.id)}/restore`,
-    { method: 'POST', body: JSON.stringify(backup) },
-  );
+  await restoreCloudWorkspaceBackup(snapshot.workspace.id, backup);
   await clearWorkspaceSyncOutbox(snapshot.workspace.id);
 }
 
