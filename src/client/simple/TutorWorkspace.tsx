@@ -24,7 +24,7 @@ import { MoneyScreen } from './v2/screens/MoneyScreen';
 import { ScheduleScreen } from './v2/screens/ScheduleScreen';
 import { StudentHub } from './v2/screens/StudentHub';
 import { TodayScreen } from './v2/screens/TodayScreen';
-import type { MoneyMode, PageKey, ScheduleMode } from './v2/types';
+import type { MoneyMode, PageKey, ScheduleMode, WeekDisplay } from './v2/types';
 import { messageFor, startOfMonth, todayIso, toPence } from './v2/utils';
 
 const studentsService = new StudentsService(new IndexedDbStudentRepository(), crypto.randomUUID);
@@ -46,6 +46,7 @@ export function TutorWorkspace({
   const [selectedDay, setSelectedDay] = useState(todayIso());
   const [openedFromSchedule, setOpenedFromSchedule] = useState(false);
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('week');
+  const [weekDisplay, setWeekDisplay] = useState<WeekDisplay>('list');
   const [scheduleMonthCursor, setScheduleMonthCursor] = useState(() => startOfMonth(new Date()));
   const [openPendingSchedule, setOpenPendingSchedule] = useState(false);
   const [data, setData] = useState<SimpleWorkspaceData | null>(null);
@@ -341,6 +342,8 @@ export function TutorWorkspace({
                   mode={scheduleMode}
                   assistantLabel={assistantLabel}
                   timeZone={presentedSnapshot.workspace.timezone}
+                  weekDisplay={weekDisplay}
+                  onWeekDisplay={setWeekDisplay}
                   onMode={setScheduleMode}
                   monthCursor={scheduleMonthCursor}
                   onMonthCursor={setScheduleMonthCursor}
