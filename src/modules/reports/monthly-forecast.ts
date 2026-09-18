@@ -203,7 +203,7 @@ function futureSlotsForMonth(
   today: string,
   end: string,
 ): FutureSlot[] {
-  if (today >= end) return [];
+  if (today > end) return [];
 
   const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
   const occurrenceBySessionAndOriginalDate = new Map<string, ForecastOccurrence>();
@@ -217,7 +217,7 @@ function futureSlotsForMonth(
   const slots: FutureSlot[] = [];
   const seen = new Set<string>();
 
-  for (let date = addDays(today, 1); date <= end; date = addDays(date, 1)) {
+  for (let date = today; date <= end; date = addDays(date, 1)) {
     const dateWeekday = weekday(date);
 
     for (const session of data.sessions) {
