@@ -14,6 +14,7 @@ export type AttendanceWorkflowAction =
       session: RecurringSession;
       displayedDate: string;
       occurrenceId?: string;
+      participantStudentIds?: string[];
     }
   | {
       kind: 'complete-and-collect';
@@ -24,6 +25,7 @@ export type AttendanceWorkflowAction =
       amountPence: number;
       paymentMethod?: LocalReceipt['paymentMethod'];
       note?: string | null;
+      participantStudentIds?: string[];
     }
   | {
       kind: 'cancel';
@@ -85,12 +87,24 @@ export function createAttendanceWorkflow(dependencies: AttendanceWorkflowDepende
     switch (action.kind) {
       case 'complete':
         assertAttendanceDateNotFuture(action.displayedDate, today());
-        await dependencies.complete(workspaceId, action.session, action.displayedDate, action.occurrenceId);
+        await dependencies.complete(
+          workspaceId,
+          action.session,
+          action.displayedDate,
+          action.occurrenceId,
+          action.participantStudentIds,
+        );
         return;
 
       case 'complete-and-collect':
         assertAttendanceDateNotFuture(action.displayedDate, today());
-        await dependencies.complete(workspaceId, action.session, action.displayedDate, action.occurrenceId);
+        await dependencies.complete(
+          workspaceId,
+          action.session,
+          action.displayedDate,
+          action.occurrenceId,
+          action.participantStudentIds,
+        );
         try {
           await dependencies.collect({
             workspaceId,
