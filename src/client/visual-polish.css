@@ -499,3 +499,48 @@ body{background:var(--ui-canvas);color:var(--ui-text)}
     padding-right:14px;
   }
 }
+
+
+.student-hub-shared-account{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--ui-space-3);
+  padding:14px;
+  border:1px solid var(--ui-border);
+  border-radius:var(--ui-radius-md);
+  background:var(--ui-primary-soft);
+}
+.student-hub-shared-account>div{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.student-hub-shared-account strong{
+  color:var(--ui-primary-strong);
+}
+.student-hub-shared-account span{
+  color:var(--ui-muted);
+  font-size:.82rem;
+  line-height:1.5;
+}
+.student-hub-shared-account button{
+  flex:0 0 auto;
+  min-height:42px;
+  border:0;
+  border-radius:var(--ui-radius-sm);
+  padding:9px 12px;
+  background:var(--ui-primary);
+  color:#fff;
+  font:inherit;
+  font-weight:900;
+}
+@media(max-width:600px){
+  .student-hub-shared-account{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .student-hub-shared-account button{
+    width:100%;
+  }
+}

@@ -7,6 +7,7 @@ import {
   baselineFor,
   completedLessonCountForStudent,
   planFor,
+  sharedBillingOwnerForStudent,
   type SimpleWorkspaceData,
 } from '../../data';
 import { ArabicDateField, ArabicTimeField } from '../localized-fields';
@@ -52,8 +53,10 @@ export function StudentHub({
   const [editingDetails, setEditingDetails] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
-  const plan = student ? planFor(data, student.id) : null;
-  const cycle = student ? activeCycleFor(data, student.id) : null;
+  const sharedBillingOwner = student ? sharedBillingOwnerForStudent(data, student.id) : null;
+  const billingStudentId = sharedBillingOwner?.id ?? student?.id ?? '';
+  const plan = billingStudentId ? planFor(data, billingStudentId) : null;
+  const cycle = billingStudentId ? activeCycleFor(data, billingStudentId) : null;
   const baseline = student ? baselineFor(data, student.id) : null;
   const lessonCount = student ? completedLessonCountForStudent(data, student.id) : { beforeTracking: 0, tracked: 0, total: 0 };
   const [billingMode, setBillingMode] = useState<'' | 'per_session' | 'package'>(plan?.billingMode ?? '');
@@ -63,7 +66,7 @@ export function StudentHub({
   }
 
   const currency = snapshot.workspace.currencyLabel;
-  const financial = buildStudentFinancialSummary(data, student.id);
+  const financial = buildStudentFinancialSummary(data, billingStudentId);
   const sessions = data.sessions
     .filter((session) => session.studentIds.includes(student.id))
     .sort((a, b) => (a.weekday ?? 99) - (b.weekday ?? 99) || (a.startTime ?? '99:99').localeCompare(b.startTime ?? '99:99'));
@@ -81,9 +84,9 @@ export function StudentHub({
     .sort((a, b) => (b.rescheduledToDate ?? b.sessionDate).localeCompare(a.rescheduledToDate ?? a.sessionDate))
     .slice(0, 12);
   const receipts = data.receipts
-    .filter((row) => row.payerRefId === student.id)
+    .filter((row) => row.payerRefId === billingStudentId)
     .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.id.localeCompare(a.id));
-  const billingHistoryExists = data.billingCycles.some((row) => row.studentId === student.id);
+  const billingHistoryExists = data.billingCycles.some((row) => row.studentId === billingStudentId);
   const packageSize = cycle?.sessionLimit ?? plan?.packageSize ?? 8;
   const packagePrice = cycle?.pricePence ?? plan?.packagePricePence ?? 0;
   const openingLocked = Boolean(cycle?.openingProgressLockedAt) || (cycle?.realCompletedCount ?? 0) > 0;
@@ -99,9 +102,16 @@ export function StudentHub({
       </article>
 
       <div className="student-hub-metrics">
-        <Metric label="نظام الحساب" value={plan?.billingMode === 'package' ? `باقة ${packageProgress(data, student.id)}` : plan?.billingMode === 'per_session' ? 'بالحصة' : 'غير محدد'} />
+        <Metric
+          label="نظام الحساب"
+          value={sharedBillingOwner
+            ? `مشترك مع ${sharedBillingOwner.name}${plan?.billingMode === 'package' ? ` · باقة ${packageProgress(data, sharedBillingOwner.id)}` : ''}`
+            : plan?.billingMode === 'package'
+              ? `باقة ${packageProgress(data, student.id)}`
+              : plan?.billingMode === 'per_session' ? 'بالحصة' : 'غير محدد'}
+        />
         <Metric label="مطلوب الآن" value={money(financial.duePence, currency)} attention={financial.duePence > 0} />
-        <Metric label="قبضت منه" value={money(financial.receivedPence, currency)} />
+        <Metric label={sharedBillingOwner ? "قبضت للحساب" : "قبضت منه"} value={money(financial.receivedPence, currency)} />
         <Metric label="رصيد مقدم" value={money(financial.creditPence, currency)} />
       </div>
 
@@ -134,6 +144,15 @@ export function StudentHub({
       </Section>
 
       <Section title="الحساب والباقة" action={billingHistoryExists ? 'التاريخ المالي محفوظ' : undefined}>
+        {sharedBillingOwner ? (
+          <div className="student-hub-shared-account">
+            <div>
+              <strong>حساب مشترك مع {sharedBillingOwner.name}</strong>
+              <span>الحضور يظل منفصلًا لكل طالب، لكن الباقة والاستحقاق والتحصيل يتحسبوا مرة واحدة على الحساب المشترك.</span>
+            </div>
+            <button type="button" onClick={() => onOpenStudent(sharedBillingOwner.id)}>فتح الحساب المشترك</button>
+          </div>
+        ) : (
         <form className="student-hub-form" onSubmit={(event) => {
           event.preventDefault();
           void onBillingSave(student.id, new FormData(event.currentTarget));
@@ -148,7 +167,8 @@ export function StudentHub({
           <input type="hidden" name="effectiveFrom" value={plan?.effectiveFrom ?? todayIso()} />
           <button className="student-hub-save wide" type="submit" disabled={busy}>حفظ نظام الحساب</button>
         </form>
-        {billingHistoryExists && <p className="student-hub-note">بعد وجود تاريخ مالي لا نغيّر «باقة ↔ بالحصة» حتى لا نعيد تفسير الحسابات القديمة.</p>}
+        )}
+        {!sharedBillingOwner && billingHistoryExists && <p className="student-hub-note">بعد وجود تاريخ مالي لا نغيّر «باقة ↔ بالحصة» حتى لا نعيد تفسير الحسابات القديمة.</p>}
       </Section>
 
       <Section title="المواعيد والحصص" action={`${sessions.length} ${sessions.length === 1 ? 'موعد' : 'مواعيد'}`}>
@@ -196,8 +216,9 @@ export function StudentHub({
       </Section>
 
       <Section title="المدفوعات" action={receipts.length ? `${receipts.length} عملية` : undefined}>
-        <button className="student-hub-primary-action" type="button" onClick={() => setCollecting((value) => !value)}>＋ تسجيل تحصيل</button>
-        {collecting && <form className="student-hub-form" onSubmit={async (event) => { event.preventDefault(); if (await onCollect(student.id, new FormData(event.currentTarget))) setCollecting(false); }}>
+        <button className="student-hub-primary-action" type="button" onClick={() => setCollecting((value) => !value)}>＋ {sharedBillingOwner ? `تسجيل تحصيل على حساب ${sharedBillingOwner.name}` : 'تسجيل تحصيل'}</button>
+        {sharedBillingOwner && <p className="student-hub-note">المدفوعات هنا تخص الحساب المشترك المسجل باسم {sharedBillingOwner.name}.</p>}
+        {collecting && <form className="student-hub-form" onSubmit={async (event) => { event.preventDefault(); if (await onCollect(billingStudentId, new FormData(event.currentTarget))) setCollecting(false); }}>
           <label>المبلغ<input name="amount" type="number" min="0.01" step="0.01" inputMode="decimal" required /></label>
           <label>التاريخ<ArabicDateField name="receivedAt" defaultValue={todayIso()} ariaLabel="تاريخ التحصيل" /></label>
           <label>طريقة الدفع<select name="paymentMethod" defaultValue="cash"><option value="cash">كاش</option><option value="bank">بنك</option><option value="wallet">محفظة</option><option value="other">أخرى</option></select></label>

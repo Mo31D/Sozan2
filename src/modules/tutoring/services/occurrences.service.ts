@@ -1,6 +1,7 @@
 import { datesForWeekday, rescheduleOccurrenceSchema, completeOccurrenceSchema, type TutoringOccurrence } from '../domain/occurrence';
 import { canGenerateOccurrences } from '../domain/schedule';
 import { completedSessionFinancials } from '../domain/session-finance';
+import { billingStudentIdsForOccurrence } from '../domain/session';
 import type { OccurrenceRepository } from '../ports/occurrence-repository';
 import type { SessionRepository } from '../ports/session-repository';
 import type { BillingService } from './billing.service';
@@ -50,7 +51,7 @@ export class OccurrencesService {
       // Completion is retryable as one logical command. If a previous attempt
       // persisted attendance but failed while advancing one package, repair the
       // missing package link instead of returning early.
-      for (const studentId of occurrence.studentIds) {
+      for (const studentId of billingStudentIdsForOccurrence(session, occurrence.studentIds)) {
         await this.billing.recordCompletedOccurrence(
           workspaceId,
           studentId,
@@ -98,7 +99,7 @@ export class OccurrencesService {
       payerStudentId: session.payerStudentId,
     });
 
-    for (const studentId of participants) {
+    for (const studentId of billingStudentIdsForOccurrence(session, participants)) {
       await this.billing.recordCompletedOccurrence(
         workspaceId,
         studentId,
