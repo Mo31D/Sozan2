@@ -1,6 +1,6 @@
 import type { Student } from '../../modules/tutoring/domain/student';
 import type { StudentBaseline } from '../../modules/tutoring/domain/student-baseline';
-import type { BillingAccount, BillingAccountCycle, BillingAccountMember } from '../../modules/tutoring/domain/billing-account';
+import { activeFamilyMembers, familyAccountForStudent as resolveFamilyAccountForStudent, type BillingAccount, type BillingAccountCycle, type BillingAccountMember } from '../../modules/tutoring/domain/billing-account';
 import { billingOwnerStudentId, type RecurringSession } from '../../modules/tutoring/domain/session';
 import { openLocalDatabase, requestResult, STORES } from '../adapters/indexeddb/database';
 import type {
@@ -207,6 +207,43 @@ export function billingStudentForSession(
  * owned by one other student account, return that account owner. Ambiguous
  * cases deliberately return null instead of guessing.
  */
+export function familyBillingAccountForStudent(
+  data: SimpleWorkspaceData,
+  studentId: string,
+): BillingAccount | null {
+  return resolveFamilyAccountForStudent(data.billingAccounts, data.billingAccountMembers, studentId);
+}
+
+export function familyBillingStudents(
+  data: SimpleWorkspaceData,
+  accountId: string,
+): Student[] {
+  const byId = new Map(data.students.map((student) => [student.id, student]));
+  return activeFamilyMembers(data.billingAccountMembers, accountId)
+    .map((member) => byId.get(member.studentId) ?? null)
+    .filter((student): student is Student => Boolean(student));
+}
+
+export function familyBillingProgressLabel(
+  data: SimpleWorkspaceData,
+  account: BillingAccount,
+): string {
+  const members = familyBillingStudents(data, account.id);
+  const progressFor = (studentId: string) => {
+    const cycle = activeCycleFor(data, studentId);
+    const limit = cycle?.sessionLimit ?? account.packageSize;
+    const completed = cycle
+      ? cycle.openingCompletedCount + cycle.realCompletedCount
+      : 0;
+    return `${Math.min(completed, limit)}/${limit}`;
+  };
+
+  if (account.countingMode === 'shared_occurrence') {
+    return progressFor(account.primaryStudentId);
+  }
+  return members.map((student) => `${student.name} ${progressFor(student.id)}`).join(' · ');
+}
+
 export function sharedBillingOwnerForStudent(
   data: SimpleWorkspaceData,
   studentId: string,
