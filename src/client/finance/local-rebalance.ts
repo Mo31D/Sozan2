@@ -7,9 +7,11 @@ import {
   studentOccurrenceTargetId,
 } from '../../modules/tutoring/domain/finance-target';
 import type { RecurringSession } from '../../modules/tutoring/domain/session';
+import { FAMILY_PAYER_REF_TYPE, type BillingAccount, type BillingAccountMember } from '../../modules/tutoring/domain/billing-account';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
 import type { LocalAllocation, LocalOccurrence } from '../simple/data';
 import type { LocalBillingCycle, LocalBillingPlan, LocalReceipt } from '../tutoring/local-commands';
+import { rebalanceFamilyAccountLocally } from '../tutoring/family-billing';
 
 function studentObligations(input: {
   workspaceId: string;
@@ -18,11 +20,12 @@ function studentObligations(input: {
   cycles: LocalBillingCycle[];
   occurrences: LocalOccurrence[];
   sessions: RecurringSession[];
+  skipPackage?: boolean;
 }): FinancialObligation[] {
-  const { workspaceId, studentId, plan, cycles, occurrences, sessions } = input;
+  const { workspaceId, studentId, plan, cycles, occurrences, sessions, skipPackage = false } = input;
   const obligations: FinancialObligation[] = [];
 
-  if (plan?.billingMode === 'package') {
+  if (plan?.billingMode === 'package' && !skipPackage) {
     for (const cycle of cycles) {
       const complete = cycle.openingCompletedCount + cycle.realCompletedCount >= cycle.sessionLimit;
       if (!complete) continue;
@@ -82,14 +85,18 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
     STORES.tutoringBillingPlans,
     STORES.tutoringOccurrences,
     STORES.tutoringSessions,
+    STORES.tutoringBillingAccounts,
+    STORES.tutoringBillingAccountMembers,
   ], 'readonly');
-  const [receipts, allocations, cycles, plans, occurrences, sessions] = await Promise.all([
+  const [receipts, allocations, cycles, plans, occurrences, sessions, familyAccounts, familyMembers] = await Promise.all([
     requestResult<LocalReceipt[]>(read.objectStore(STORES.financeReceipts).getAll()),
     requestResult<LocalAllocation[]>(read.objectStore(STORES.financeAllocations).getAll()),
     requestResult<LocalBillingCycle[]>(read.objectStore(STORES.tutoringBillingCycles).getAll()),
     requestResult<LocalBillingPlan[]>(read.objectStore(STORES.tutoringBillingPlans).getAll()),
     requestResult<LocalOccurrence[]>(read.objectStore(STORES.tutoringOccurrences).getAll()),
     requestResult<RecurringSession[]>(read.objectStore(STORES.tutoringSessions).getAll()),
+    requestResult<BillingAccount[]>(read.objectStore(STORES.tutoringBillingAccounts).getAll()),
+    requestResult<BillingAccountMember[]>(read.objectStore(STORES.tutoringBillingAccountMembers).getAll()),
   ]);
 
   const studentReceipts = receipts
@@ -103,6 +110,14 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
   const plan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId) ?? null;
   const studentCycles = cycles
     .filter((row) => row.workspaceId === workspaceId && row.studentId === studentId && row.status !== 'cancelled');
+  const activeFamilyAccountIds = new Set(familyAccounts
+    .filter((row) => row.workspaceId === workspaceId && row.active)
+    .map((row) => row.id));
+  const belongsToFamilyAccount = familyMembers.some((row) =>
+    row.workspaceId === workspaceId
+    && row.studentId === studentId
+    && row.active
+    && activeFamilyAccountIds.has(row.billingAccountId));
   const obligations = studentObligations({
     workspaceId,
     studentId,
@@ -110,6 +125,7 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
     cycles: studentCycles,
     occurrences,
     sessions,
+    skipPackage: belongsToFamilyAccount,
   });
 
   const allocatedByTarget = new Map<string, number>();
@@ -155,7 +171,7 @@ export async function rebalanceStudentLocally(workspaceId: string, studentId: st
 
   const allStudentAllocations = [...studentAllocations, ...generated];
   const cycleStore = write.objectStore(STORES.tutoringBillingCycles);
-  if (plan?.billingMode === 'package') {
+  if (plan?.billingMode === 'package' && !belongsToFamilyAccount) {
     for (const cycle of studentCycles) {
       const complete = cycle.openingCompletedCount + cycle.realCompletedCount >= cycle.sessionLimit;
       if (!complete) {
@@ -218,7 +234,11 @@ export async function refreshAllStudentBalancesLocally(workspaceId: string): Pro
     db.transaction(STORES.financeReceipts, 'readonly').objectStore(STORES.financeReceipts).getAll(),
   );
   const studentIds = [...new Set(receipts
-    .filter((row) => row.workspaceId === workspaceId)
+    .filter((row) => row.workspaceId === workspaceId && row.payerRefType === 'tutoring.student')
+    .map((row) => row.payerRefId))];
+  const familyAccountIds = [...new Set(receipts
+    .filter((row) => row.workspaceId === workspaceId && row.payerRefType === FAMILY_PAYER_REF_TYPE)
     .map((row) => row.payerRefId))];
   for (const studentId of studentIds) await rebalanceStudentLocally(workspaceId, studentId);
+  for (const accountId of familyAccountIds) await rebalanceFamilyAccountLocally(workspaceId, accountId);
 }
