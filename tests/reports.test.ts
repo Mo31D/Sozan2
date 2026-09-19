@@ -83,6 +83,38 @@ describe('workspace reports', () => {
     expect(report.workMinutes).toBe(80);
   });
 
+  it('counts one family package debt and excludes member package debts', () => {
+    const report = buildWorkspaceReport({
+      sessions: [],
+      occurrences: [],
+      receipts: [],
+      expenses: [],
+      otherIncome: [],
+      billingCycles: [
+        { id: 'malak-cycle', studentId: 'malak', status: 'due', pricePence: 35000 },
+        { id: 'judy-cycle', studentId: 'judy', status: 'due', pricePence: 35000 },
+      ],
+      billingAccounts: [{ id: 'family-1', active: true }],
+      billingAccountMembers: [
+        { billingAccountId: 'family-1', studentId: 'malak', active: true },
+        { billingAccountId: 'family-1', studentId: 'judy', active: true },
+      ],
+      billingAccountCycles: [{
+        id: 'family-cycle-1',
+        billingAccountId: 'family-1',
+        status: 'due',
+        pricePence: 70000,
+      }],
+      allocations: [{
+        targetId: 'family-cycle-1',
+        targetType: 'family_package_cycle',
+        amountPence: 20000,
+      }],
+    }, '2026-09-22');
+
+    expect(report.duePence).toBe(50000);
+  });
+
   it('surfaces probable duplicate expenses as an attention insight', () => {
     const report = buildWorkspaceReport({
       sessions: [],
