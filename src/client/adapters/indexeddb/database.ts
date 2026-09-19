@@ -1,5 +1,5 @@
 const DATABASE_NAME = 'sozan2-local';
-const DATABASE_VERSION = 8;
+const DATABASE_VERSION = 9;
 
 export const STORES = {
   coreUsers: 'core_users',
@@ -19,6 +19,9 @@ export const STORES = {
   tutoringBillingPlans: 'tutoring_billing_plans',
   tutoringBillingCycles: 'tutoring_billing_cycles',
   tutoringBillingCycleOccurrences: 'tutoring_billing_cycle_occurrences',
+  tutoringBillingAccounts: 'tutoring_billing_accounts',
+  tutoringBillingAccountMembers: 'tutoring_billing_account_members',
+  tutoringBillingAccountCycles: 'tutoring_billing_account_cycles',
   appointmentsClients: 'appointments_clients',
   appointmentsItems: 'appointments_items',
   financeReceipts: 'finance_receipts',
@@ -95,6 +98,9 @@ export function openLocalDatabase(): Promise<IDBDatabase> {
         STORES.tutoringBillingPlans,
         STORES.tutoringBillingCycles,
         STORES.tutoringBillingCycleOccurrences,
+        STORES.tutoringBillingAccounts,
+        STORES.tutoringBillingAccountMembers,
+        STORES.tutoringBillingAccountCycles,
         STORES.appointmentsClients,
         STORES.appointmentsItems,
         STORES.financeReceipts,
