@@ -481,7 +481,17 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
   },
 
   async snapshot(db: D1Database, workspaceId: string): Promise<ModuleSnapshot> {
-    const [students, sessions, occurrencesResult, plansResult, cyclesResult, cycleOccurrencesResult] = await Promise.all([
+    const [
+      students,
+      sessions,
+      occurrencesResult,
+      plansResult,
+      cyclesResult,
+      cycleOccurrencesResult,
+      billingAccountsResult,
+      billingAccountMembersResult,
+      billingAccountCyclesResult,
+    ] = await Promise.all([
       new D1StudentRepository(db).listAll(workspaceId),
       new D1SessionRepository(db).listAll(workspaceId),
       db.prepare(
@@ -519,6 +529,26 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
          WHERE workspace_id=?1
          ORDER BY billing_cycle_id, position`,
       ).bind(workspaceId).all<CycleOccurrenceRow>(),
+      db.prepare(
+        `SELECT id,workspace_id,display_name,account_type,counting_mode,primary_student_id,
+                package_size,package_price_pence,effective_from,active
+         FROM tutoring_billing_accounts
+         WHERE workspace_id=?1
+         ORDER BY display_name,id`,
+      ).bind(workspaceId).all<any>(),
+      db.prepare(
+        `SELECT id,workspace_id,billing_account_id,student_id,position,active
+         FROM tutoring_billing_account_members
+         WHERE workspace_id=?1
+         ORDER BY billing_account_id,position,student_id`,
+      ).bind(workspaceId).all<any>(),
+      db.prepare(
+        `SELECT id,workspace_id,billing_account_id,sequence_no,package_size,price_pence,
+                status,started_on,completed_on,paid_on
+         FROM tutoring_billing_account_cycles
+         WHERE workspace_id=?1
+         ORDER BY billing_account_id,sequence_no`,
+      ).bind(workspaceId).all<any>(),
     ]);
 
     const occurrenceRows = occurrencesResult.results ?? [];
@@ -595,6 +625,38 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
           occurrenceId: row.occurrence_id,
           position: row.position,
           earnedPence: row.earned_pence,
+        })),
+        billingAccounts: (billingAccountsResult.results ?? []).map((row: any) => ({
+          id: row.id,
+          workspaceId: row.workspace_id,
+          displayName: row.display_name,
+          accountType: row.account_type,
+          countingMode: row.counting_mode,
+          primaryStudentId: row.primary_student_id,
+          packageSize: row.package_size,
+          packagePricePence: row.package_price_pence,
+          effectiveFrom: row.effective_from,
+          active: Boolean(row.active),
+        })),
+        billingAccountMembers: (billingAccountMembersResult.results ?? []).map((row: any) => ({
+          id: row.id,
+          workspaceId: row.workspace_id,
+          billingAccountId: row.billing_account_id,
+          studentId: row.student_id,
+          position: row.position,
+          active: Boolean(row.active),
+        })),
+        billingAccountCycles: (billingAccountCyclesResult.results ?? []).map((row: any) => ({
+          id: row.id,
+          workspaceId: row.workspace_id,
+          billingAccountId: row.billing_account_id,
+          sequenceNo: row.sequence_no,
+          packageSize: row.package_size,
+          pricePence: row.price_pence,
+          status: row.status,
+          startedOn: row.started_on,
+          completedOn: row.completed_on,
+          paidOn: row.paid_on,
         })),
       },
     };
