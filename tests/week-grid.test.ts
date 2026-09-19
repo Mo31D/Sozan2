@@ -98,26 +98,32 @@ describe('weekly timetable grid', () => {
     expect(c?.laneCount).toBe(1);
   });
 
-  it('clips partially visible lessons and keeps fully outside/unknown lessons out of the grid', () => {
+  it('shows evening lessons through 23:00 and keeps only truly outside/unknown lessons out of the grid', () => {
     const result = layoutWeekGridEntries([
       entry('early', '07:30', 90),
-      entry('late', '19:30', 90),
-      entry('outside', '21:00', 60),
+      entry('eight-pm', '20:00', 60),
+      entry('nine-thirty', '21:30', 90),
+      entry('late-clipped', '22:30', 90),
+      entry('outside', '23:00', 60),
       entry('unknown', null, 60),
     ]);
 
-    expect(result.visible).toHaveLength(2);
+    expect(result.visible).toHaveLength(4);
     expect(result.outside.map((row) => row.session.id)).toEqual(['outside', 'unknown']);
     expect(result.visible.find((row) => row.entry.session.id === 'early')?.clippedBefore).toBe(true);
-    expect(result.visible.find((row) => row.entry.session.id === 'late')?.clippedAfter).toBe(true);
+    expect(result.visible.find((row) => row.entry.session.id === 'late-clipped')?.clippedAfter).toBe(true);
+    expect(result.visible.find((row) => row.entry.session.id === 'eight-pm')?.clippedAfter).toBe(false);
+    expect(result.visible.find((row) => row.entry.session.id === 'nine-thirty')?.clippedAfter).toBe(false);
   });
 
-  it('activates exactly one of the four 3-hour time bands from 08:00 to 20:00', () => {
+  it('activates exactly one of the five 3-hour time bands from 08:00 to 23:00', () => {
     expect(activeBandIndex(8 * 60)).toBe(0);
     expect(activeBandIndex(10 * 60 + 59)).toBe(0);
     expect(activeBandIndex(11 * 60)).toBe(1);
     expect(activeBandIndex(14 * 60)).toBe(2);
     expect(activeBandIndex(17 * 60)).toBe(3);
-    expect(activeBandIndex(20 * 60)).toBeNull();
+    expect(activeBandIndex(20 * 60)).toBe(4);
+    expect(activeBandIndex(22 * 60 + 59)).toBe(4);
+    expect(activeBandIndex(23 * 60)).toBeNull();
   });
 });
