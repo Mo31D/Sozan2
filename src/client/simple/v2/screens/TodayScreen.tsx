@@ -4,8 +4,8 @@ import type { LocalPlatformSnapshot } from '../../../adapters/indexeddb/platform
 import type { AttendanceWorkflowAction } from '../../../tutoring/attendance-workflow';
 import {
   activeCycleFor,
+  billingStudentForSession,
   planFor,
-  studentForSession,
   type SimpleWorkspaceData,
 } from '../../data';
 import { ScreenHeader, SectionTitle } from '../components';
@@ -142,8 +142,8 @@ function AttendanceCard({
   const [participantStudentIds, setParticipantStudentIds] = useState<string[]>(
     () => [...session.studentIds],
   );
-  const primaryStudent = studentForSession(data, session);
-  const plan = primaryStudent ? planFor(data, primaryStudent.id) : null;
+  const billingStudent = billingStudentForSession(data, session);
+  const plan = billingStudent ? planFor(data, billingStudent.id) : null;
   const lessonNumbers = packageLessonNumbersForEntry(data, entry);
   const done = occurrence?.status === 'completed';
   const cancelled = occurrence?.status === 'cancelled';
@@ -153,7 +153,9 @@ function AttendanceCard({
   const linkedStudents = session.studentIds
     .map((id) => data.students.find((student) => student.id === id))
     .filter((student): student is NonNullable<typeof student> => Boolean(student));
-  const paymentStudents = linkedStudents.length ? linkedStudents : data.students;
+  const paymentStudents = session.priceBasis === 'total_session' && billingStudent
+    ? [billingStudent]
+    : linkedStudents.length ? linkedStudents : data.students;
   const defaultStudent = paymentStudents[0] ?? null;
   const suggested = defaultStudent ? suggestedCollectionPence(data, session, defaultStudent.id) : 0;
   const completionNeedsParticipant = linkedStudents.length > 0 && participantStudentIds.length === 0;
@@ -183,7 +185,7 @@ function AttendanceCard({
           )}
           {plan?.billingMode === 'package' && (
             <small className="lesson-package-line">
-              {lessonNumbers ? `رقم الحصة في الباقة · ${lessonNumbers}` : `باقة · ${packageProgress(data, primaryStudent?.id ?? '')}`}
+              {lessonNumbers ? `رقم الحصة في الباقة · ${lessonNumbers}` : `باقة · ${packageProgress(data, billingStudent?.id ?? '')}`}
             </small>
           )}
           {linkedStudents.length > 1 && !done && !cancelled && !missed && (
@@ -235,7 +237,7 @@ function AttendanceCard({
           {missed && <small className="lesson-state-note">فائتة — يمكنك استرجاعها أو نقلها</small>}
         </div>
         {plan?.billingMode === 'package' && (
-          <span className="progress-chip">{lessonNumbers ?? packageProgress(data, primaryStudent?.id ?? '')}</span>
+          <span className="progress-chip">{lessonNumbers ?? packageProgress(data, billingStudent?.id ?? '')}</span>
         )}
       </div>
 
