@@ -419,7 +419,13 @@ function projectedNewDue(
       }
     }
 
-    for (const studentId of participants) {
+    const packageStudentIds = priceBasis === 'total_session'
+      && session.payerStudentId
+      && (session.studentIds ?? []).includes(session.payerStudentId)
+      ? [session.payerStudentId]
+      : participants;
+
+    for (const studentId of [...new Set(packageStudentIds)]) {
       const plan = planByStudent.get(studentId);
       if (plan?.billingMode !== 'package') continue;
       if (plan.effectiveFrom && slot.date < plan.effectiveFrom) continue;
