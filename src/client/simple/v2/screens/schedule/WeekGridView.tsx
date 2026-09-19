@@ -64,6 +64,18 @@ function compactLessonRange(startMinute: number, endMinute: number): string {
     : `${start.time} ${start.period}–${end.time} ${end.period}`;
 }
 
+function compactSessionTypeLabel(type: string): string {
+  switch (type) {
+    case 'online': return 'أونلاين';
+    case 'private_student_home': return 'زيارة';
+    case 'private_tutor_home': return 'عند سوزان';
+    case 'center_group': return 'سنتر';
+    case 'own_group': return 'مجموعة';
+    default: return '';
+  }
+}
+
+
 function segmentStyle(
   layout: WeekGridLayoutEntry,
   startMinute: number,
@@ -226,10 +238,14 @@ export function WeekGridView({
                   const lessonLabel = packageLessonLabelForEntry(data, entry);
                   const lessonNumbers = packageLessonNumbersForEntry(data, entry);
                   const timeRange = compactLessonRange(item.startMinute, item.endMinute);
+                  const sessionTypeLabel = compactSessionTypeLabel(entry.session.sessionType);
                   const beforeStyle = travelStyle(item, 'before');
                   const afterStyle = travelStyle(item, 'after');
-                  const showTravel = entry.status !== 'cancelled' && entry.status !== 'missed';
-                  const travelSummary = item.travelBeforeMinutes || item.travelAfterMinutes
+                  const showTravel = entry.status !== 'cancelled'
+                    && entry.status !== 'missed'
+                    && entry.session.sessionType !== 'online'
+                    && entry.session.sessionType !== 'private_tutor_home';
+                  const travelSummary = showTravel && (item.travelBeforeMinutes || item.travelAfterMinutes)
                     ? ` · انتقال ${item.travelBeforeMinutes} د قبل + ${item.travelAfterMinutes} د بعد`
                     : '';
                   const key = `${entry.session.id}-${date}-${entry.occurrence?.id ?? 'recurring'}`;
@@ -246,18 +262,25 @@ export function WeekGridView({
                         type="button"
                         className={`week-grid-entry type-${entry.session.sessionType} status-${entry.status}`}
                         style={entryStyle(item)}
-                        title={`${entry.session.title} · ${timeRange}${travelSummary}${lessonLabel ? ` · ${lessonLabel}` : ''}`}
+                        title={`${entry.session.title} · ${timeRange}${sessionTypeLabel ? ` · ${sessionTypeLabel}` : ''}${travelSummary}${lessonLabel ? ` · ${lessonLabel}` : ''}`}
                         onClick={() => onEdit(entry.session.id)}
                       >
                         <span className="week-grid-entry-accent" />
                         <span className="week-grid-entry-copy">
-                          <strong>
-                            <span>{entry.session.title}</span>
-                            {lessonNumbers && <b>{lessonNumbers}</b>}
+                          <strong className="week-grid-entry-head">
+                            <span className="week-grid-entry-title">{entry.session.title}</span>
+                            {lessonNumbers && <b title={lessonLabel ?? lessonNumbers}>{lessonNumbers}</b>}
                           </strong>
-                          <small>
-                            {timeRange}
-                            {clipped ? ' · ممتدة خارج النطاق' : ''}
+                          <small className="week-grid-entry-meta">
+                            <span className="week-grid-entry-time">
+                              {timeRange}
+                              {clipped ? ' · ممتدة خارج النطاق' : ''}
+                            </span>
+                            {sessionTypeLabel && (
+                              <em className={`week-grid-kind kind-${entry.session.sessionType}`}>
+                                {sessionTypeLabel}
+                              </em>
+                            )}
                           </small>
                         </span>
                       </button>
