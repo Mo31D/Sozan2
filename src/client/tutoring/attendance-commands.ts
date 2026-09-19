@@ -1,5 +1,5 @@
 import { packageUnitShare } from '../../modules/tutoring/domain/billing';
-import type { RecurringSession } from '../../modules/tutoring/domain/session';
+import { billingStudentIdsForOccurrence, type RecurringSession } from '../../modules/tutoring/domain/session';
 import { completedSessionFinancials } from '../../modules/tutoring/domain/session-finance';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
@@ -61,7 +61,9 @@ export async function completeLocalSession(
     // A previous attempt may have committed attendance/package state and then
     // failed while reconciling Finance. Retrying completion must repair that
     // downstream projection instead of returning with stale due/credit values.
-    for (const studentId of existing.studentIds ?? []) {
+    const attended = existing.studentIds ?? [];
+    const financeStudents = billingStudentIdsForOccurrence(session, attended);
+    for (const studentId of new Set([...attended, ...financeStudents])) {
       await rebalanceStudentLocally(workspaceId, studentId);
     }
     return;
@@ -76,6 +78,7 @@ export async function completeLocalSession(
   if (session.studentIds.length > 0 && participants.length === 0) {
     throw new Error('OCCURRENCE_PARTICIPANT_REQUIRED');
   }
+  const billingStudentIds = billingStudentIdsForOccurrence(session, participants);
 
   const originalSessionDate = existing?.sessionDate ?? displayedDate;
   const effectiveDate = existing?.rescheduledToDate ?? displayedDate;
@@ -115,7 +118,7 @@ export async function completeLocalSession(
   };
   occurrenceStore.put(completedOccurrence);
 
-  for (const studentId of participants) {
+  for (const studentId of billingStudentIds) {
     const plan = plans.find((row) => row.workspaceId === workspaceId && row.studentId === studentId);
     if (!plan || plan.billingMode !== 'package') continue;
 
@@ -206,7 +209,7 @@ export async function completeLocalSession(
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
 
   await transactionDone(transaction);
-  for (const studentId of participants) {
+  for (const studentId of new Set([...participants, ...billingStudentIds])) {
     await rebalanceStudentLocally(workspaceId, studentId);
   }
 }
