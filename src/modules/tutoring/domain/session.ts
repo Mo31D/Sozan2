@@ -95,6 +95,45 @@ export const updateRecurringScheduleSchema = z.object(scheduleFields).superRefin
 export type CreateRecurringSessionInput = z.infer<typeof createRecurringSessionSchema>;
 export type UpdateRecurringSessionDetailsInput = z.infer<typeof updateRecurringSessionDetailsSchema>;
 
+/**
+ * Resolves which student account owns the financial side of one completed
+ * lesson. Attendance and billing are deliberately separate concepts:
+ *
+ * - per-student pricing/billing follows the students who actually attended;
+ * - a total-session lesson with an explicit payer is one household/account
+ *   obligation, even when several siblings attend or the named payer is absent;
+ * - legacy/ambiguous total-session lessons without a payer keep the historical
+ *   participant-based behaviour until the session is explicitly corrected.
+ */
+export function billingStudentIdsForOccurrence(
+  session: Pick<RecurringSession, 'priceBasis' | 'studentIds' | 'payerStudentId'>,
+  participantStudentIds: readonly string[],
+): string[] {
+  if (
+    session.priceBasis === 'total_session'
+    && session.payerStudentId
+    && session.studentIds.includes(session.payerStudentId)
+  ) {
+    return [session.payerStudentId];
+  }
+
+  const linked = new Set(session.studentIds);
+  return [...new Set(participantStudentIds)].filter((studentId) => linked.has(studentId));
+}
+
+export function billingOwnerStudentId(
+  session: Pick<RecurringSession, 'priceBasis' | 'studentIds' | 'payerStudentId'>,
+): string | null {
+  if (
+    session.priceBasis === 'total_session'
+    && session.payerStudentId
+    && session.studentIds.includes(session.payerStudentId)
+  ) {
+    return session.payerStudentId;
+  }
+  return session.studentIds.length === 1 ? session.studentIds[0] : null;
+}
+
 export type RecurringSession = {
   id: string;
   workspaceId: string;
