@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { calendarDateInTimeZone } from '../../../../../platform/time/calendar-date';
 import type { SimpleWorkspaceData } from '../../../data';
 import {
-  formatClockTime,
   packageLessonLabelForEntry,
   packageLessonNumbersForEntry,
   scheduleEntriesForDate,
@@ -44,16 +43,58 @@ function compactHour(totalMinutes: number): string {
   return `${numeral} ${hour24 < 12 ? 'ص' : 'م'}`;
 }
 
-function entryStyle(layout: WeekGridLayoutEntry): CSSProperties {
+function compactClockParts(totalMinutes: number): { time: string; period: 'ص' | 'م' } {
+  const normalized = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+  const hour24 = Math.floor(normalized / 60);
+  const hour12 = hour24 % 12 || 12;
+  const minute = normalized % 60;
+  const hourText = hour12.toLocaleString('ar-EG-u-nu-arab', { useGrouping: false });
+  const minuteText = minute.toLocaleString('ar-EG-u-nu-arab', {
+    useGrouping: false,
+    minimumIntegerDigits: 2,
+  });
+  return { time: `${hourText}:${minuteText}`, period: hour24 < 12 ? 'ص' : 'م' };
+}
+
+function compactLessonRange(startMinute: number, endMinute: number): string {
+  const start = compactClockParts(startMinute);
+  const end = compactClockParts(endMinute);
+  return start.period === end.period
+    ? `${start.time}–${end.time} ${end.period}`
+    : `${start.time} ${start.period}–${end.time} ${end.period}`;
+}
+
+function segmentStyle(
+  layout: WeekGridLayoutEntry,
+  startMinute: number,
+  endMinute: number,
+): CSSProperties {
   const laneWidth = 100 / layout.laneCount;
   const gapPercent = Math.min(3, laneWidth * 0.08);
   const inlineStart = layout.lane * laneWidth;
   return {
-    '--week-entry-top': `${layout.topPercent}%`,
-    '--week-entry-height': `${layout.heightPercent}%`,
+    '--week-entry-top': `${((startMinute - WEEK_GRID_START_MINUTE) / WEEK_GRID_TOTAL_MINUTES) * 100}%`,
+    '--week-entry-height': `${((endMinute - startMinute) / WEEK_GRID_TOTAL_MINUTES) * 100}%`,
     '--week-entry-inline-start': `${inlineStart}%`,
     '--week-entry-width': `${Math.max(0, laneWidth - gapPercent)}%`,
   } as CSSProperties;
+}
+
+function entryStyle(layout: WeekGridLayoutEntry): CSSProperties {
+  return segmentStyle(layout, layout.visibleStartMinute, layout.visibleEndMinute);
+}
+
+function travelStyle(
+  layout: WeekGridLayoutEntry,
+  side: 'before' | 'after',
+): CSSProperties | null {
+  const start = side === 'before'
+    ? layout.visibleTravelBeforeStartMinute
+    : layout.visibleTravelAfterStartMinute;
+  const end = side === 'before'
+    ? layout.visibleTravelBeforeEndMinute
+    : layout.visibleTravelAfterEndMinute;
+  return start === null || end === null ? null : segmentStyle(layout, start, end);
 }
 
 export function WeekGridView({
@@ -184,27 +225,50 @@ export function WeekGridView({
                   const clipped = item.clippedBefore || item.clippedAfter;
                   const lessonLabel = packageLessonLabelForEntry(data, entry);
                   const lessonNumbers = packageLessonNumbersForEntry(data, entry);
+                  const timeRange = compactLessonRange(item.startMinute, item.endMinute);
+                  const beforeStyle = travelStyle(item, 'before');
+                  const afterStyle = travelStyle(item, 'after');
+                  const showTravel = entry.status !== 'cancelled' && entry.status !== 'missed';
+                  const travelSummary = item.travelBeforeMinutes || item.travelAfterMinutes
+                    ? ` · انتقال ${item.travelBeforeMinutes} د قبل + ${item.travelAfterMinutes} د بعد`
+                    : '';
+                  const key = `${entry.session.id}-${date}-${entry.occurrence?.id ?? 'recurring'}`;
                   return (
-                    <button
-                      type="button"
-                      className={`week-grid-entry type-${entry.session.sessionType} status-${entry.status}`}
-                      style={entryStyle(item)}
-                      key={`${entry.session.id}-${date}-${entry.occurrence?.id ?? 'recurring'}`}
-                      title={`${entry.session.title} · ${entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}${lessonLabel ? ` · ${lessonLabel}` : ''}`}
-                      onClick={() => onEdit(entry.session.id)}
-                    >
-                      <span className="week-grid-entry-accent" />
-                      <span className="week-grid-entry-copy">
-                        <strong>
-                          <span>{entry.session.title}</span>
-                          {lessonNumbers && <b>{lessonNumbers}</b>}
-                        </strong>
-                        <small>
-                          {entry.startTime ? formatClockTime(entry.startTime) : 'غير محدد'}
-                          {clipped ? ' · ممتدة خارج النطاق' : ''}
-                        </small>
-                      </span>
-                    </button>
+                    <Fragment key={key}>
+                      {showTravel && beforeStyle && (
+                        <span
+                          className={`week-grid-travel before status-${entry.status}`}
+                          style={beforeStyle}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className={`week-grid-entry type-${entry.session.sessionType} status-${entry.status}`}
+                        style={entryStyle(item)}
+                        title={`${entry.session.title} · ${timeRange}${travelSummary}${lessonLabel ? ` · ${lessonLabel}` : ''}`}
+                        onClick={() => onEdit(entry.session.id)}
+                      >
+                        <span className="week-grid-entry-accent" />
+                        <span className="week-grid-entry-copy">
+                          <strong>
+                            <span>{entry.session.title}</span>
+                            {lessonNumbers && <b>{lessonNumbers}</b>}
+                          </strong>
+                          <small>
+                            {timeRange}
+                            {clipped ? ' · ممتدة خارج النطاق' : ''}
+                          </small>
+                        </span>
+                      </button>
+                      {showTravel && afterStyle && (
+                        <span
+                          className={`week-grid-travel after status-${entry.status}`}
+                          style={afterStyle}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </Fragment>
                   );
                 })}
               </div>
@@ -227,7 +291,15 @@ export function WeekGridView({
                   {WEEKDAYS[weekdayForIso(date)]} · {entry.session.title}
                   {packageLessonLabelForEntry(data, entry) ? ` · ${packageLessonLabelForEntry(data, entry)}` : ''}
                 </span>
-                <strong>{entry.startTime ? formatClockTime(entry.startTime) : 'وقت غير محدد'}</strong>
+                <strong>
+                  {entry.startTime
+                    ? compactLessonRange(
+                        Number(entry.startTime.slice(0, 2)) * 60 + Number(entry.startTime.slice(3, 5)),
+                        Number(entry.startTime.slice(0, 2)) * 60 + Number(entry.startTime.slice(3, 5))
+                          + Math.max(15, Number(entry.occurrence?.durationMinutesSnapshot ?? entry.session.durationMinutes ?? 0)),
+                      )
+                    : 'وقت غير محدد'}
+                </strong>
               </button>
             ))}
           </div>
