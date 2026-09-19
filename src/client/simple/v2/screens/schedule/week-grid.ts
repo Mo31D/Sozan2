@@ -1,4 +1,4 @@
-import { splitTravelMinutes } from '../../../../../modules/tutoring/domain/schedule-conflict';
+import { effectiveTravelMinutes, splitTravelMinutes } from '../../../../../modules/tutoring/domain/schedule-conflict';
 import type { ScheduledEntry } from '../../types';
 import { addDays, timeToMinutes, weekdayForIso } from '../../utils';
 
@@ -57,7 +57,10 @@ export function entryDurationMinutes(entry: ScheduledEntry): number {
 
 export function entryTravelMinutes(entry: ScheduledEntry): number {
   const historical = entry.occurrence?.travelMinutesSnapshot;
-  return Math.max(0, Number(historical ?? entry.session.travelMinutes ?? 0));
+  return effectiveTravelMinutes(
+    entry.session.sessionType,
+    historical ?? entry.session.travelMinutes ?? 0,
+  );
 }
 
 export function entryTravelBuffer(entry: ScheduledEntry): { before: number; after: number } {
