@@ -12,6 +12,7 @@ import { D1OccurrenceRepository } from '../adapters/d1/tutoring-occurrences.repo
 import { D1SessionRepository } from '../adapters/d1/tutoring-sessions.repository';
 import { D1StudentRepository } from '../adapters/d1/tutoring-students.repository';
 import { TutoringObligationProvider } from '../integrations/tutoring-obligations.provider';
+import { reconcileFamilyAccountsForStudents } from '../integrations/family-billing';
 import { workspaceToday } from '../workspaces/time';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
 
@@ -247,6 +248,7 @@ async function reopenCompletedOccurrence(db: D1Database, workspaceId: string, oc
 
   for (const row of attended.results ?? []) studentIds.add(row.student_id);
   for (const studentId of studentIds) await rebuildStudentAllocations(db, workspaceId, studentId);
+  await reconcileFamilyAccountsForStudents(db, workspaceId, [...studentIds]);
 }
 
 export const tutoringSyncHandler: ModuleSyncHandler = {
@@ -374,6 +376,7 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
       if (!student) throw new Error('STUDENT_NOT_FOUND');
       const service = new BillingService(new D1BillingRepository(db), () => crypto.randomUUID());
       await service.configure(workspaceId, mutation.entityId, mutation.payload);
+      await reconcileFamilyAccountsForStudents(db, workspaceId, [mutation.entityId]);
       return;
     }
 
@@ -420,6 +423,21 @@ export const tutoringSyncHandler: ModuleSyncHandler = {
         note: parsed.note,
         participantStudentIds: parsed.participantStudentIds,
       });
+      const affected = await db.prepare(
+        `SELECT student_id FROM tutoring_occurrence_students
+         WHERE workspace_id=?1 AND occurrence_id=?2
+         UNION
+         SELECT c.student_id
+         FROM tutoring_billing_cycle_occurrences co
+         JOIN tutoring_billing_cycles c
+           ON c.workspace_id=co.workspace_id AND c.id=co.billing_cycle_id
+         WHERE co.workspace_id=?1 AND co.occurrence_id=?2`,
+      ).bind(workspaceId, occurrenceId).all<{ student_id: string }>();
+      await reconcileFamilyAccountsForStudents(
+        db,
+        workspaceId,
+        (affected.results ?? []).map((row) => row.student_id),
+      );
       return;
     }
 
