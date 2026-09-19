@@ -16,12 +16,13 @@ function entry(
   startTime: string | null,
   durationMinutes: number,
   travelMinutes = 0,
+  sessionType: RecurringSession['sessionType'] = 'private_student_home',
 ): ScheduledEntry {
   const session: RecurringSession = {
     id,
     workspaceId,
     title: id,
-    sessionType: 'private_student_home',
+    sessionType,
     scheduleStatus: 'confirmed',
     weekday: 1,
     startTime,
@@ -104,6 +105,23 @@ describe('weekly timetable grid', () => {
     expect(a?.laneCount).toBe(2);
     expect(b?.laneCount).toBe(2);
     expect(a?.lane).not.toBe(b?.lane);
+  });
+
+  it('does not create travel lanes for online lessons even if stale travel data exists', () => {
+    const { visible } = layoutWeekGridEntries([
+      entry('online', '10:00', 60, 30, 'online'),
+      entry('next', '11:05', 60, 0, 'online'),
+    ]);
+
+    const online = visible.find((row) => row.entry.session.id === 'online');
+    const next = visible.find((row) => row.entry.session.id === 'next');
+
+    expect(online?.travelBeforeMinutes).toBe(0);
+    expect(online?.travelAfterMinutes).toBe(0);
+    expect(online?.occupiedStartMinute).toBe(10 * 60);
+    expect(online?.occupiedEndMinute).toBe(11 * 60);
+    expect(online?.laneCount).toBe(1);
+    expect(next?.laneCount).toBe(1);
   });
 
   it('places overlapping lessons in separate lanes and returns to full width afterward', () => {

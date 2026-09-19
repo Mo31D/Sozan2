@@ -2,7 +2,7 @@ import type { RecurringSession } from './session';
 
 export type SchedulableSession = Pick<
   RecurringSession,
-  'id' | 'scheduleStatus' | 'weekday' | 'startTime' | 'durationMinutes' | 'travelMinutes'
+  'id' | 'sessionType' | 'scheduleStatus' | 'weekday' | 'startTime' | 'durationMinutes' | 'travelMinutes'
 >;
 
 const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/u;
@@ -28,6 +28,15 @@ export function splitTravelMinutes(totalMinutes: number | null | undefined): Tra
   return { before, after: total - before };
 }
 
+export function effectiveTravelMinutes(
+  sessionType: RecurringSession['sessionType'],
+  totalMinutes: number | null | undefined,
+): number {
+  if (sessionType === 'online' || sessionType === 'private_tutor_home') return 0;
+  return Math.max(0, Math.round(Number(totalMinutes ?? 0)));
+}
+
+
 /**
  * Reserve travel on both sides of a lesson. This is intentionally conservative:
  * travel is a transition requirement between appointments, not teaching time
@@ -44,7 +53,7 @@ export function occupiedScheduleInterval(session: SchedulableSession): ScheduleI
   }
   const [hours, minutes] = session.startTime.split(':').map(Number);
   const start = hours * 60 + minutes;
-  const travel = splitTravelMinutes(session.travelMinutes);
+  const travel = splitTravelMinutes(effectiveTravelMinutes(session.sessionType, session.travelMinutes));
   const duration = Math.max(0, Number(session.durationMinutes || 0));
   return {
     start: Math.max(0, start - travel.before),
