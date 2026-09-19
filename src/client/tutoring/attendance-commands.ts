@@ -6,6 +6,7 @@ import { openLocalDatabase, requestResult, STORES, transactionDone } from '../ad
 import { rebalanceStudentLocally } from '../finance/local-rebalance';
 import { newSyncOutboxRecord } from '../sync/outbox';
 import type { LocalBillingCycle, LocalBillingPlan } from './local-commands';
+import { rebalanceFamilyAccountsForStudentsLocally } from './family-billing';
 import type { LocalOccurrence } from '../simple/data';
 
 const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/u;
@@ -63,9 +64,11 @@ export async function completeLocalSession(
     // downstream projection instead of returning with stale due/credit values.
     const attended = existing.studentIds ?? [];
     const financeStudents = billingStudentIdsForOccurrence(session, attended);
-    for (const studentId of new Set([...attended, ...financeStudents])) {
+    const affectedStudents = [...new Set([...attended, ...financeStudents])];
+    for (const studentId of affectedStudents) {
       await rebalanceStudentLocally(workspaceId, studentId);
     }
+    await rebalanceFamilyAccountsForStudentsLocally(workspaceId, affectedStudents);
     return;
   }
 
@@ -209,7 +212,9 @@ export async function completeLocalSession(
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
 
   await transactionDone(transaction);
-  for (const studentId of new Set([...participants, ...billingStudentIds])) {
+  const affectedStudents = [...new Set([...participants, ...billingStudentIds])];
+  for (const studentId of affectedStudents) {
     await rebalanceStudentLocally(workspaceId, studentId);
   }
+  await rebalanceFamilyAccountsForStudentsLocally(workspaceId, affectedStudents);
 }
