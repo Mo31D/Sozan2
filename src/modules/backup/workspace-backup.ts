@@ -42,6 +42,9 @@ export const workspaceBackupSchema = z.object({
     tutoringBillingPlans: rows,
     tutoringBillingCycles: rows,
     tutoringBillingCycleOccurrences: rows,
+    tutoringBillingAccounts: rows.optional().default([]),
+    tutoringBillingAccountMembers: rows.optional().default([]),
+    tutoringBillingAccountCycles: rows.optional().default([]),
     appointmentsClients: rows,
     appointmentsItems: rows,
     financeReceipts: rows,
@@ -161,6 +164,9 @@ export function validateWorkspaceBackup(backup: WorkspaceBackup): BackupValidati
   const billingPlans = s.tutoringBillingPlans as Array<Record<string, unknown>>;
   const billingCycles = s.tutoringBillingCycles as Array<Record<string, unknown>>;
   const cycleOccurrences = s.tutoringBillingCycleOccurrences as Array<Record<string, unknown>>;
+  const billingAccounts = s.tutoringBillingAccounts as Array<Record<string, unknown>>;
+  const billingAccountMembers = s.tutoringBillingAccountMembers as Array<Record<string, unknown>>;
+  const billingAccountCycles = s.tutoringBillingAccountCycles as Array<Record<string, unknown>>;
   const clients = s.appointmentsClients as Array<Record<string, unknown>>;
   const appointments = s.appointmentsItems as Array<Record<string, unknown>>;
   const receipts = s.financeReceipts as Array<Record<string, unknown>>;
@@ -174,6 +180,9 @@ export function validateWorkspaceBackup(backup: WorkspaceBackup): BackupValidati
   uniqueFieldError(sessions, 'id', 'BACKUP_DUPLICATE_SESSION_ID', errors);
   uniqueFieldError(occurrences, 'id', 'BACKUP_DUPLICATE_OCCURRENCE_ID', errors);
   uniqueFieldError(billingCycles, 'id', 'BACKUP_DUPLICATE_BILLING_CYCLE_ID', errors);
+  uniqueFieldError(billingAccounts, 'id', 'BACKUP_DUPLICATE_BILLING_ACCOUNT_ID', errors);
+  uniqueFieldError(billingAccountMembers, 'id', 'BACKUP_DUPLICATE_BILLING_ACCOUNT_MEMBER_ID', errors);
+  uniqueFieldError(billingAccountCycles, 'id', 'BACKUP_DUPLICATE_BILLING_ACCOUNT_CYCLE_ID', errors);
   uniqueFieldError(clients, 'id', 'BACKUP_DUPLICATE_CLIENT_ID', errors);
   uniqueFieldError(appointments, 'id', 'BACKUP_DUPLICATE_APPOINTMENT_ID', errors);
   uniqueFieldError(receipts, 'id', 'BACKUP_DUPLICATE_RECEIPT_ID', errors);
@@ -186,6 +195,7 @@ export function validateWorkspaceBackup(backup: WorkspaceBackup): BackupValidati
   const sessionIds = new Set(sessions.map((row) => stringId(row)).filter(Boolean));
   const occurrenceIds = new Set(occurrences.map((row) => stringId(row)).filter(Boolean));
   const cycleIds = new Set(billingCycles.map((row) => stringId(row)).filter(Boolean));
+  const billingAccountIds = new Set(billingAccounts.map((row) => stringId(row)).filter(Boolean));
   const clientIds = new Set(clients.map((row) => stringId(row)).filter(Boolean));
   const receiptIds = new Set(receipts.map((row) => stringId(row)).filter(Boolean));
 
@@ -279,6 +289,45 @@ export function validateWorkspaceBackup(backup: WorkspaceBackup): BackupValidati
   for (const row of cycleOccurrences) {
     if (!cycleIds.has(stringId(row, 'billingCycleId'))) errors.push('BACKUP_CYCLE_LINK_CYCLE_MISSING');
     if (!occurrenceIds.has(stringId(row, 'occurrenceId'))) errors.push('BACKUP_CYCLE_LINK_OCCURRENCE_MISSING');
+  }
+
+  for (const row of billingAccounts) {
+    const primaryStudentId = stringId(row, 'primaryStudentId');
+    if (!studentIds.has(primaryStudentId)) errors.push('BACKUP_BILLING_ACCOUNT_PRIMARY_STUDENT_MISSING');
+    const size = Number(row.packageSize);
+    const price = Number(row.packagePricePence);
+    if (!Number.isInteger(size) || size < 1 || size > 100 || !Number.isInteger(price) || price < 0) {
+      errors.push('BACKUP_BILLING_ACCOUNT_TERMS_INVALID');
+    }
+    if (!['shared_occurrence', 'per_member_quota'].includes(String(row.countingMode))) {
+      errors.push('BACKUP_BILLING_ACCOUNT_COUNTING_MODE_INVALID');
+    }
+  }
+
+  const activeMembership = new Set<string>();
+  for (const row of billingAccountMembers) {
+    const accountId = stringId(row, 'billingAccountId');
+    const studentId = stringId(row, 'studentId');
+    if (!billingAccountIds.has(accountId)) errors.push('BACKUP_BILLING_ACCOUNT_MEMBER_ACCOUNT_MISSING');
+    if (!studentIds.has(studentId)) errors.push('BACKUP_BILLING_ACCOUNT_MEMBER_STUDENT_MISSING');
+    if (row.active !== false) {
+      if (activeMembership.has(studentId)) errors.push('BACKUP_STUDENT_IN_MULTIPLE_ACTIVE_BILLING_ACCOUNTS');
+      activeMembership.add(studentId);
+    }
+  }
+
+  for (const row of billingAccountCycles) {
+    if (!billingAccountIds.has(stringId(row, 'billingAccountId'))) {
+      errors.push('BACKUP_BILLING_ACCOUNT_CYCLE_ACCOUNT_MISSING');
+    }
+    const sequenceNo = Number(row.sequenceNo);
+    const size = Number(row.packageSize);
+    const price = Number(row.pricePence);
+    if (!Number.isInteger(sequenceNo) || sequenceNo < 1
+      || !Number.isInteger(size) || size < 1 || size > 100
+      || !Number.isInteger(price) || price < 0) {
+      errors.push('BACKUP_BILLING_ACCOUNT_CYCLE_INVALID');
+    }
   }
 
   for (const row of appointments) {
