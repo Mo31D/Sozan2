@@ -188,6 +188,68 @@ describe('monthly forecast', () => {
     expect(forecast.insights.some((item) => item.key === 'expense-variance')).toBe(true);
   });
 
+  it('projects one shared package charge for two siblings in one lesson', () => {
+    const data = baseData();
+    data.sessions = [{
+      id: 'siblings',
+      scheduleStatus: 'confirmed',
+      weekday: 0,
+      startTime: '14:00',
+      durationMinutes: 90,
+      travelMinutes: 30,
+      studentIds: ['arwa', 'sofyan'],
+      priceBasis: 'total_session',
+      defaultPricePence: 0,
+      expectedStudentCount: 2,
+      centerCutBps: 0,
+      payerStudentId: 'arwa',
+    }];
+    data.billingPlans = [
+      {
+        studentId: 'arwa',
+        billingMode: 'package',
+        packageSize: 8,
+        packagePricePence: 50000,
+        effectiveFrom: '2026-09-01',
+      },
+      {
+        studentId: 'sofyan',
+        billingMode: 'package',
+        packageSize: 8,
+        packagePricePence: 50000,
+        effectiveFrom: '2026-09-01',
+      },
+    ];
+    data.billingCycles = [
+      {
+        id: 'arwa-cycle',
+        studentId: 'arwa',
+        sequenceNo: 1,
+        sessionLimit: 8,
+        openingCompletedCount: 7,
+        realCompletedCount: 0,
+        status: 'open',
+        pricePence: 50000,
+      },
+      {
+        id: 'sofyan-cycle',
+        studentId: 'sofyan',
+        sequenceNo: 1,
+        sessionLimit: 8,
+        openingCompletedCount: 7,
+        realCompletedCount: 0,
+        status: 'open',
+        pricePence: 50000,
+      },
+    ];
+
+    const forecast = buildMonthlyForecast(data, '2026-09-19');
+
+    expect(forecast.futureConfirmedLessons).toBe(2);
+    expect(forecast.projectedPackageCompletions).toBe(1);
+    expect(forecast.projectedNewDuePence).toBe(50000);
+  });
+
   it('does not invent a historical expense baseline when there is no prior activity', () => {
     const data = baseData();
     data.expenses = [
