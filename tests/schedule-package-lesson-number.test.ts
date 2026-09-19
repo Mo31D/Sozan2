@@ -5,6 +5,7 @@ import {
   addDays,
   packageLessonLabelForEntry,
   packageLessonNumberForEntry,
+  packageLessonNumbersForEntry,
   todayIso,
   weekdayForIso,
 } from '../src/client/simple/v2/utils';
@@ -134,6 +135,32 @@ describe('package lesson number display', () => {
 
     expect(packageLessonNumberForEntry(value, entry(value, 0, today), studentId)).toBe('8/8');
     expect(packageLessonNumberForEntry(value, entry(value, 1, tomorrow), studentId)).toBe('1/8');
+  });
+
+  it('preserves repeated package positions for group students instead of silently dropping one', () => {
+    const value = data();
+    const secondStudentId = '22222222-2222-4222-8222-222222222223';
+    const today = todayIso();
+
+    value.students.push({
+      ...value.students[0],
+      id: secondStudentId,
+      name: 'زين',
+    });
+    value.sessions[0].studentIds = [studentId, secondStudentId];
+    value.sessions[0].expectedStudentCount = 2;
+    value.billingPlans.push({
+      ...value.billingPlans[0],
+      id: secondStudentId,
+      studentId: secondStudentId,
+    });
+    value.billingCycles.push({
+      ...value.billingCycles[0],
+      id: '44444444-4444-4444-8444-444444444445',
+      studentId: secondStudentId,
+    });
+
+    expect(packageLessonNumbersForEntry(value, entry(value, 0, today))).toBe('3/8 ×2');
   });
 
   it('shows unknown current lesson number when package starting progress is unknown', () => {
