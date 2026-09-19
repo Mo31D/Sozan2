@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { FinanceCollectionService } from '../../modules/finance/allocation.service';
+import { FAMILY_PAYER_REF_TYPE } from '../../modules/tutoring/domain/billing-account';
+import { D1FinanceGateway } from '../adapters/d1/finance.gateway';
+import { TutoringObligationProvider } from '../integrations/tutoring-obligations.provider';
+import { reconcileFamilyAccount, requireFamilyBillingAccount } from '../integrations/family-billing';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
 import { financeSyncHandler as legacyFinanceSyncHandler } from './finance.sync';
 
@@ -23,6 +28,10 @@ async function validatePayer(db: D1Database, workspaceId: string, type: string, 
        WHERE workspace_id=?1 AND id=?2 AND active=1 AND deleted_at IS NULL`,
     ).bind(workspaceId, id).first<{ found: number }>();
     if (!found) throw new Error('CLIENT_NOT_FOUND');
+    return;
+  }
+  if (type === FAMILY_PAYER_REF_TYPE) {
+    await requireFamilyBillingAccount(db, workspaceId, id);
     return;
   }
   throw new Error('PAYER_TYPE_UNSUPPORTED');
@@ -66,6 +75,26 @@ export const financeSyncHandler: ModuleSyncHandler = {
     const parsed = receiptSchema.parse(mutation.payload);
     await validatePayer(db, workspaceId, parsed.payerRefType, parsed.payerRefId);
     await validateSourceLink(db, workspaceId, parsed);
+
+    if (parsed.payerRefType === FAMILY_PAYER_REF_TYPE) {
+      const service = new FinanceCollectionService(
+        new D1FinanceGateway(db),
+        [new TutoringObligationProvider(db)],
+        () => crypto.randomUUID(),
+      );
+      await service.collect({
+        receiptId: mutation.entityId,
+        workspaceId,
+        payer: { type: FAMILY_PAYER_REF_TYPE, id: parsed.payerRefId },
+        amountPence: parsed.amountPence,
+        receivedAt: parsed.receivedAt,
+        paymentMethod: parsed.paymentMethod,
+        sourceKind: 'manual',
+        note: parsed.note,
+      });
+      await reconcileFamilyAccount(db, workspaceId, parsed.payerRefId);
+      return;
+    }
 
     const exists = await db.prepare(
       `SELECT 1 AS found FROM finance_receipts WHERE workspace_id=?1 AND id=?2 LIMIT 1`,
