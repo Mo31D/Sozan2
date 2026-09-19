@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { splitTravelMinutes } from '../../../../../modules/tutoring/domain/schedule-conflict';
+import { effectiveTravelMinutes, splitTravelMinutes } from '../../../../../modules/tutoring/domain/schedule-conflict';
 import type { SimpleWorkspaceData } from '../../../data';
 import { ArabicTimeField } from '../../localized-fields';
 import {
@@ -79,9 +79,10 @@ export function FreeTimeView({
               .map((entry) => {
                 const startAt = timeToMinutes(entry.startTime);
                 if (startAt === null) return null;
-                const travel = splitTravelMinutes(
+                const travel = splitTravelMinutes(effectiveTravelMinutes(
+                  entry.session.sessionType,
                   entry.occurrence?.travelMinutesSnapshot ?? entry.session.travelMinutes,
-                );
+                ));
                 const duration = Math.max(
                   15,
                   Number(entry.occurrence?.durationMinutesSnapshot ?? entry.session.durationMinutes),
