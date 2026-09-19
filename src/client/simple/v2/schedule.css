@@ -220,6 +220,37 @@
   transform:translateY(-50%);
 }
 
+/* Travel is a neutral buffer around the teaching block, not a second appointment.
+   Its height stays proportional to the real minutes on the timetable. */
+.week-grid-travel{
+  position:absolute;
+  z-index:2;
+  top:var(--week-entry-top);
+  inset-inline-start:calc(var(--week-entry-inline-start) + 5px);
+  width:calc(var(--week-entry-width) - 10px);
+  height:max(3px,var(--week-entry-height));
+  pointer-events:none;
+  opacity:.82;
+  border-inline:1px solid #c7bacf;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      #ded6e4 0,
+      #ded6e4 4px,
+      #eee9f1 4px,
+      #eee9f1 8px
+    );
+}
+.week-grid-travel.before{
+  border-radius:7px 7px 2px 2px;
+  border-top:1px solid #c7bacf;
+}
+.week-grid-travel.after{
+  border-radius:2px 2px 7px 7px;
+  border-bottom:1px solid #c7bacf;
+}
+.week-grid-travel.status-completed{opacity:.55}
+
 .week-grid-entry{
   position:absolute;
   z-index:3;
