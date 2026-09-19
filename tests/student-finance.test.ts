@@ -157,6 +157,56 @@ describe('student financial summary', () => {
     expect(b.duePence).toBe(2500);
   });
 
+  it('shows one family balance from either child without individual package debt', () => {
+    const shared = {
+      sessions: [],
+      occurrences: [],
+      billingPlans: [
+        { studentId: 'malak', billingMode: 'package' as const },
+        { studentId: 'judy', billingMode: 'package' as const },
+      ],
+      billingCycles: [
+        { id: 'malak-cycle', studentId: 'malak', status: 'due' as const, pricePence: 35000 },
+        { id: 'judy-cycle', studentId: 'judy', status: 'due' as const, pricePence: 35000 },
+      ],
+      billingAccounts: [{ id: 'family-1', active: true }],
+      billingAccountMembers: [
+        { billingAccountId: 'family-1', studentId: 'malak', active: true },
+        { billingAccountId: 'family-1', studentId: 'judy', active: true },
+      ],
+      billingAccountCycles: [{
+        id: 'family-cycle-1',
+        billingAccountId: 'family-1',
+        status: 'due' as const,
+        pricePence: 70000,
+      }],
+      receipts: [{
+        id: 'receipt-family',
+        payerRefType: 'tutoring.billing_account',
+        payerRefId: 'family-1',
+        amountPence: 40000,
+        receivedAt: '2026-09-22',
+      }],
+      allocations: [{
+        receiptId: 'receipt-family',
+        targetModule: 'tutoring',
+        targetType: 'family_package_cycle',
+        targetId: 'family-cycle-1',
+        amountPence: 40000,
+      }],
+    };
+
+    const malak = buildStudentFinancialSummary(shared, 'malak');
+    const judy = buildStudentFinancialSummary(shared, 'judy');
+
+    expect(malak.duePence).toBe(30000);
+    expect(judy.duePence).toBe(30000);
+    expect(malak.receivedPence).toBe(40000);
+    expect(judy.receivedPence).toBe(40000);
+    expect(malak.allocatedPence).toBe(40000);
+    expect(judy.allocatedPence).toBe(40000);
+  });
+
   it('uses the newest receipt as the last payment', () => {
     const summary = buildStudentFinancialSummary({
       sessions: [],
