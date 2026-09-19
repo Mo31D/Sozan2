@@ -96,6 +96,30 @@ type ForecastBillingCycle = {
   pricePence: number;
 };
 
+type ForecastBillingAccount = {
+  id: string;
+  active: boolean;
+  countingMode: 'shared_occurrence' | 'per_member_quota';
+  primaryStudentId: string;
+  packageSize: number;
+  packagePricePence: number;
+  effectiveFrom: string;
+};
+
+type ForecastBillingAccountMember = {
+  billingAccountId: string;
+  studentId: string;
+  active: boolean;
+};
+
+type ForecastBillingAccountCycle = {
+  id: string;
+  billingAccountId: string;
+  sequenceNo: number;
+  status: 'open' | 'due' | 'paid' | 'cancelled';
+  pricePence: number;
+};
+
 type ForecastExpense = {
   expenseDate: string;
   scope?: 'business' | 'personal';
@@ -113,6 +137,9 @@ export type MonthlyForecastInput = {
   otherIncome: Array<{ incomeDate: string; amountPence: number }>;
   billingPlans?: ForecastBillingPlan[];
   billingCycles: ForecastBillingCycle[];
+  billingAccounts?: ForecastBillingAccount[];
+  billingAccountMembers?: ForecastBillingAccountMember[];
+  billingAccountCycles?: ForecastBillingAccountCycle[];
   allocations: Array<{ targetId: string; targetType?: string; amountPence: number }>;
 };
 
@@ -129,6 +156,8 @@ type PackageProjectionState = {
   pricePence: number;
   nextSize: number;
   nextPricePence: number;
+  sequenceNo: number;
+  completedSequences: Set<number>;
 };
 
 function sum(values: readonly number[]): number {
@@ -363,11 +392,26 @@ function projectedNewDue(
   const planByStudent = new Map((data.billingPlans ?? []).map((plan) => [plan.studentId, plan]));
   const packageState = new Map<string, PackageProjectionState>();
 
+  const activeFamilyAccounts = (data.billingAccounts ?? []).filter((account) => account.active);
+  const familyMembers = (data.billingAccountMembers ?? []).filter((member) => member.active);
+  const familyByStudent = new Map<string, ForecastBillingAccount>();
+  for (const member of familyMembers) {
+    const account = activeFamilyAccounts.find((row) => row.id === member.billingAccountId);
+    if (account) familyByStudent.set(member.studentId, account);
+  }
+
   for (const [studentId, plan] of planByStudent) {
     if (plan.billingMode !== 'package') continue;
-    const openCycle = data.billingCycles
-      .filter((cycle) => cycle.studentId === studentId && cycle.status === 'open')
+    const studentCycles = data.billingCycles
+      .filter((cycle) => cycle.studentId === studentId && cycle.status !== 'cancelled')
+      .sort((a, b) => Number(a.sequenceNo ?? 0) - Number(b.sequenceNo ?? 0));
+    const openCycle = [...studentCycles]
+      .filter((cycle) => cycle.status === 'open')
       .sort((a, b) => Number(b.sequenceNo ?? 0) - Number(a.sequenceNo ?? 0))[0] ?? null;
+    const latestSequence = studentCycles.reduce(
+      (max, cycle) => Math.max(max, Number(cycle.sequenceNo ?? 0)),
+      0,
+    );
 
     const planSize = clamp(Math.round(Number(plan.packageSize ?? openCycle?.sessionLimit ?? 8)), 1, 100);
     const planPrice = Math.max(0, Math.round(Number(plan.packagePricePence ?? openCycle?.pricePence ?? 0)));
@@ -380,6 +424,13 @@ function projectedNewDue(
           size,
         )
       : 0;
+    const completedSequences = new Set(studentCycles
+      .filter((cycle) => (
+        Math.round(Number(cycle.openingCompletedCount ?? 0))
+        + Math.round(Number(cycle.realCompletedCount ?? 0))
+      ) >= Math.round(Number(cycle.sessionLimit ?? planSize)))
+      .map((cycle) => Number(cycle.sequenceNo ?? 0))
+      .filter((sequenceNo) => sequenceNo > 0));
 
     packageState.set(studentId, {
       progress,
@@ -387,7 +438,39 @@ function projectedNewDue(
       pricePence: price,
       nextSize: planSize,
       nextPricePence: planPrice,
+      sequenceNo: openCycle ? Number(openCycle.sequenceNo ?? latestSequence || 1) : latestSequence + 1,
+      completedSequences,
     });
+  }
+
+  // Anything already complete before the forecast starts is current state, not
+  // a newly projected charge, even if an old import omitted the family-cycle row.
+  const familyCompleted = new Map<string, Set<number>>();
+  for (const account of activeFamilyAccounts) {
+    const requiredIds = account.countingMode === 'shared_occurrence'
+      ? [account.primaryStudentId]
+      : familyMembers
+          .filter((member) => member.billingAccountId === account.id)
+          .map((member) => member.studentId);
+    const knownSequences = new Set<number>();
+    for (const studentId of requiredIds) {
+      for (const sequenceNo of packageState.get(studentId)?.completedSequences ?? []) {
+        knownSequences.add(sequenceNo);
+      }
+    }
+    const already = new Set<number>();
+    for (const sequenceNo of knownSequences) {
+      if (requiredIds.length && requiredIds.every((studentId) =>
+        packageState.get(studentId)?.completedSequences.has(sequenceNo))) {
+        already.add(sequenceNo);
+      }
+    }
+    for (const cycle of data.billingAccountCycles ?? []) {
+      if (cycle.billingAccountId === account.id && cycle.status !== 'cancelled') {
+        already.add(Number(cycle.sequenceNo));
+      }
+    }
+    familyCompleted.set(account.id, already);
   }
 
   let duePence = 0;
@@ -405,6 +488,7 @@ function projectedNewDue(
       for (const studentId of participants) {
         const plan = planByStudent.get(studentId);
         if (plan?.billingMode !== 'per_session') continue;
+        if (familyByStudent.has(studentId)) continue;
         if (plan.effectiveFrom && slot.date < plan.effectiveFrom) continue;
         duePence += unitPrice;
       }
@@ -413,6 +497,7 @@ function projectedNewDue(
       if (payerStudentId) {
         const payerPlan = planByStudent.get(payerStudentId);
         if (payerPlan?.billingMode === 'per_session'
+          && !familyByStudent.has(payerStudentId)
           && (!payerPlan.effectiveFrom || slot.date >= payerPlan.effectiveFrom)) {
           duePence += unitPrice;
         }
@@ -435,11 +520,48 @@ function projectedNewDue(
       state.progress += 1;
       if (state.progress < state.size) continue;
 
-      duePence += state.pricePence;
-      packageCompletions += 1;
+      const completedSequence = state.sequenceNo;
+      state.completedSequences.add(completedSequence);
+
+      if (!familyByStudent.has(studentId)) {
+        duePence += state.pricePence;
+        packageCompletions += 1;
+      }
+
       state.progress = 0;
       state.size = state.nextSize;
       state.pricePence = state.nextPricePence;
+      state.sequenceNo += 1;
+    }
+
+    // A family charge is emitted only when the same family sequence is complete
+    // for all required members (or once for the primary progress in shared mode).
+    for (const account of activeFamilyAccounts) {
+      if (slot.date < account.effectiveFrom) continue;
+      const requiredIds = account.countingMode === 'shared_occurrence'
+        ? [account.primaryStudentId]
+        : familyMembers
+            .filter((member) => member.billingAccountId === account.id)
+            .map((member) => member.studentId);
+      if (!requiredIds.length) continue;
+
+      const candidates = new Set<number>();
+      for (const studentId of requiredIds) {
+        for (const sequenceNo of packageState.get(studentId)?.completedSequences ?? []) {
+          candidates.add(sequenceNo);
+        }
+      }
+      const accounted = familyCompleted.get(account.id) ?? new Set<number>();
+      for (const sequenceNo of [...candidates].sort((a, b) => a - b)) {
+        if (accounted.has(sequenceNo)) continue;
+        const complete = requiredIds.every((studentId) =>
+          packageState.get(studentId)?.completedSequences.has(sequenceNo));
+        if (!complete) continue;
+        duePence += Math.max(0, Number(account.packagePricePence || 0));
+        packageCompletions += 1;
+        accounted.add(sequenceNo);
+      }
+      familyCompleted.set(account.id, accounted);
     }
   }
 
