@@ -59,15 +59,15 @@ describe('weekly timetable grid', () => {
     ]);
   });
 
-  it('positions a 09:00 90-minute lesson proportionally inside the 08:00–20:00 axis', () => {
+  it('positions a 09:00 90-minute lesson proportionally inside the 08:00–23:00 axis', () => {
     const { visible, outside } = layoutWeekGridEntries([
       entry('session-a', '09:00', 90),
     ]);
 
     expect(outside).toHaveLength(0);
     expect(visible).toHaveLength(1);
-    expect(visible[0].topPercent).toBeCloseTo(8.333333, 4);
-    expect(visible[0].heightPercent).toBeCloseTo(12.5, 4);
+    expect(visible[0].topPercent).toBeCloseTo(6.666667, 4);
+    expect(visible[0].heightPercent).toBeCloseTo(10, 4);
   });
 
   it('keeps a lesson that crosses a 3-hour visual band as one continuous block', () => {
@@ -78,7 +78,7 @@ describe('weekly timetable grid', () => {
     expect(visible).toHaveLength(1);
     expect(visible[0].startMinute).toBe(630);
     expect(visible[0].endMinute).toBe(720);
-    expect(visible[0].heightPercent).toBeCloseTo(12.5, 4);
+    expect(visible[0].heightPercent).toBeCloseTo(10, 4);
   });
 
   it('places overlapping lessons in separate lanes and returns to full width afterward', () => {
