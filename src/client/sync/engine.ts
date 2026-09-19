@@ -44,6 +44,9 @@ type TutoringSnapshot = {
   billingPlans: EntitySyncRow[];
   billingCycles: EntitySyncRow[];
   billingCycleOccurrences?: EntitySyncRow[];
+  billingAccounts?: EntitySyncRow[];
+  billingAccountMembers?: EntitySyncRow[];
+  billingAccountCycles?: EntitySyncRow[];
 };
 type AppointmentsSnapshot = { clients: EntitySyncRow[]; appointments: EntitySyncRow[] };
 type FinanceSnapshot = {
@@ -137,6 +140,9 @@ export async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
     STORES.tutoringBillingPlans,
     STORES.tutoringBillingCycles,
     STORES.tutoringBillingCycleOccurrences,
+    STORES.tutoringBillingAccounts,
+    STORES.tutoringBillingAccountMembers,
+    STORES.tutoringBillingAccountCycles,
     STORES.appointmentsClients,
     STORES.appointmentsItems,
     STORES.financeReceipts,
@@ -162,6 +168,9 @@ export async function applySnapshot(snapshot: SnapshotResponse): Promise<void> {
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingPlans), snapshot.workspaceId, tutoring.billingPlans);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingCycles), snapshot.workspaceId, tutoring.billingCycles);
     await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingCycleOccurrences), snapshot.workspaceId, tutoring.billingCycleOccurrences ?? []);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingAccounts), snapshot.workspaceId, tutoring.billingAccounts ?? []);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingAccountMembers), snapshot.workspaceId, tutoring.billingAccountMembers ?? []);
+    await replaceWorkspaceRows(transaction.objectStore(STORES.tutoringBillingAccountCycles), snapshot.workspaceId, tutoring.billingAccountCycles ?? []);
   }
   if (appointments) {
     await replaceWorkspaceRows(transaction.objectStore(STORES.appointmentsClients), snapshot.workspaceId, appointments.clients);
