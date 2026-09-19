@@ -54,6 +54,9 @@ jobs:
               'tutoring_billing_plans',
               'tutoring_billing_cycles',
               'tutoring_billing_cycle_occurrences',
+              'tutoring_billing_accounts',
+              'tutoring_billing_account_members',
+              'tutoring_billing_account_cycles',
               'appointments_clients',
               'appointments_items',
               'finance_receipts',
@@ -121,6 +124,49 @@ jobs:
               pass
           else:
               raise SystemExit('Tutoring workspace isolation foreign key is not enforced')
+
+          # Family billing keeps one active financial account per student.
+          db.execute(
+              "INSERT INTO tutoring_students(id, workspace_id, name) VALUES ('family-a', 'ws-ci', 'A')"
+          )
+          db.execute(
+              "INSERT INTO tutoring_students(id, workspace_id, name) VALUES ('family-b', 'ws-ci', 'B')"
+          )
+          db.execute(
+              "INSERT INTO tutoring_billing_accounts("
+              "id,workspace_id,display_name,counting_mode,primary_student_id,package_size,package_price_pence,effective_from"
+              ") VALUES ('family-account-1','ws-ci','A + B','per_member_quota','family-a',8,70000,'2026-09-19')"
+          )
+          db.execute(
+              "INSERT INTO tutoring_billing_account_members("
+              "id,workspace_id,billing_account_id,student_id,position"
+              ") VALUES ('family-member-a','ws-ci','family-account-1','family-a',0)"
+          )
+          db.execute(
+              "INSERT INTO tutoring_billing_account_members("
+              "id,workspace_id,billing_account_id,student_id,position"
+              ") VALUES ('family-member-b','ws-ci','family-account-1','family-b',1)"
+          )
+          db.execute(
+              "INSERT INTO tutoring_billing_account_cycles("
+              "id,workspace_id,billing_account_id,sequence_no,package_size,price_pence,status"
+              ") VALUES ('family-cycle-1','ws-ci','family-account-1',1,8,70000,'open')"
+          )
+          try:
+              db.execute(
+                  "INSERT INTO tutoring_billing_accounts("
+                  "id,workspace_id,display_name,counting_mode,primary_student_id,package_size,package_price_pence,effective_from"
+                  ") VALUES ('family-account-2','ws-ci','A other','per_member_quota','family-a',8,60000,'2026-09-19')"
+              )
+              db.execute(
+                  "INSERT INTO tutoring_billing_account_members("
+                  "id,workspace_id,billing_account_id,student_id,position"
+                  ") VALUES ('family-member-a-2','ws-ci','family-account-2','family-a',0)"
+              )
+          except sqlite3.IntegrityError:
+              pass
+          else:
+              raise SystemExit('Student can belong to multiple active family billing accounts')
 
           # Appointments have their own tables and must preserve workspace/client isolation.
           db.execute(
