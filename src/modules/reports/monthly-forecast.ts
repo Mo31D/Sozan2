@@ -529,7 +529,10 @@ function projectedNewDue(
       }
     }
     for (const cycle of data.billingAccountCycles ?? []) {
-      if (cycle.billingAccountId === account.id && cycle.status !== 'cancelled') {
+      if (
+        cycle.billingAccountId === account.id
+        && (cycle.status === 'due' || cycle.status === 'paid')
+      ) {
         already.add(Number(cycle.sequenceNo));
       }
     }
