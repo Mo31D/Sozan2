@@ -14,14 +14,14 @@ import {
   runAttendanceWorkflow,
   type AttendanceWorkflowAction,
 } from '../tutoring/attendance-workflow';
-import { collectLocalStudentPayment, configureLocalStudentBilling } from '../tutoring/local-commands';
+import { collectLocalFamilyPayment, collectLocalStudentPayment, configureLocalStudentBilling } from '../tutoring/local-commands';
 import { updateLocalSessionDetails } from '../tutoring/session-corrections';
 import {
   archiveLocalStudent,
   restoreLocalStudent,
   updateLocalStudent,
 } from '../tutoring/student-corrections';
-import { loadSimpleWorkspaceData, type SimpleWorkspaceData } from './data';
+import { familyBillingAccountForStudent, loadSimpleWorkspaceData, type SimpleWorkspaceData } from './data';
 import { NavButton } from './v2/components';
 import { ManagementScreen } from './v2/screens/ManagementScreen';
 import { MoneyScreen, type MoneyList } from './v2/screens/MoneyScreen';
@@ -277,14 +277,19 @@ export function TutorWorkspace({
   }, 'تم حفظ نظام حساب الطالب.');
 
   const collectForStudent = (studentId: string, form: FormData) => runAction(async () => {
-    await collectLocalStudentPayment({
+    const familyAccount = familyBillingAccountForStudent(data, studentId);
+    const common = {
       workspaceId,
-      studentId,
       amountPence: toPence(form.get('amount')),
       receivedAt: String(form.get('receivedAt') ?? todayIso()),
       paymentMethod: String(form.get('paymentMethod') ?? 'cash') as 'cash' | 'bank' | 'wallet' | 'other',
       note: String(form.get('note') ?? ''),
-    });
+    };
+    if (familyAccount) {
+      await collectLocalFamilyPayment({ ...common, billingAccountId: familyAccount.id });
+    } else {
+      await collectLocalStudentPayment({ ...common, studentId });
+    }
   }, 'تم تسجيل التحصيل.');
 
   return (
@@ -343,16 +348,8 @@ export function TutorWorkspace({
                   onOpenStudent={openStudent}
                   onOpenAdvanced={setAdvancedTab}
                   onCollect={async (form) => {
-                    const success = await runAction(async () => {
-                      await collectLocalStudentPayment({
-                        workspaceId,
-                        studentId: String(form.get('studentId') ?? ''),
-                        amountPence: toPence(form.get('amount')),
-                        receivedAt: String(form.get('receivedAt') ?? todayIso()),
-                        paymentMethod: String(form.get('paymentMethod') ?? 'cash') as 'cash' | 'bank' | 'wallet' | 'other',
-                        note: String(form.get('note') ?? ''),
-                      });
-                    }, 'تم تسجيل التحصيل.');
+                    const studentId = String(form.get('studentId') ?? '');
+                    const success = await collectForStudent(studentId, form);
                     if (success) setMoneyMode('none');
                     return success;
                   }}
