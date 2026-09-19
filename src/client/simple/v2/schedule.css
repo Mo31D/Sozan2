@@ -67,7 +67,7 @@
   box-shadow:0 2px 8px rgba(59,42,73,.06);
 }
 
-/* Weekly timetable. One continuous 08:00–20:00 axis with four 3-hour bands.
+/* Weekly timetable. One continuous 08:00–23:00 axis with five 3-hour bands.
    Entries are positioned by real start/duration so lessons can cross band boundaries. */
 .week-grid-view{
   position:relative;
@@ -153,7 +153,7 @@
   right:0;
   z-index:6;
   display:grid;
-  grid-template-rows:repeat(4,1fr);
+  grid-template-rows:repeat(5,1fr);
   height:var(--week-grid-body-height);
   background:#fbfafc;
   border-inline-start:1px solid var(--ui-border);
@@ -181,7 +181,7 @@
 .week-grid-day-column{
   position:relative;
   display:grid;
-  grid-template-rows:repeat(4,1fr);
+  grid-template-rows:repeat(5,1fr);
   height:var(--week-grid-body-height);
   min-width:0;
   border-inline-start:1px solid var(--ui-border);
@@ -347,6 +347,40 @@
 }
 .week-grid-outside button:last-child{border-bottom:0}
 .week-grid-outside button strong{font-size:.76rem;color:var(--ui-primary-strong)}
+
+
+/* Tablet timetable: keep the full week readable without the grid feeling oversized
+   or disappearing under the persistent bottom navigation. */
+@media(min-width:701px) and (max-width:1400px) and (pointer:coarse){
+  .week-grid-view{
+    width:min(1000px,calc(100vw - 24px));
+    gap:8px;
+  }
+  .week-grid-meta strong{font-size:.9rem}
+  .week-grid-meta span,
+  .week-grid-meta small{font-size:.7rem}
+  .week-grid-board{
+    --week-grid-body-height:clamp(360px,calc(100dvh - 390px),480px);
+    grid-template-columns:64px repeat(7,minmax(112px,1fr));
+    grid-template-rows:46px var(--week-grid-body-height);
+    min-width:848px;
+  }
+  .week-grid-day-head{padding:5px 3px}
+  .week-grid-day-head strong{font-size:.74rem}
+  .week-grid-day-head small{font-size:.57rem}
+  .week-grid-time-band{padding:5px 2px}
+  .week-grid-time-band strong{font-size:.64rem}
+  .week-grid-time-band span{font-size:.53rem}
+  .week-grid-entry{
+    height:max(22px,calc(var(--week-entry-height) - 4px));
+    padding:3px 4px;
+    gap:4px;
+    border-radius:7px;
+  }
+  .week-grid-entry-copy strong{font-size:.66rem}
+  .week-grid-entry-copy strong>b{font-size:.46rem}
+  .week-grid-entry-copy small{font-size:.52rem}
+}
 
 @media(max-width:700px){
   .week-grid-view{

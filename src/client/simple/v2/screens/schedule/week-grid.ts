@@ -2,7 +2,7 @@ import type { ScheduledEntry } from '../../types';
 import { addDays, timeToMinutes, weekdayForIso } from '../../utils';
 
 export const WEEK_GRID_START_MINUTE = 8 * 60;
-export const WEEK_GRID_END_MINUTE = 20 * 60;
+export const WEEK_GRID_END_MINUTE = 23 * 60;
 export const WEEK_GRID_TOTAL_MINUTES = WEEK_GRID_END_MINUTE - WEEK_GRID_START_MINUTE;
 export const WEEK_GRID_DAY_ORDER = [6, 0, 1, 2, 3, 4, 5] as const;
 
@@ -11,6 +11,7 @@ export const WEEK_GRID_BANDS = [
   { start: 11 * 60, end: 14 * 60 },
   { start: 14 * 60, end: 17 * 60 },
   { start: 17 * 60, end: 20 * 60 },
+  { start: 20 * 60, end: 23 * 60 },
 ] as const;
 
 export type WeekGridLayoutEntry = {

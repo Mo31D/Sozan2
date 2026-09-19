@@ -117,11 +117,11 @@ export function WeekGridView({
           <strong>الجدول الأسبوعي</strong>
           <span>{compactRange(dates[0], dates[6])}</span>
         </div>
-        <small>٨ ص — ٨ م · كل صف ٣ ساعات</small>
+        <small>٨ ص — ١١ م · كل صف ٣ ساعات</small>
       </div>
 
       <div ref={scrollRef} className="week-grid-scroll" tabIndex={0} aria-label="مرر أفقيًا لرؤية أيام الأسبوع">
-        <div className="week-grid-board" role="grid" aria-rowcount={5} aria-colcount={8}>
+        <div className="week-grid-board" role="grid" aria-rowcount={6} aria-colcount={8}>
           <div className="week-grid-corner" role="columnheader">الوقت</div>
 
           {days.map(({ date }) => {
@@ -215,7 +215,7 @@ export function WeekGridView({
 
       {outside.length > 0 && (
         <details className="week-grid-outside">
-          <summary>مواعيد خارج ٨ ص–٨ م <b>{outside.length}</b></summary>
+          <summary>مواعيد خارج نطاق الجدول <b>{outside.length}</b></summary>
           <div>
             {outside.map(({ date, entry }) => (
               <button
