@@ -15,6 +15,7 @@ function entry(
   id: string,
   startTime: string | null,
   durationMinutes: number,
+  travelMinutes = 0,
 ): ScheduledEntry {
   const session: RecurringSession = {
     id,
@@ -25,7 +26,7 @@ function entry(
     weekday: 1,
     startTime,
     durationMinutes,
-    travelMinutes: 0,
+    travelMinutes,
     location: null,
     priceBasis: 'total_session',
     defaultPricePence: 0,
@@ -79,6 +80,30 @@ describe('weekly timetable grid', () => {
     expect(visible[0].startMinute).toBe(630);
     expect(visible[0].endMinute).toBe(720);
     expect(visible[0].heightPercent).toBeCloseTo(10, 4);
+  });
+
+  it('keeps teaching time separate while using travel buffers to reserve timetable lanes', () => {
+    const { visible } = layoutWeekGridEntries([
+      entry('session-a', '10:00', 60, 30),
+      entry('session-b', '11:05', 60, 0),
+    ]);
+
+    const a = visible.find((row) => row.entry.session.id === 'session-a');
+    const b = visible.find((row) => row.entry.session.id === 'session-b');
+
+    expect(a?.startMinute).toBe(10 * 60);
+    expect(a?.endMinute).toBe(11 * 60);
+    expect(a?.travelBeforeMinutes).toBe(15);
+    expect(a?.travelAfterMinutes).toBe(15);
+    expect(a?.occupiedStartMinute).toBe(9 * 60 + 45);
+    expect(a?.occupiedEndMinute).toBe(11 * 60 + 15);
+    expect(a?.visibleTravelBeforeStartMinute).toBe(9 * 60 + 45);
+    expect(a?.visibleTravelBeforeEndMinute).toBe(10 * 60);
+    expect(a?.visibleTravelAfterStartMinute).toBe(11 * 60);
+    expect(a?.visibleTravelAfterEndMinute).toBe(11 * 60 + 15);
+    expect(a?.laneCount).toBe(2);
+    expect(b?.laneCount).toBe(2);
+    expect(a?.lane).not.toBe(b?.lane);
   });
 
   it('places overlapping lessons in separate lanes and returns to full width afterward', () => {
