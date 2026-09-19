@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { FinanceCollectionService } from '../../modules/finance/allocation.service';
 import { D1FinanceGateway } from '../adapters/d1/finance.gateway';
 import { TutoringObligationProvider } from '../integrations/tutoring-obligations.provider';
+import { FAMILY_PAYER_REF_TYPE, reconcileFamilyAccount } from '../integrations/family-billing';
 import type { ModuleSnapshot, ModuleSyncHandler, SyncMutation } from './contracts';
 
 const paymentMethodSchema = z.enum(['cash', 'bank', 'wallet', 'other']);
@@ -221,6 +222,22 @@ async function rebuildStudents(db: D1Database, workspaceId: string, studentIds: 
   }
 }
 
+async function refreshPayer(
+  db: D1Database,
+  workspaceId: string,
+  payerType: string | null,
+  payerId: string | null,
+): Promise<void> {
+  if (!payerId) return;
+  if (payerType === FAMILY_PAYER_REF_TYPE) {
+    await reconcileFamilyAccount(db, workspaceId, payerId);
+    return;
+  }
+  if (payerType === 'tutoring.student') {
+    await rebuildStudentAllocations(db, workspaceId, payerId);
+  }
+}
+
 export const financeSyncHandler: ModuleSyncHandler = {
   moduleKey: 'finance',
 
@@ -272,7 +289,8 @@ export const financeSyncHandler: ModuleSyncHandler = {
           mutation.entityId,
         ),
       ]);
-      await rebuildStudents(db, workspaceId, [existing.payer_ref_id, parsed.studentId]);
+      await refreshPayer(db, workspaceId, existing.payer_ref_type, existing.payer_ref_id);
+      await rebuildStudentAllocations(db, workspaceId, parsed.studentId);
       return;
     }
 
@@ -284,7 +302,7 @@ export const financeSyncHandler: ModuleSyncHandler = {
            WHERE workspace_id=?1 AND id=?2`,
         ).bind(workspaceId, mutation.entityId).run();
       }
-      await rebuildStudents(db, workspaceId, [existing.payer_ref_id]);
+      await refreshPayer(db, workspaceId, existing.payer_ref_type, existing.payer_ref_id);
       return;
     }
 
@@ -296,7 +314,7 @@ export const financeSyncHandler: ModuleSyncHandler = {
            WHERE workspace_id=?1 AND id=?2`,
         ).bind(workspaceId, mutation.entityId).run();
       }
-      await rebuildStudents(db, workspaceId, [existing.payer_ref_id]);
+      await refreshPayer(db, workspaceId, existing.payer_ref_type, existing.payer_ref_id);
       return;
     }
 
