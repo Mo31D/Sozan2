@@ -4,6 +4,8 @@ import type { LocalAllocation, LocalExpense } from '../simple/data';
 import { newSyncOutboxRecord } from '../sync/outbox';
 import type { LocalReceipt } from '../tutoring/local-commands';
 import { rebuildStudentLocally } from './local-rebalance';
+import { FAMILY_PAYER_REF_TYPE } from '../../modules/tutoring/domain/billing-account';
+import { rebalanceFamilyAccountLocally } from '../tutoring/family-billing';
 
 export type ReceiptCorrectionInput = {
   studentId: string;
@@ -38,6 +40,14 @@ async function receiptById(workspaceId: string, receiptId: string): Promise<Loca
   return receipt;
 }
 
+async function refreshReceiptPayer(workspaceId: string, receipt: LocalReceipt): Promise<void> {
+  if (receipt.payerRefType === FAMILY_PAYER_REF_TYPE) {
+    await rebalanceFamilyAccountLocally(workspaceId, receipt.payerRefId);
+    return;
+  }
+  await rebuildStudentLocally(workspaceId, receipt.payerRefId);
+}
+
 export async function updateLocalReceipt(
   workspaceId: string,
   receiptId: string,
@@ -46,6 +56,9 @@ export async function updateLocalReceipt(
   assertAmount(input.amountPence);
   const current = await receiptById(workspaceId, receiptId);
   if (current.deletedAt) throw new Error('RECEIPT_DELETED');
+  if (current.payerRefType === FAMILY_PAYER_REF_TYPE) {
+    throw new Error('FAMILY_RECEIPT_EDIT_USE_FAMILY_ACCOUNT');
+  }
   const updated: LocalReceipt = {
     ...current,
     payerRefType: 'tutoring.student',
@@ -142,7 +155,7 @@ export async function deleteLocalReceipt(workspaceId: string, receiptId: string)
   }));
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
-  await rebuildStudentLocally(workspaceId, current.payerRefId);
+  await refreshReceiptPayer(workspaceId, current);
 }
 
 export async function restoreLocalReceipt(workspaceId: string, receiptId: string): Promise<void> {
@@ -176,7 +189,7 @@ export async function restoreLocalReceipt(workspaceId: string, receiptId: string
   }));
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
-  await rebuildStudentLocally(workspaceId, current.payerRefId);
+  await refreshReceiptPayer(workspaceId, current);
 }
 
 async function expenseById(workspaceId: string, expenseId: string): Promise<LocalExpense> {
