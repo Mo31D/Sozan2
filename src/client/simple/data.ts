@@ -1,6 +1,6 @@
 import type { Student } from '../../modules/tutoring/domain/student';
 import type { StudentBaseline } from '../../modules/tutoring/domain/student-baseline';
-import type { RecurringSession } from '../../modules/tutoring/domain/session';
+import { billingOwnerStudentId, type RecurringSession } from '../../modules/tutoring/domain/session';
 import { openLocalDatabase, requestResult, STORES } from '../adapters/indexeddb/database';
 import type {
   LocalAllocation,
@@ -176,4 +176,37 @@ export function completedLessonCountForStudent(
 export function studentForSession(data: SimpleWorkspaceData, session: RecurringSession): Student | null {
   const id = session.studentIds[0];
   return id ? data.students.find((student) => student.id === id) ?? null : null;
+}
+
+export function billingStudentForSession(
+  data: SimpleWorkspaceData,
+  session: RecurringSession,
+): Student | null {
+  const id = billingOwnerStudentId(session);
+  return id ? data.students.find((student) => student.id === id) ?? null : null;
+}
+
+/**
+ * If this student participates in shared total-session lessons whose money is
+ * owned by one other student account, return that account owner. Ambiguous
+ * cases deliberately return null instead of guessing.
+ */
+export function sharedBillingOwnerForStudent(
+  data: SimpleWorkspaceData,
+  studentId: string,
+): Student | null {
+  const ownerIds = new Set(
+    data.sessions
+      .filter((session) => (
+        session.active
+        && session.priceBasis === 'total_session'
+        && session.studentIds.includes(studentId)
+        && session.payerStudentId
+        && session.payerStudentId !== studentId
+      ))
+      .map((session) => session.payerStudentId as string),
+  );
+  if (ownerIds.size !== 1) return null;
+  const [ownerId] = [...ownerIds];
+  return data.students.find((student) => student.id === ownerId) ?? null;
 }
