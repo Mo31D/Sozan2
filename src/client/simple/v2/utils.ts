@@ -141,14 +141,18 @@ export function packageLessonNumbersForEntry(
   data: SimpleWorkspaceData,
   entry: ScheduledEntry,
 ): string | null {
-  const numbers = [...new Set(
-    entry.session.studentIds
-      .map((studentId) => packageLessonNumberForEntry(data, entry, studentId))
-      .filter((value): value is string => Boolean(value)),
-  )];
+  const numbers = entry.session.studentIds
+    .map((studentId) => packageLessonNumberForEntry(data, entry, studentId))
+    .filter((value): value is string => Boolean(value));
 
   if (!numbers.length) return null;
-  return numbers.join('، ');
+
+  const counts = new Map<string, number>();
+  for (const number of numbers) counts.set(number, (counts.get(number) ?? 0) + 1);
+
+  return [...counts.entries()]
+    .map(([number, count]) => count > 1 ? `${number} ×${count}` : number)
+    .join('، ');
 }
 
 export function packageLessonLabelForEntry(
