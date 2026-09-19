@@ -7,6 +7,7 @@ import {
 
 const base = {
   id: 'session-a',
+  sessionType: 'private_student_home' as const,
   scheduleStatus: 'confirmed' as const,
   weekday: 1,
   startTime: '16:00',
@@ -21,6 +22,25 @@ describe('schedule conflict policy', () => {
     expect(occupiedScheduleInterval(base)).toEqual({
       start: 15 * 60 + 45,
       end: 17 * 60 + 45,
+    });
+  });
+
+  it('does not reserve travel for online or tutor-home lessons', () => {
+    expect(occupiedScheduleInterval({
+      ...base,
+      sessionType: 'online',
+      travelMinutes: 30,
+    })).toEqual({
+      start: 16 * 60,
+      end: 17 * 60 + 30,
+    });
+    expect(occupiedScheduleInterval({
+      ...base,
+      sessionType: 'private_tutor_home',
+      travelMinutes: 30,
+    })).toEqual({
+      start: 16 * 60,
+      end: 17 * 60 + 30,
     });
   });
 
