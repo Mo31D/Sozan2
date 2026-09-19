@@ -1,5 +1,6 @@
 import type { Student } from '../../modules/tutoring/domain/student';
 import type { StudentBaseline } from '../../modules/tutoring/domain/student-baseline';
+import type { BillingAccount, BillingAccountCycle, BillingAccountMember } from '../../modules/tutoring/domain/billing-account';
 import { billingOwnerStudentId, type RecurringSession } from '../../modules/tutoring/domain/session';
 import { openLocalDatabase, requestResult, STORES } from '../adapters/indexeddb/database';
 import type {
@@ -54,6 +55,9 @@ export type SimpleWorkspaceData = {
   occurrences: LocalOccurrence[];
   billingPlans: LocalBillingPlan[];
   billingCycles: LocalBillingCycle[];
+  billingAccounts: BillingAccount[];
+  billingAccountMembers: BillingAccountMember[];
+  billingAccountCycles: BillingAccountCycle[];
   receipts: LocalReceipt[];
   allocations: LocalAllocation[];
   expenses: LocalExpense[];
@@ -73,6 +77,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     STORES.tutoringOccurrences,
     STORES.tutoringBillingPlans,
     STORES.tutoringBillingCycles,
+    STORES.tutoringBillingAccounts,
+    STORES.tutoringBillingAccountMembers,
+    STORES.tutoringBillingAccountCycles,
     STORES.financeReceipts,
     STORES.financeAllocations,
     STORES.financeExpenses,
@@ -88,6 +95,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     occurrences,
     billingPlans,
     billingCycles,
+    billingAccounts,
+    billingAccountMembers,
+    billingAccountCycles,
     receipts,
     allocations,
     expenses,
@@ -101,6 +111,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     requestResult<LocalOccurrence[]>(transaction.objectStore(STORES.tutoringOccurrences).getAll()),
     requestResult<LocalBillingPlan[]>(transaction.objectStore(STORES.tutoringBillingPlans).getAll()),
     requestResult<LocalBillingCycle[]>(transaction.objectStore(STORES.tutoringBillingCycles).getAll()),
+    requestResult<BillingAccount[]>(transaction.objectStore(STORES.tutoringBillingAccounts).getAll()),
+    requestResult<BillingAccountMember[]>(transaction.objectStore(STORES.tutoringBillingAccountMembers).getAll()),
+    requestResult<BillingAccountCycle[]>(transaction.objectStore(STORES.tutoringBillingAccountCycles).getAll()),
     requestResult<LocalReceipt[]>(transaction.objectStore(STORES.financeReceipts).getAll()),
     requestResult<LocalAllocation[]>(transaction.objectStore(STORES.financeAllocations).getAll()),
     requestResult<LocalExpense[]>(transaction.objectStore(STORES.financeExpenses).getAll()),
@@ -125,6 +138,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     occurrences: mine(occurrences),
     billingPlans: mine(billingPlans),
     billingCycles: mine(billingCycles),
+    billingAccounts: mine(billingAccounts),
+    billingAccountMembers: mine(billingAccountMembers),
+    billingAccountCycles: mine(billingAccountCycles),
     receipts: activeReceipts,
     allocations: mine(allocations).filter((row) => activeReceiptIds.has(row.receiptId)),
     expenses: mine(expenses).filter((row) => !row.deletedAt),
