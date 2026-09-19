@@ -12,6 +12,22 @@ export type ScheduleInterval = {
   end: number;
 };
 
+export type TravelBuffer = {
+  before: number;
+  after: number;
+};
+
+/**
+ * travelMinutes is the total transition allowance for one lesson.
+ * By default it is split around the lesson so reports keep counting the same
+ * total travel time while the planner can show the unavailable time on both sides.
+ */
+export function splitTravelMinutes(totalMinutes: number | null | undefined): TravelBuffer {
+  const total = Math.max(0, Math.round(Number(totalMinutes ?? 0)));
+  const before = Math.floor(total / 2);
+  return { before, after: total - before };
+}
+
 /**
  * Reserve travel on both sides of a lesson. This is intentionally conservative:
  * travel is a transition requirement between appointments, not teaching time
@@ -28,11 +44,11 @@ export function occupiedScheduleInterval(session: SchedulableSession): ScheduleI
   }
   const [hours, minutes] = session.startTime.split(':').map(Number);
   const start = hours * 60 + minutes;
-  const travel = Math.max(0, Number(session.travelMinutes || 0));
+  const travel = splitTravelMinutes(session.travelMinutes);
   const duration = Math.max(0, Number(session.durationMinutes || 0));
   return {
-    start: Math.max(0, start - travel),
-    end: Math.min(24 * 60, start + duration + travel),
+    start: Math.max(0, start - travel.before),
+    end: Math.min(24 * 60, start + duration + travel.after),
   };
 }
 

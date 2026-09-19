@@ -1,3 +1,4 @@
+import { splitTravelMinutes } from '../../../../../modules/tutoring/domain/schedule-conflict';
 import type { ScheduledEntry } from '../../types';
 import { addDays, timeToMinutes, weekdayForIso } from '../../utils';
 
@@ -16,10 +17,20 @@ export const WEEK_GRID_BANDS = [
 
 export type WeekGridLayoutEntry = {
   entry: ScheduledEntry;
+  /** Teaching interval only. */
   startMinute: number;
   endMinute: number;
   visibleStartMinute: number;
   visibleEndMinute: number;
+  /** Total travel is split before/after the lesson. */
+  travelBeforeMinutes: number;
+  travelAfterMinutes: number;
+  occupiedStartMinute: number;
+  occupiedEndMinute: number;
+  visibleTravelBeforeStartMinute: number | null;
+  visibleTravelBeforeEndMinute: number | null;
+  visibleTravelAfterStartMinute: number | null;
+  visibleTravelAfterEndMinute: number | null;
   topPercent: number;
   heightPercent: number;
   lane: number;
@@ -44,22 +55,57 @@ export function entryDurationMinutes(entry: ScheduledEntry): number {
   return Math.max(15, Number(historical ?? entry.session.durationMinutes ?? 0));
 }
 
+export function entryTravelMinutes(entry: ScheduledEntry): number {
+  const historical = entry.occurrence?.travelMinutesSnapshot;
+  return Math.max(0, Number(historical ?? entry.session.travelMinutes ?? 0));
+}
+
+export function entryTravelBuffer(entry: ScheduledEntry): { before: number; after: number } {
+  return splitTravelMinutes(entryTravelMinutes(entry));
+}
+
+
 function visibleInterval(entry: ScheduledEntry): {
   startMinute: number;
   endMinute: number;
   visibleStartMinute: number;
   visibleEndMinute: number;
+  travelBeforeMinutes: number;
+  travelAfterMinutes: number;
+  occupiedStartMinute: number;
+  occupiedEndMinute: number;
+  visibleTravelBeforeStartMinute: number | null;
+  visibleTravelBeforeEndMinute: number | null;
+  visibleTravelAfterStartMinute: number | null;
+  visibleTravelAfterEndMinute: number | null;
 } | null {
   const startMinute = timeToMinutes(entry.startTime);
   if (startMinute === null) return null;
   const endMinute = startMinute + entryDurationMinutes(entry);
   if (endMinute <= WEEK_GRID_START_MINUTE || startMinute >= WEEK_GRID_END_MINUTE) return null;
 
+  const travel = entryTravelBuffer(entry);
+  const occupiedStartMinute = startMinute - travel.before;
+  const occupiedEndMinute = endMinute + travel.after;
+
+  const beforeStart = Math.max(occupiedStartMinute, WEEK_GRID_START_MINUTE);
+  const beforeEnd = Math.min(startMinute, WEEK_GRID_END_MINUTE);
+  const afterStart = Math.max(endMinute, WEEK_GRID_START_MINUTE);
+  const afterEnd = Math.min(occupiedEndMinute, WEEK_GRID_END_MINUTE);
+
   return {
     startMinute,
     endMinute,
     visibleStartMinute: Math.max(startMinute, WEEK_GRID_START_MINUTE),
     visibleEndMinute: Math.min(endMinute, WEEK_GRID_END_MINUTE),
+    travelBeforeMinutes: travel.before,
+    travelAfterMinutes: travel.after,
+    occupiedStartMinute,
+    occupiedEndMinute,
+    visibleTravelBeforeStartMinute: beforeEnd > beforeStart ? beforeStart : null,
+    visibleTravelBeforeEndMinute: beforeEnd > beforeStart ? beforeEnd : null,
+    visibleTravelAfterStartMinute: afterEnd > afterStart ? afterStart : null,
+    visibleTravelAfterEndMinute: afterEnd > afterStart ? afterEnd : null,
   };
 }
 
@@ -70,18 +116,26 @@ function assignClusterLanes(
     endMinute: number;
     visibleStartMinute: number;
     visibleEndMinute: number;
+    travelBeforeMinutes: number;
+    travelAfterMinutes: number;
+    occupiedStartMinute: number;
+    occupiedEndMinute: number;
+    visibleTravelBeforeStartMinute: number | null;
+    visibleTravelBeforeEndMinute: number | null;
+    visibleTravelAfterStartMinute: number | null;
+    visibleTravelAfterEndMinute: number | null;
   }>,
 ): WeekGridLayoutEntry[] {
   if (!entries.length) return [];
 
   const laneEnds: number[] = [];
   const assigned = entries.map((item) => {
-    let lane = laneEnds.findIndex((end) => end <= item.startMinute);
+    let lane = laneEnds.findIndex((end) => end <= item.occupiedStartMinute);
     if (lane === -1) {
       lane = laneEnds.length;
-      laneEnds.push(item.endMinute);
+      laneEnds.push(item.occupiedEndMinute);
     } else {
-      laneEnds[lane] = item.endMinute;
+      laneEnds[lane] = item.occupiedEndMinute;
     }
     return { item, lane };
   });
@@ -114,7 +168,8 @@ export function layoutWeekGridEntries(entries: ScheduledEntry[]): {
     })
     .filter((item): item is NonNullable<typeof item> => item !== null)
     .sort((a, b) =>
-      a.startMinute - b.startMinute
+      a.occupiedStartMinute - b.occupiedStartMinute
+      || a.startMinute - b.startMinute
       || a.endMinute - b.endMinute
       || a.entry.session.title.localeCompare(b.entry.session.title, 'ar'),
     );
@@ -130,9 +185,9 @@ export function layoutWeekGridEntries(entries: ScheduledEntry[]): {
   };
 
   for (const item of candidates) {
-    if (cluster.length && item.startMinute >= clusterEnd) flush();
+    if (cluster.length && item.occupiedStartMinute >= clusterEnd) flush();
     cluster.push(item);
-    clusterEnd = Math.max(clusterEnd, item.endMinute);
+    clusterEnd = Math.max(clusterEnd, item.occupiedEndMinute);
   }
   if (cluster.length) flush();
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   occupiedScheduleInterval,
   sessionsConflict,
+  splitTravelMinutes,
 } from '../src/modules/tutoring/domain/schedule-conflict';
 
 const base = {
@@ -14,10 +15,12 @@ const base = {
 };
 
 describe('schedule conflict policy', () => {
-  it('reserves travel before and after a lesson', () => {
+  it('splits the total travel allowance before and after a lesson', () => {
+    expect(splitTravelMinutes(30)).toEqual({ before: 15, after: 15 });
+    expect(splitTravelMinutes(25)).toEqual({ before: 12, after: 13 });
     expect(occupiedScheduleInterval(base)).toEqual({
-      start: 15 * 60 + 30,
-      end: 18 * 60,
+      start: 15 * 60 + 45,
+      end: 17 * 60 + 45,
     });
   });
 
@@ -30,6 +33,13 @@ describe('schedule conflict policy', () => {
       travelMinutes: 30,
     };
     expect(sessionsConflict(base, next)).toBe(true);
+    expect(sessionsConflict(base, {
+      ...base,
+      id: 'session-c',
+      startTime: '17:45',
+      durationMinutes: 60,
+      travelMinutes: 0,
+    })).toBe(false);
   });
 
   it('allows separate days and genuinely separated lessons', () => {
