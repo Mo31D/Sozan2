@@ -1,4 +1,5 @@
 import { studentOccurrenceTargetId } from '../tutoring/domain/finance-target';
+import { FAMILY_PACKAGE_TARGET_TYPE } from '../tutoring/domain/billing-account';
 import {
   probableDuplicateExpenseIds,
   type ExpenseDuplicateCandidate,
@@ -90,7 +91,10 @@ export type ReportInput = {
   expenses: ReportExpense[];
   otherIncome: Array<{ incomeDate: string; amountPence: number }>;
   billingPlans?: Array<{ studentId: string; billingMode: 'per_session' | 'package' }>;
-  billingCycles: Array<{ id: string; status: 'open' | 'due' | 'paid' | 'cancelled'; pricePence: number }>;
+  billingCycles: Array<{ id: string; studentId?: string; status: 'open' | 'due' | 'paid' | 'cancelled'; pricePence: number }>;
+  billingAccounts?: Array<{ id: string; active: boolean }>;
+  billingAccountMembers?: Array<{ billingAccountId: string; studentId: string; active: boolean }>;
+  billingAccountCycles?: Array<{ id: string; billingAccountId: string; status: 'open' | 'due' | 'paid' | 'cancelled'; pricePence: number }>;
   allocations: Array<{ targetId: string; targetType?: string; amountPence: number }>;
 };
 
@@ -160,12 +164,30 @@ function expenseDuplicateCandidates(expenses: readonly ReportExpense[]): Expense
 }
 
 export function currentDuePence(data: ReportInput): number {
-  let due = data.billingCycles.filter((cycle) => cycle.status === 'due').reduce((total, cycle) => {
-    const allocated = sum(data.allocations
-      .filter((row) => row.targetId === cycle.id && (!row.targetType || row.targetType === 'package_cycle'))
-      .map((row) => row.amountPence));
-    return total + Math.max(0, cycle.pricePence - allocated);
-  }, 0);
+  const activeFamilyAccountIds = new Set((data.billingAccounts ?? [])
+    .filter((row) => row.active)
+    .map((row) => row.id));
+  const familyStudentIds = new Set((data.billingAccountMembers ?? [])
+    .filter((row) => row.active && activeFamilyAccountIds.has(row.billingAccountId))
+    .map((row) => row.studentId));
+
+  let due = data.billingCycles
+    .filter((cycle) => cycle.status === 'due' && (!cycle.studentId || !familyStudentIds.has(cycle.studentId)))
+    .reduce((total, cycle) => {
+      const allocated = sum(data.allocations
+        .filter((row) => row.targetId === cycle.id && (!row.targetType || row.targetType === 'package_cycle'))
+        .map((row) => row.amountPence));
+      return total + Math.max(0, cycle.pricePence - allocated);
+    }, 0);
+
+  due += (data.billingAccountCycles ?? [])
+    .filter((cycle) => cycle.status === 'due' && activeFamilyAccountIds.has(cycle.billingAccountId))
+    .reduce((total, cycle) => {
+      const allocated = sum(data.allocations
+        .filter((row) => row.targetId === cycle.id && row.targetType === FAMILY_PACKAGE_TARGET_TYPE)
+        .map((row) => row.amountPence));
+      return total + Math.max(0, cycle.pricePence - allocated);
+    }, 0);
 
   const planByStudent = new Map((data.billingPlans ?? []).map((plan) => [plan.studentId, plan.billingMode]));
   const allSessions = [...data.sessions, ...(data.archivedSessions ?? [])];

@@ -52,6 +52,9 @@ async function exportBackup(db: D1Database, workspaceId: string): Promise<Worksp
     tutoringBillingPlans,
     tutoringBillingCycles,
     tutoringBillingCycleOccurrences,
+    tutoringBillingAccounts,
+    tutoringBillingAccountMembers,
+    tutoringBillingAccountCycles,
     appointmentsClients,
     appointmentsItems,
     financeReceipts,
@@ -136,6 +139,24 @@ async function exportBackup(db: D1Database, workspaceId: string): Promise<Worksp
                     position,earned_pence AS earnedPence,created_at AS createdAt
              FROM tutoring_billing_cycle_occurrences WHERE workspace_id=?1
              ORDER BY billing_cycle_id,position`, workspaceId),
+    all(db, `SELECT id,workspace_id AS workspaceId,display_name AS displayName,
+                    account_type AS accountType,counting_mode AS countingMode,
+                    primary_student_id AS primaryStudentId,package_size AS packageSize,
+                    package_price_pence AS packagePricePence,effective_from AS effectiveFrom,
+                    active,created_at AS createdAt,updated_at AS updatedAt
+             FROM tutoring_billing_accounts WHERE workspace_id=?1
+             ORDER BY display_name,id`, workspaceId),
+    all(db, `SELECT id,workspace_id AS workspaceId,billing_account_id AS billingAccountId,
+                    student_id AS studentId,position,active,
+                    created_at AS createdAt,updated_at AS updatedAt
+             FROM tutoring_billing_account_members WHERE workspace_id=?1
+             ORDER BY billing_account_id,position,student_id`, workspaceId),
+    all(db, `SELECT id,workspace_id AS workspaceId,billing_account_id AS billingAccountId,
+                    sequence_no AS sequenceNo,package_size AS packageSize,price_pence AS pricePence,
+                    status,started_on AS startedOn,completed_on AS completedOn,paid_on AS paidOn,
+                    created_at AS createdAt,updated_at AS updatedAt
+             FROM tutoring_billing_account_cycles WHERE workspace_id=?1
+             ORDER BY billing_account_id,sequence_no`, workspaceId),
     all(db, `SELECT id,workspace_id AS workspaceId,name,phone,notes,active,
                     created_at AS createdAt,updated_at AS updatedAt,deleted_at AS deletedAt
              FROM appointments_clients WHERE workspace_id=?1 ORDER BY name,id`, workspaceId),
@@ -237,6 +258,9 @@ async function exportBackup(db: D1Database, workspaceId: string): Promise<Worksp
       tutoringBillingPlans,
       tutoringBillingCycles,
       tutoringBillingCycleOccurrences,
+      tutoringBillingAccounts: tutoringBillingAccounts.map((r) => ({ ...r, active: Boolean(r.active) })),
+      tutoringBillingAccountMembers: tutoringBillingAccountMembers.map((r) => ({ ...r, active: Boolean(r.active) })),
+      tutoringBillingAccountCycles,
       appointmentsClients: appointmentsClients.map((r) => ({ ...r, active: Boolean(r.active) })),
       appointmentsItems,
       financeReceipts: financeReceipts.map((r) => ({ ...r, pendingSync: false })),
@@ -301,6 +325,9 @@ async function restoreBackupAtomic(db: D1Database, workspaceId: string, backup: 
     // intentionally remain intact.
     db.prepare(`DELETE FROM finance_receipt_allocations WHERE workspace_id=?1`).bind(workspaceId),
     db.prepare(`DELETE FROM tutoring_billing_cycle_occurrences WHERE workspace_id=?1`).bind(workspaceId),
+    db.prepare(`DELETE FROM tutoring_billing_account_cycles WHERE workspace_id=?1`).bind(workspaceId),
+    db.prepare(`DELETE FROM tutoring_billing_account_members WHERE workspace_id=?1`).bind(workspaceId),
+    db.prepare(`DELETE FROM tutoring_billing_accounts WHERE workspace_id=?1`).bind(workspaceId),
     db.prepare(`DELETE FROM tutoring_occurrence_students WHERE workspace_id=?1`).bind(workspaceId),
     db.prepare(`DELETE FROM tutoring_session_students WHERE workspace_id=?1`).bind(workspaceId),
     db.prepare(`DELETE FROM finance_cash_checks WHERE workspace_id=?1`).bind(workspaceId),
@@ -367,6 +394,32 @@ async function restoreBackupAtomic(db: D1Database, workspaceId: string, backup: 
       x.guardianName==null?null:String(x.guardianName),x.guardianPhone==null?null:String(x.guardianPhone),
       x.level==null?null:String(x.level),x.notes==null?null:String(x.notes),asBool(x.active),
       x.deletedAt==null?null:String(x.deletedAt),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'tutoring_billing_accounts',
+    ['id','workspace_id','display_name','account_type','counting_mode','primary_student_id',
+     'package_size','package_price_pence','effective_from','active','created_at','updated_at'],
+    s.tutoringBillingAccounts.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.displayName),String(x.accountType),String(x.countingMode),
+      String(x.primaryStudentId),Number(x.packageSize),Number(x.packagePricePence),
+      String(x.effectiveFrom),asBool(x.active),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'tutoring_billing_account_members',
+    ['id','workspace_id','billing_account_id','student_id','position','active','created_at','updated_at'],
+    s.tutoringBillingAccountMembers.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.billingAccountId),String(x.studentId),Number(x.position ?? 0),
+      asBool(x.active),nowFor(x.createdAt),nowFor(x.updatedAt),
+    ]; })));
+
+  statements.push(...bulkInsert(db, 'tutoring_billing_account_cycles',
+    ['id','workspace_id','billing_account_id','sequence_no','package_size','price_pence',
+     'status','started_on','completed_on','paid_on','created_at','updated_at'],
+    s.tutoringBillingAccountCycles.map((raw) => { const x=r(raw); return [
+      String(x.id),workspaceId,String(x.billingAccountId),Number(x.sequenceNo),Number(x.packageSize),
+      Number(x.pricePence),String(x.status),x.startedOn==null?null:String(x.startedOn),
+      x.completedOn==null?null:String(x.completedOn),x.paidOn==null?null:String(x.paidOn),
+      nowFor(x.createdAt),nowFor(x.updatedAt),
     ]; })));
 
   statements.push(...bulkInsert(db, 'tutoring_student_baselines',

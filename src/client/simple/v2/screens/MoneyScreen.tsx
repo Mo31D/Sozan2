@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { buildStudentFinancialSummary } from '../../../../modules/reports/student-finance';
 import type { LocalPlatformSnapshot } from '../../../adapters/indexeddb/platform.repository';
 import type { ControlTab } from '../../../control/contracts';
-import { planFor, type SimpleWorkspaceData } from '../../data';
+import { familyBillingAccountForStudent, familyBillingProgressLabel, planFor, type SimpleWorkspaceData } from '../../data';
 import { QuickForm, ScreenHeader, SectionTitle } from '../components';
 import { ArabicDateField } from '../localized-fields';
 import type { MoneyMode } from '../types';
@@ -75,21 +75,45 @@ export function MoneyScreen({
 
   if (view.kind === 'list') {
     if (view.list === 'due') {
+      const seenFamilyAccounts = new Set<string>();
       const dueStudents = data.students
-        .map((student) => ({ student, summary: buildStudentFinancialSummary(data, student.id) }))
+        .flatMap((student) => {
+          const familyAccount = familyBillingAccountForStudent(data, student.id);
+          if (familyAccount) {
+            if (seenFamilyAccounts.has(familyAccount.id)) return [];
+            seenFamilyAccounts.add(familyAccount.id);
+            const primaryStudent = data.students.find((row) => row.id === familyAccount.primaryStudentId) ?? student;
+            return [{
+              key: `family:${familyAccount.id}`,
+              student: primaryStudent,
+              title: familyAccount.displayName,
+              subtitle: `باقة أسرة · ${familyBillingProgressLabel(data, familyAccount)}`,
+              summary: buildStudentFinancialSummary(data, primaryStudent.id),
+            }];
+          }
+          return [{
+            key: `student:${student.id}`,
+            student,
+            title: student.name,
+            subtitle: planFor(data, student.id)?.billingMode === 'package'
+              ? `باقة · ${packageProgress(data, student.id)}`
+              : 'الحساب بالحصة',
+            summary: buildStudentFinancialSummary(data, student.id),
+          }];
+        })
         .filter((row) => row.summary.duePence > 0)
         .sort((a, b) => b.summary.duePence - a.summary.duePence);
       return (
         <MoneySubView title="مطلوب تحصيله الآن" subtitle={`الإجمالي ${money(due, currency)}`} onBack={backToOverview}>
           <div className="money-ledger-list">
-            {dueStudents.map(({ student, summary }) => {
-              const collecting = collectingStudentId === student.id;
+            {dueStudents.map(({ key, student, title, subtitle, summary }) => {
+              const collecting = collectingStudentId === key;
               return (
-                <article className={`money-due-item${collecting ? ' collecting' : ''}`} key={student.id}>
+                <article className={`money-due-item${collecting ? ' collecting' : ''}`} key={key}>
                   <div className="money-due-row">
                     <button type="button" className="money-person-row money-due-person" onClick={() => onOpenStudent(student.id)}>
-                      <div className="avatar-circle">{student.name.trim().charAt(0)}</div>
-                      <span><strong>{student.name}</strong><small>{planFor(data, student.id)?.billingMode === 'package' ? `باقة · ${packageProgress(data, student.id)}` : 'الحساب بالحصة'}</small></span>
+                      <div className="avatar-circle">{title.trim().charAt(0)}</div>
+                      <span><strong>{title}</strong><small>{subtitle}</small></span>
                       <b>{money(summary.duePence, currency)}</b>
                     </button>
                     <button
@@ -97,7 +121,7 @@ export function MoneyScreen({
                       className={`money-due-collect-button${collecting ? ' active' : ''}`}
                       disabled={busy}
                       aria-expanded={collecting}
-                      onClick={() => setCollectingStudentId(collecting ? null : student.id)}
+                      onClick={() => setCollectingStudentId(collecting ? null : key)}
                     >
                       {collecting ? 'إلغاء' : 'تم التحصيل'}
                     </button>
@@ -105,7 +129,7 @@ export function MoneyScreen({
                   {collecting && (
                     <DueCollectionForm
                       studentId={student.id}
-                      studentName={student.name}
+                      studentName={title}
                       duePence={summary.duePence}
                       currency={currency}
                       busy={busy}
@@ -128,14 +152,21 @@ export function MoneyScreen({
       <MoneySubView title={title} subtitle={`الإجمالي ${money(total, currency)}`} onBack={backToOverview}>
         <div className="money-ledger-list">
           {view.list === 'receipts' && receipts.sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).map((row) => {
-            const student = data.students.find((item) => item.id === row.payerRefId);
+            const familyAccount = row.payerRefType === 'tutoring.billing_account'
+              ? data.billingAccounts.find((item) => item.id === row.payerRefId)
+              : null;
+            const student = !familyAccount ? data.students.find((item) => item.id === row.payerRefId) : null;
+            const primaryStudent = familyAccount
+              ? data.students.find((item) => item.id === familyAccount.primaryStudentId) ?? null
+              : student;
+            const payerName = familyAccount?.displayName ?? student?.name ?? null;
             return (
               <div className="money-ledger-row-wrap" key={row.id}>
                 <button type="button" className="money-ledger-row" onClick={() => openMovement('receipt', row.id)}>
-                  <span><strong>{student ? `تحصيل من ${student.name}` : 'تحصيل'}</strong><small>{formatShortDate(row.receivedAt)} · {paymentMethodLabel(row.paymentMethod)}</small></span>
+                  <span><strong>{payerName ? `تحصيل من ${payerName}` : 'تحصيل'}</strong><small>{formatShortDate(row.receivedAt)} · {paymentMethodLabel(row.paymentMethod)}</small></span>
                   <b className="in">+ {money(row.amountPence, currency)}</b>
                 </button>
-                {student && <button type="button" className="money-inline-student" onClick={() => onOpenStudent(student.id)}>ملف {student.name}</button>}
+                {primaryStudent && <button type="button" className="money-inline-student" onClick={() => onOpenStudent(primaryStudent.id)}>فتح الحساب</button>}
               </div>
             );
           })}
@@ -152,8 +183,15 @@ export function MoneyScreen({
     const expense = view.movement === 'expense' ? data.expenses.find((row) => row.id === view.id) : null;
     const otherIncome = view.movement === 'other' ? data.otherIncome.find((row) => row.id === view.id) : null;
     if (receipt) {
-      const student = data.students.find((row) => row.id === receipt.payerRefId);
-      return <MoneySubView title="تفاصيل التحصيل" onBack={backToOverview}><MovementCard amount={`+ ${money(receipt.amountPence, currency)}`} tone="in" rows={[['التاريخ', formatShortDate(receipt.receivedAt)], ['طريقة الدفع', paymentMethodLabel(receipt.paymentMethod)], ['الطالب', student?.name ?? 'غير مرتبط'], ['ملاحظة', receipt.note || '—']]} /><div className="money-detail-actions">{student && <button type="button" onClick={() => onOpenStudent(student.id)}>ملف {student.name}</button>}<button type="button" onClick={() => onOpenAdvanced('receipts')}>تعديل من الإدارة</button></div></MoneySubView>;
+      const familyAccount = receipt.payerRefType === 'tutoring.billing_account'
+        ? data.billingAccounts.find((row) => row.id === receipt.payerRefId) ?? null
+        : null;
+      const student = !familyAccount ? data.students.find((row) => row.id === receipt.payerRefId) : null;
+      const primaryStudent = familyAccount
+        ? data.students.find((row) => row.id === familyAccount.primaryStudentId) ?? null
+        : student;
+      const payerName = familyAccount?.displayName ?? student?.name ?? 'غير مرتبط';
+      return <MoneySubView title="تفاصيل التحصيل" onBack={backToOverview}><MovementCard amount={`+ ${money(receipt.amountPence, currency)}`} tone="in" rows={[['التاريخ', formatShortDate(receipt.receivedAt)], ['طريقة الدفع', paymentMethodLabel(receipt.paymentMethod)], ['الحساب', payerName], ['ملاحظة', receipt.note || '—']]} /><div className="money-detail-actions">{primaryStudent && <button type="button" onClick={() => onOpenStudent(primaryStudent.id)}>فتح الحساب</button>}<button type="button" onClick={() => onOpenAdvanced('receipts')}>تعديل من الإدارة</button></div></MoneySubView>;
     }
     if (expense) {
       return <MoneySubView title="تفاصيل المصروف" onBack={backToOverview}><MovementCard amount={`− ${money(expense.amountPence, currency)}`} tone="out" rows={[['التاريخ', formatShortDate(expense.expenseDate)], ['التصنيف', expense.category], ['النوع', expense.scope === 'business' ? 'شغل' : 'شخصي'], ['ملاحظة', expense.note || '—']]} /><div className="money-detail-actions"><button type="button" onClick={() => onOpenAdvanced('expenses')}>تعديل من الإدارة</button></div></MoneySubView>;

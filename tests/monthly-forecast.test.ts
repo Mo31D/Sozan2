@@ -250,6 +250,93 @@ describe('monthly forecast', () => {
     expect(forecast.projectedNewDuePence).toBe(50000);
   });
 
+  it('projects one family charge after both separate sibling quotas complete', () => {
+    const data = baseData();
+    data.sessions = [
+      {
+        id: 'malak-session',
+        scheduleStatus: 'confirmed',
+        weekday: 0,
+        startTime: '10:00',
+        durationMinutes: 60,
+        travelMinutes: 0,
+        studentIds: ['malak'],
+        priceBasis: 'total_session',
+        defaultPricePence: 0,
+        expectedStudentCount: 1,
+        centerCutBps: 0,
+        payerStudentId: 'malak',
+      },
+      {
+        id: 'judy-session',
+        scheduleStatus: 'confirmed',
+        weekday: 1,
+        startTime: '10:00',
+        durationMinutes: 60,
+        travelMinutes: 0,
+        studentIds: ['judy'],
+        priceBasis: 'total_session',
+        defaultPricePence: 0,
+        expectedStudentCount: 1,
+        centerCutBps: 0,
+        payerStudentId: 'judy',
+      },
+    ];
+    data.billingPlans = [
+      { studentId: 'malak', billingMode: 'package', packageSize: 8, packagePricePence: 0, effectiveFrom: '2026-09-01' },
+      { studentId: 'judy', billingMode: 'package', packageSize: 8, packagePricePence: 0, effectiveFrom: '2026-09-01' },
+    ];
+    data.billingCycles = [
+      {
+        id: 'malak-cycle',
+        studentId: 'malak',
+        sequenceNo: 1,
+        sessionLimit: 8,
+        openingCompletedCount: 7,
+        realCompletedCount: 0,
+        status: 'open',
+        pricePence: 0,
+      },
+      {
+        id: 'judy-cycle',
+        studentId: 'judy',
+        sequenceNo: 1,
+        sessionLimit: 8,
+        openingCompletedCount: 7,
+        realCompletedCount: 0,
+        status: 'open',
+        pricePence: 0,
+      },
+    ];
+    data.billingAccounts = [{
+      id: 'family-1',
+      active: true,
+      countingMode: 'per_member_quota',
+      primaryStudentId: 'malak',
+      packageSize: 8,
+      packagePricePence: 70000,
+      effectiveFrom: '2026-09-01',
+    }];
+    data.billingAccountMembers = [
+      { billingAccountId: 'family-1', studentId: 'malak', active: true },
+      { billingAccountId: 'family-1', studentId: 'judy', active: true },
+    ];
+    data.billingAccountCycles = [{
+      id: 'family-cycle-1',
+      billingAccountId: 'family-1',
+      sequenceNo: 1,
+      status: 'open',
+      pricePence: 70000,
+    }];
+
+    const forecast = buildMonthlyForecast(data, '2026-09-19');
+
+    expect(forecast.futureConfirmedLessons).toBe(4);
+    expect(forecast.projectedPackageCompletions).toBe(1);
+    expect(forecast.projectedNewDuePence).toBe(70000);
+    expect(forecast.projectedRemainingEarnedPence).toBe(17500);
+  });
+
   it('does not invent a historical expense baseline when there is no prior activity', () => {
     const data = baseData();
     data.expenses = [

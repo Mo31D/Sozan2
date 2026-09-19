@@ -65,6 +65,9 @@ function backup(): WorkspaceBackup {
       tutoringBillingPlans: [],
       tutoringBillingCycles: [],
       tutoringBillingCycleOccurrences: [],
+      tutoringBillingAccounts: [],
+      tutoringBillingAccountMembers: [],
+      tutoringBillingAccountCycles: [],
       appointmentsClients: [],
       appointmentsItems: [],
       financeReceipts: [],
@@ -112,6 +115,72 @@ describe('Sozan2 full backup validation', () => {
     const result = validateWorkspaceBackup(value);
     expect(result.valid).toBe(false);
     expect(result.errors).toContain('BACKUP_MANIFEST_COUNT_MISMATCH');
+  });
+
+  it('validates family billing references and prevents duplicate active membership', () => {
+    const value = backup();
+    value.stores.tutoringStudents.push({
+      id: '22222222-2222-4222-8222-222222222223',
+      workspaceId,
+      name: 'طالب 2',
+      active: true,
+    });
+    value.stores.tutoringBillingAccounts.push({
+      id: '55555555-5555-4555-8555-555555555555',
+      workspaceId,
+      displayName: 'طالب + طالب 2',
+      accountType: 'family',
+      countingMode: 'per_member_quota',
+      primaryStudentId: studentId,
+      packageSize: 8,
+      packagePricePence: 70000,
+      effectiveFrom: '2026-09-19',
+      active: true,
+    });
+    value.stores.tutoringBillingAccountMembers.push(
+      {
+        id: '66666666-6666-4666-8666-666666666661',
+        workspaceId,
+        billingAccountId: '55555555-5555-4555-8555-555555555555',
+        studentId,
+        position: 0,
+        active: true,
+      },
+      {
+        id: '66666666-6666-4666-8666-666666666662',
+        workspaceId,
+        billingAccountId: '55555555-5555-4555-8555-555555555555',
+        studentId: '22222222-2222-4222-8222-222222222223',
+        position: 1,
+        active: true,
+      },
+    );
+    value.stores.tutoringBillingAccountCycles.push({
+      id: '77777777-7777-4777-8777-777777777777',
+      workspaceId,
+      billingAccountId: '55555555-5555-4555-8555-555555555555',
+      sequenceNo: 1,
+      packageSize: 8,
+      pricePence: 70000,
+      status: 'open',
+      startedOn: '2026-09-19',
+      completedOn: null,
+      paidOn: null,
+    });
+
+    expect(validateWorkspaceBackup(value).valid).toBe(true);
+
+    value.stores.tutoringBillingAccountMembers.push({
+      id: '66666666-6666-4666-8666-666666666663',
+      workspaceId,
+      billingAccountId: '55555555-5555-4555-8555-555555555555',
+      studentId,
+      position: 2,
+      active: true,
+    });
+    const invalid = validateWorkspaceBackup(value);
+    expect(invalid.valid).toBe(false);
+    expect(invalid.errors).toContain('BACKUP_STUDENT_IN_MULTIPLE_ACTIVE_BILLING_ACCOUNTS');
   });
 
   it('allows center membership without inventing a weekday-specific student list', () => {

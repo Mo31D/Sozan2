@@ -1,5 +1,6 @@
 import type { Student } from '../../modules/tutoring/domain/student';
 import type { StudentBaseline } from '../../modules/tutoring/domain/student-baseline';
+import { activeFamilyMembers, familyAccountForStudent as resolveFamilyAccountForStudent, type BillingAccount, type BillingAccountCycle, type BillingAccountMember } from '../../modules/tutoring/domain/billing-account';
 import { billingOwnerStudentId, type RecurringSession } from '../../modules/tutoring/domain/session';
 import { openLocalDatabase, requestResult, STORES } from '../adapters/indexeddb/database';
 import type {
@@ -54,6 +55,9 @@ export type SimpleWorkspaceData = {
   occurrences: LocalOccurrence[];
   billingPlans: LocalBillingPlan[];
   billingCycles: LocalBillingCycle[];
+  billingAccounts: BillingAccount[];
+  billingAccountMembers: BillingAccountMember[];
+  billingAccountCycles: BillingAccountCycle[];
   receipts: LocalReceipt[];
   allocations: LocalAllocation[];
   expenses: LocalExpense[];
@@ -73,6 +77,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     STORES.tutoringOccurrences,
     STORES.tutoringBillingPlans,
     STORES.tutoringBillingCycles,
+    STORES.tutoringBillingAccounts,
+    STORES.tutoringBillingAccountMembers,
+    STORES.tutoringBillingAccountCycles,
     STORES.financeReceipts,
     STORES.financeAllocations,
     STORES.financeExpenses,
@@ -88,6 +95,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     occurrences,
     billingPlans,
     billingCycles,
+    billingAccounts,
+    billingAccountMembers,
+    billingAccountCycles,
     receipts,
     allocations,
     expenses,
@@ -101,6 +111,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     requestResult<LocalOccurrence[]>(transaction.objectStore(STORES.tutoringOccurrences).getAll()),
     requestResult<LocalBillingPlan[]>(transaction.objectStore(STORES.tutoringBillingPlans).getAll()),
     requestResult<LocalBillingCycle[]>(transaction.objectStore(STORES.tutoringBillingCycles).getAll()),
+    requestResult<BillingAccount[]>(transaction.objectStore(STORES.tutoringBillingAccounts).getAll()),
+    requestResult<BillingAccountMember[]>(transaction.objectStore(STORES.tutoringBillingAccountMembers).getAll()),
+    requestResult<BillingAccountCycle[]>(transaction.objectStore(STORES.tutoringBillingAccountCycles).getAll()),
     requestResult<LocalReceipt[]>(transaction.objectStore(STORES.financeReceipts).getAll()),
     requestResult<LocalAllocation[]>(transaction.objectStore(STORES.financeAllocations).getAll()),
     requestResult<LocalExpense[]>(transaction.objectStore(STORES.financeExpenses).getAll()),
@@ -125,6 +138,9 @@ export async function loadSimpleWorkspaceData(workspaceId: string): Promise<Simp
     occurrences: mine(occurrences),
     billingPlans: mine(billingPlans),
     billingCycles: mine(billingCycles),
+    billingAccounts: mine(billingAccounts),
+    billingAccountMembers: mine(billingAccountMembers),
+    billingAccountCycles: mine(billingAccountCycles),
     receipts: activeReceipts,
     allocations: mine(allocations).filter((row) => activeReceiptIds.has(row.receiptId)),
     expenses: mine(expenses).filter((row) => !row.deletedAt),
@@ -191,6 +207,43 @@ export function billingStudentForSession(
  * owned by one other student account, return that account owner. Ambiguous
  * cases deliberately return null instead of guessing.
  */
+export function familyBillingAccountForStudent(
+  data: SimpleWorkspaceData,
+  studentId: string,
+): BillingAccount | null {
+  return resolveFamilyAccountForStudent(data.billingAccounts, data.billingAccountMembers, studentId);
+}
+
+export function familyBillingStudents(
+  data: SimpleWorkspaceData,
+  accountId: string,
+): Student[] {
+  const byId = new Map(data.students.map((student) => [student.id, student]));
+  return activeFamilyMembers(data.billingAccountMembers, accountId)
+    .map((member) => byId.get(member.studentId) ?? null)
+    .filter((student): student is Student => Boolean(student));
+}
+
+export function familyBillingProgressLabel(
+  data: SimpleWorkspaceData,
+  account: BillingAccount,
+): string {
+  const members = familyBillingStudents(data, account.id);
+  const progressFor = (studentId: string) => {
+    const cycle = activeCycleFor(data, studentId);
+    const limit = cycle?.sessionLimit ?? account.packageSize;
+    const completed = cycle
+      ? cycle.openingCompletedCount + cycle.realCompletedCount
+      : 0;
+    return `${Math.min(completed, limit)}/${limit}`;
+  };
+
+  if (account.countingMode === 'shared_occurrence') {
+    return progressFor(account.primaryStudentId);
+  }
+  return members.map((student) => `${student.name} ${progressFor(student.id)}`).join(' · ');
+}
+
 export function sharedBillingOwnerForStudent(
   data: SimpleWorkspaceData,
   studentId: string,

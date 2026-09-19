@@ -1,4 +1,5 @@
 import { canChangeOpeningProgress } from '../../modules/tutoring/domain/billing';
+import { FAMILY_PAYER_REF_TYPE } from '../../modules/tutoring/domain/billing-account';
 import { configureBillingSchema, type ConfigureBillingInput } from '../../modules/tutoring/domain/billing-plan';
 import { activitySyncMutation, makeActivityEvent } from '../activity/local-activity';
 import { openLocalDatabase, requestResult, STORES, transactionDone } from '../adapters/indexeddb/database';
@@ -7,6 +8,7 @@ import {
   rebuildStudentLocally,
 } from '../finance/local-rebalance';
 import { newSyncOutboxRecord } from '../sync/outbox';
+import { rebalanceFamilyAccountLocally } from './family-billing';
 
 export type LocalBillingPlan = {
   id: string;
@@ -295,6 +297,74 @@ export async function collectLocalStudentPayment(input: {
   transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
   await transactionDone(transaction);
   await rebalanceStudentLocally(input.workspaceId, input.studentId);
+  return receipt;
+}
+
+export async function collectLocalFamilyPayment(input: {
+  workspaceId: string;
+  billingAccountId: string;
+  amountPence: number;
+  receivedAt?: string;
+  paymentMethod?: 'cash' | 'bank' | 'wallet' | 'other';
+  note?: string | null;
+}): Promise<LocalReceipt> {
+  if (!Number.isSafeInteger(input.amountPence) || input.amountPence <= 0) {
+    throw new Error('COLLECTION_AMOUNT_INVALID');
+  }
+  const receipt: LocalReceipt = {
+    id: crypto.randomUUID(),
+    workspaceId: input.workspaceId,
+    payerRefType: FAMILY_PAYER_REF_TYPE,
+    payerRefId: input.billingAccountId,
+    amountPence: input.amountPence,
+    receivedAt: input.receivedAt ?? today(),
+    paymentMethod: input.paymentMethod ?? 'cash',
+    sourceKind: 'manual',
+    sourceModule: null,
+    sourceEntityType: null,
+    sourceEntityId: null,
+    note: input.note ?? null,
+    deletedAt: null,
+    pendingSync: true,
+  };
+  const activity = makeActivityEvent({
+    workspaceId: input.workspaceId,
+    moduleKey: 'finance',
+    entityType: 'receipt',
+    entityId: receipt.id,
+    action: 'receipt.created',
+    title: 'تم تسجيل تحصيل للأسرة',
+    after: receipt,
+  });
+
+  const db = await openLocalDatabase();
+  const transaction = db.transaction(
+    [STORES.financeReceipts, STORES.coreActivityEvents, STORES.syncOutbox],
+    'readwrite',
+  );
+  transaction.objectStore(STORES.financeReceipts).add(receipt);
+  transaction.objectStore(STORES.coreActivityEvents).add(activity);
+  transaction.objectStore(STORES.syncOutbox).add(newSyncOutboxRecord({
+    workspaceId: input.workspaceId,
+    moduleKey: 'finance',
+    operation: 'receipt.create',
+    entityType: 'receipt',
+    entityId: receipt.id,
+    payload: {
+      payerRefType: FAMILY_PAYER_REF_TYPE,
+      payerRefId: input.billingAccountId,
+      amountPence: input.amountPence,
+      receivedAt: receipt.receivedAt,
+      paymentMethod: receipt.paymentMethod,
+      sourceModule: null,
+      sourceEntityType: null,
+      sourceEntityId: null,
+      note: receipt.note,
+    },
+  }));
+  transaction.objectStore(STORES.syncOutbox).add(activitySyncMutation(activity));
+  await transactionDone(transaction);
+  await rebalanceFamilyAccountLocally(input.workspaceId, input.billingAccountId);
   return receipt;
 }
 

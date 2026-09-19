@@ -1,4 +1,5 @@
 import { studentOccurrenceTargetId } from '../tutoring/domain/finance-target';
+import { FAMILY_PACKAGE_TARGET_TYPE, FAMILY_PAYER_REF_TYPE } from '../tutoring/domain/billing-account';
 export type StudentFinancialSummary = {
   receivedPence: number;
   allocatedPence: number;
@@ -48,8 +49,24 @@ type StudentFinanceInput = {
     status: 'open' | 'due' | 'paid' | 'cancelled';
     pricePence: number;
   }>;
+  billingAccounts?: Array<{
+    id: string;
+    active: boolean;
+  }>;
+  billingAccountMembers?: Array<{
+    billingAccountId: string;
+    studentId: string;
+    active: boolean;
+  }>;
+  billingAccountCycles?: Array<{
+    id: string;
+    billingAccountId: string;
+    status: 'open' | 'due' | 'paid' | 'cancelled';
+    pricePence: number;
+  }>;
   receipts: Array<{
     id: string;
+    payerRefType?: string;
     payerRefId: string;
     amountPence: number;
     receivedAt: string;
@@ -81,8 +98,18 @@ export function buildStudentFinancialSummary(
   data: StudentFinanceInput,
   studentId: string,
 ): StudentFinancialSummary {
+  const familyAccountIds = new Set((data.billingAccounts ?? [])
+    .filter((row) => row.active)
+    .map((row) => row.id));
+  const familyAccountId = (data.billingAccountMembers ?? []).find((row) =>
+    row.studentId === studentId
+    && row.active
+    && familyAccountIds.has(row.billingAccountId))?.billingAccountId ?? null;
+
   const receipts = data.receipts
-    .filter((row) => row.payerRefId === studentId)
+    .filter((row) => familyAccountId
+      ? row.payerRefType === FAMILY_PAYER_REF_TYPE && row.payerRefId === familyAccountId
+      : row.payerRefId === studentId && row.payerRefType !== FAMILY_PAYER_REF_TYPE)
     .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.id.localeCompare(a.id));
   const receiptIds = new Set(receipts.map((row) => row.id));
   const receivedPence = sum(receipts.map((row) => row.amountPence));
@@ -92,13 +119,23 @@ export function buildStudentFinancialSummary(
   const creditPence = Math.max(0, receivedPence - allocatedPence);
 
   let duePence = 0;
-  for (const cycle of data.billingCycles) {
-    if (cycle.studentId !== studentId || cycle.status !== 'due') continue;
-    duePence += Math.max(0, cycle.pricePence - allocatedToTarget(data, 'package_cycle', cycle.id));
+  if (familyAccountId) {
+    for (const cycle of data.billingAccountCycles ?? []) {
+      if (cycle.billingAccountId !== familyAccountId || cycle.status !== 'due') continue;
+      duePence += Math.max(
+        0,
+        cycle.pricePence - allocatedToTarget(data, FAMILY_PACKAGE_TARGET_TYPE, cycle.id),
+      );
+    }
+  } else {
+    for (const cycle of data.billingCycles) {
+      if (cycle.studentId !== studentId || cycle.status !== 'due') continue;
+      duePence += Math.max(0, cycle.pricePence - allocatedToTarget(data, 'package_cycle', cycle.id));
+    }
   }
 
   const billingMode = data.billingPlans.find((row) => row.studentId === studentId)?.billingMode ?? null;
-  if (billingMode === 'per_session') {
+  if (!familyAccountId && billingMode === 'per_session') {
     const sessions = new Map(
       [...data.sessions, ...(data.archivedSessions ?? [])].map((session) => [session.id, session]),
     );

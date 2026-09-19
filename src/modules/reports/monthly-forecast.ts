@@ -96,6 +96,30 @@ type ForecastBillingCycle = {
   pricePence: number;
 };
 
+type ForecastBillingAccount = {
+  id: string;
+  active: boolean;
+  countingMode: 'shared_occurrence' | 'per_member_quota';
+  primaryStudentId: string;
+  packageSize: number;
+  packagePricePence: number;
+  effectiveFrom: string;
+};
+
+type ForecastBillingAccountMember = {
+  billingAccountId: string;
+  studentId: string;
+  active: boolean;
+};
+
+type ForecastBillingAccountCycle = {
+  id: string;
+  billingAccountId: string;
+  sequenceNo: number;
+  status: 'open' | 'due' | 'paid' | 'cancelled';
+  pricePence: number;
+};
+
 type ForecastExpense = {
   expenseDate: string;
   scope?: 'business' | 'personal';
@@ -113,6 +137,9 @@ export type MonthlyForecastInput = {
   otherIncome: Array<{ incomeDate: string; amountPence: number }>;
   billingPlans?: ForecastBillingPlan[];
   billingCycles: ForecastBillingCycle[];
+  billingAccounts?: ForecastBillingAccount[];
+  billingAccountMembers?: ForecastBillingAccountMember[];
+  billingAccountCycles?: ForecastBillingAccountCycle[];
   allocations: Array<{ targetId: string; targetType?: string; amountPence: number }>;
 };
 
@@ -129,6 +156,8 @@ type PackageProjectionState = {
   pricePence: number;
   nextSize: number;
   nextPricePence: number;
+  sequenceNo: number;
+  completedSequences: Set<number>;
 };
 
 function sum(values: readonly number[]): number {
@@ -185,7 +214,7 @@ function within(value: string, from: string, to: string): boolean {
   return date >= from && date <= to;
 }
 
-function sessionExpectedEarnedPence(session: ForecastSession, occurrence: ForecastOccurrence | null): number {
+function directSessionExpectedEarnedPence(session: ForecastSession, occurrence: ForecastOccurrence | null): number {
   const priceBasis = occurrence?.priceBasisSnapshot ?? session.priceBasis ?? 'total_session';
   const unitPrice = Math.max(0, Number(
     occurrence?.defaultPricePenceSnapshot ?? session.defaultPricePence ?? 0,
@@ -196,6 +225,69 @@ function sessionExpectedEarnedPence(session: ForecastSession, occurrence: Foreca
   const centerCutBps = clamp(Math.round(Number(session.centerCutBps ?? 0)), 0, 10_000);
   const centerCut = Math.floor((gross * centerCutBps) / 10_000);
   return Math.max(0, gross - centerCut);
+}
+
+function expectedEarnedPenceForLesson(
+  data: MonthlyForecastInput,
+  session: ForecastSession,
+  occurrence: ForecastOccurrence | null,
+  date: string,
+): number {
+  const direct = directSessionExpectedEarnedPence(session, occurrence);
+  if (direct > 0) return direct;
+
+  const participants = occurrence?.studentIds ?? session.studentIds ?? [];
+  const activeAccounts = (data.billingAccounts ?? []).filter((account) =>
+    account.active && account.effectiveFrom <= date);
+  const members = (data.billingAccountMembers ?? []).filter((member) => member.active);
+  const accountsForParticipants = new Map<string, ForecastBillingAccount>();
+
+  for (const studentId of participants) {
+    const membership = members.find((member) => member.studentId === studentId);
+    const account = membership
+      ? activeAccounts.find((row) => row.id === membership.billingAccountId) ?? null
+      : null;
+    if (account) accountsForParticipants.set(account.id, account);
+  }
+
+  if (accountsForParticipants.size) {
+    let earned = 0;
+    for (const account of accountsForParticipants.values()) {
+      const accountMembers = members.filter((member) => member.billingAccountId === account.id);
+      if (account.countingMode === 'shared_occurrence') {
+        earned += Math.round(account.packagePricePence / Math.max(1, account.packageSize));
+        continue;
+      }
+      const participatingMembers = participants.filter((studentId) =>
+        accountMembers.some((member) => member.studentId === studentId)).length;
+      const entitlementCount = Math.max(1, account.packageSize * accountMembers.length);
+      earned += Math.round((account.packagePricePence * participatingMembers) / entitlementCount);
+    }
+    return Math.max(0, earned);
+  }
+
+  const planByStudent = new Map((data.billingPlans ?? []).map((plan) => [plan.studentId, plan]));
+  const priceBasis = occurrence?.priceBasisSnapshot ?? session.priceBasis ?? 'total_session';
+  if (priceBasis === 'total_session') {
+    const payerId = occurrence?.payerStudentIdSnapshot ?? session.payerStudentId ?? null;
+    const plan = payerId ? planByStudent.get(payerId) : null;
+    if (plan?.billingMode === 'package' && (!plan.effectiveFrom || plan.effectiveFrom <= date)) {
+      return Math.round(
+        Math.max(0, Number(plan.packagePricePence ?? 0))
+        / Math.max(1, Number(plan.packageSize ?? 8)),
+      );
+    }
+    return 0;
+  }
+
+  return participants.reduce((total, studentId) => {
+    const plan = planByStudent.get(studentId);
+    if (plan?.billingMode !== 'package' || (plan.effectiveFrom && plan.effectiveFrom > date)) return total;
+    return total + Math.round(
+      Math.max(0, Number(plan.packagePricePence ?? 0))
+      / Math.max(1, Number(plan.packageSize ?? 8)),
+    );
+  }, 0);
 }
 
 function futureSlotsForMonth(
@@ -363,11 +455,26 @@ function projectedNewDue(
   const planByStudent = new Map((data.billingPlans ?? []).map((plan) => [plan.studentId, plan]));
   const packageState = new Map<string, PackageProjectionState>();
 
+  const activeFamilyAccounts = (data.billingAccounts ?? []).filter((account) => account.active);
+  const familyMembers = (data.billingAccountMembers ?? []).filter((member) => member.active);
+  const familyByStudent = new Map<string, ForecastBillingAccount>();
+  for (const member of familyMembers) {
+    const account = activeFamilyAccounts.find((row) => row.id === member.billingAccountId);
+    if (account) familyByStudent.set(member.studentId, account);
+  }
+
   for (const [studentId, plan] of planByStudent) {
     if (plan.billingMode !== 'package') continue;
-    const openCycle = data.billingCycles
-      .filter((cycle) => cycle.studentId === studentId && cycle.status === 'open')
+    const studentCycles = data.billingCycles
+      .filter((cycle) => cycle.studentId === studentId && cycle.status !== 'cancelled')
+      .sort((a, b) => Number(a.sequenceNo ?? 0) - Number(b.sequenceNo ?? 0));
+    const openCycle = [...studentCycles]
+      .filter((cycle) => cycle.status === 'open')
       .sort((a, b) => Number(b.sequenceNo ?? 0) - Number(a.sequenceNo ?? 0))[0] ?? null;
+    const latestSequence = studentCycles.reduce(
+      (max, cycle) => Math.max(max, Number(cycle.sequenceNo ?? 0)),
+      0,
+    );
 
     const planSize = clamp(Math.round(Number(plan.packageSize ?? openCycle?.sessionLimit ?? 8)), 1, 100);
     const planPrice = Math.max(0, Math.round(Number(plan.packagePricePence ?? openCycle?.pricePence ?? 0)));
@@ -380,6 +487,13 @@ function projectedNewDue(
           size,
         )
       : 0;
+    const completedSequences = new Set(studentCycles
+      .filter((cycle) => (
+        Math.round(Number(cycle.openingCompletedCount ?? 0))
+        + Math.round(Number(cycle.realCompletedCount ?? 0))
+      ) >= Math.round(Number(cycle.sessionLimit ?? planSize)))
+      .map((cycle) => Number(cycle.sequenceNo ?? 0))
+      .filter((sequenceNo) => sequenceNo > 0));
 
     packageState.set(studentId, {
       progress,
@@ -387,7 +501,42 @@ function projectedNewDue(
       pricePence: price,
       nextSize: planSize,
       nextPricePence: planPrice,
+      sequenceNo: openCycle ? Number(openCycle.sequenceNo ?? (latestSequence || 1)) : latestSequence + 1,
+      completedSequences,
     });
+  }
+
+  // Anything already complete before the forecast starts is current state, not
+  // a newly projected charge, even if an old import omitted the family-cycle row.
+  const familyCompleted = new Map<string, Set<number>>();
+  for (const account of activeFamilyAccounts) {
+    const requiredIds = account.countingMode === 'shared_occurrence'
+      ? [account.primaryStudentId]
+      : familyMembers
+          .filter((member) => member.billingAccountId === account.id)
+          .map((member) => member.studentId);
+    const knownSequences = new Set<number>();
+    for (const studentId of requiredIds) {
+      for (const sequenceNo of packageState.get(studentId)?.completedSequences ?? []) {
+        knownSequences.add(sequenceNo);
+      }
+    }
+    const already = new Set<number>();
+    for (const sequenceNo of knownSequences) {
+      if (requiredIds.length && requiredIds.every((studentId) =>
+        packageState.get(studentId)?.completedSequences.has(sequenceNo))) {
+        already.add(sequenceNo);
+      }
+    }
+    for (const cycle of data.billingAccountCycles ?? []) {
+      if (
+        cycle.billingAccountId === account.id
+        && (cycle.status === 'due' || cycle.status === 'paid')
+      ) {
+        already.add(Number(cycle.sequenceNo));
+      }
+    }
+    familyCompleted.set(account.id, already);
   }
 
   let duePence = 0;
@@ -405,6 +554,7 @@ function projectedNewDue(
       for (const studentId of participants) {
         const plan = planByStudent.get(studentId);
         if (plan?.billingMode !== 'per_session') continue;
+        if (familyByStudent.has(studentId)) continue;
         if (plan.effectiveFrom && slot.date < plan.effectiveFrom) continue;
         duePence += unitPrice;
       }
@@ -413,6 +563,7 @@ function projectedNewDue(
       if (payerStudentId) {
         const payerPlan = planByStudent.get(payerStudentId);
         if (payerPlan?.billingMode === 'per_session'
+          && !familyByStudent.has(payerStudentId)
           && (!payerPlan.effectiveFrom || slot.date >= payerPlan.effectiveFrom)) {
           duePence += unitPrice;
         }
@@ -435,11 +586,48 @@ function projectedNewDue(
       state.progress += 1;
       if (state.progress < state.size) continue;
 
-      duePence += state.pricePence;
-      packageCompletions += 1;
+      const completedSequence = state.sequenceNo;
+      state.completedSequences.add(completedSequence);
+
+      if (!familyByStudent.has(studentId)) {
+        duePence += state.pricePence;
+        packageCompletions += 1;
+      }
+
       state.progress = 0;
       state.size = state.nextSize;
       state.pricePence = state.nextPricePence;
+      state.sequenceNo += 1;
+    }
+
+    // A family charge is emitted only when the same family sequence is complete
+    // for all required members (or once for the primary progress in shared mode).
+    for (const account of activeFamilyAccounts) {
+      if (slot.date < account.effectiveFrom) continue;
+      const requiredIds = account.countingMode === 'shared_occurrence'
+        ? [account.primaryStudentId]
+        : familyMembers
+            .filter((member) => member.billingAccountId === account.id)
+            .map((member) => member.studentId);
+      if (!requiredIds.length) continue;
+
+      const candidates = new Set<number>();
+      for (const studentId of requiredIds) {
+        for (const sequenceNo of packageState.get(studentId)?.completedSequences ?? []) {
+          candidates.add(sequenceNo);
+        }
+      }
+      const accounted = familyCompleted.get(account.id) ?? new Set<number>();
+      for (const sequenceNo of [...candidates].sort((a, b) => a - b)) {
+        if (accounted.has(sequenceNo)) continue;
+        const complete = requiredIds.every((studentId) =>
+          packageState.get(studentId)?.completedSequences.has(sequenceNo));
+        if (!complete) continue;
+        duePence += Math.max(0, Number(account.packagePricePence || 0));
+        packageCompletions += 1;
+        accounted.add(sequenceNo);
+      }
+      familyCompleted.set(account.id, accounted);
     }
   }
 
@@ -474,11 +662,24 @@ export function buildMonthlyForecast(
 
   const monthCompleted = data.occurrences.filter((row) =>
     row.status === 'completed' && within(effectiveOccurrenceDate(row), start, today));
-  const actualEarnedPence = sum(monthCompleted.map((row) => row.earnedPence));
+  const sessionById = new Map(
+    [...data.sessions, ...(data.archivedSessions ?? [])].map((session) => [session.id, session]),
+  );
+  const actualEarnedPence = sum(monthCompleted.map((row) => {
+    const session = sessionById.get(row.recurringSessionId);
+    if (!session) return row.earnedPence;
+    const derived = expectedEarnedPenceForLesson(
+      data,
+      session,
+      row,
+      effectiveOccurrenceDate(row),
+    );
+    return derived > 0 ? derived : row.earnedPence;
+  }));
 
   const futureSlots = futureSlotsForMonth(data, today, end);
   const projectedRemainingEarnedPence = sum(futureSlots.map((slot) =>
-    sessionExpectedEarnedPence(slot.session, slot.occurrence)));
+    expectedEarnedPenceForLesson(data, slot.session, slot.occurrence, slot.date)));
   const projectedMonthEarnedPence = actualEarnedPence + projectedRemainingEarnedPence;
 
   const futureWorkMinutes = sum(futureSlots.map((slot) =>
@@ -528,7 +729,7 @@ export function buildMonthlyForecast(
   const projectedDue = projectedNewDue(data, futureSlots);
   const pendingScheduleCount = data.sessions.filter((row) => row.scheduleStatus === 'pending').length;
   const unpricedFutureLessons = futureSlots.filter((slot) =>
-    Number(slot.occurrence?.defaultPricePenceSnapshot ?? slot.session.defaultPricePence ?? 0) <= 0).length;
+    expectedEarnedPenceForLesson(data, slot.session, slot.occurrence, slot.date) <= 0).length;
   const completion = historicalCompletionRate(data, today);
 
   let confidenceScore = 100;
