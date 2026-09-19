@@ -148,7 +148,7 @@ export function WeekGridView({
                 key={band.start}
               >
                 <strong>{compactHour(band.start)}</strong>
-                <span>{compactHour(band.end)}</span>
+                {index === WEEK_GRID_BANDS.length - 1 && <span>{compactHour(band.end)}</span>}
               </div>
             ))}
           </div>
